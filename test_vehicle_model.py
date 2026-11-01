@@ -36,7 +36,7 @@ class TestVehicleModel(unittest.TestCase):
 
         self.assertAlmostEqual(before.x_m, 3.0)
         self.assertAlmostEqual(after.x_m, 4.0)
-        self.assertIsNot(before, after)   
-        
+        self.assertIsNot(before, after)
+
 if __name__ == "__main__":
     unittest.main()

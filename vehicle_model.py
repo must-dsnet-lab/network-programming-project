@@ -10,9 +10,8 @@ class VehicleState:
     y_m: float = 0.0
     heading_rad: float = 0.0 #朝向（单位：弧度）
     speed_mps: float = 0.0
-    
+
 #类型注解表达期望的类型，Python默认不强制进行运行时类型检查
-#: VehicleState 是类型注解，说明参数必须是 VehicleState 类的实例
 #-> VehicleState：是返回值注解，说明返回值也是 VehicleState 对象
 #dt_s：本次推进的时间
 def advance(state: VehicleState, dt_s: float) -> VehicleState:
