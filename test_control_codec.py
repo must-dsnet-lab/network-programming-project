@@ -43,6 +43,27 @@ class TestControlCodec(unittest.TestCase):
 
         self.assertEqual(after, before)
 
+    #version 是否为当前支持的版本
+    def test_decode_rejects_unsupported_version(self):
+        packet = (
+            #b代表 bytes（字节串）
+            b'{"version":2,"type":"control_target",'
+            b'"speed_mps":2.0,"heading_rad":0.5}'
+        )
+
+        with self.assertRaises(ValueError):
+            decode_target(packet)
+
+    #type 是否为当前解码器负责的消息类型
+    def test_decode_rejects_wrong_message_type(self):
+        packet = (
+            #b代表 bytes（字节串）
+            b'{"version":1,"type":"telemetry",'
+            b'"speed_mps":2.0,"heading_rad":0.5}'
+        )
+
+        with self.assertRaises(ValueError):
+            decode_target(packet)
 
 if __name__ == "__main__":
     unittest.main()

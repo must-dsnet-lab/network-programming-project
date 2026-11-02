@@ -18,6 +18,12 @@ def decode_target(data: bytes) -> ControlTarget:
     #data.decode("utf-8")：收到的字节还原成文本
     #json.loads(...)：解析文本得到字典，再取出字段构造 ControlTarget
     message = json.loads(data.decode("utf-8"))
+    if message.get("version") != 1:
+        raise ValueError("unsupported protocol version")
+
+    if message.get("type") != "control_target":
+        raise ValueError("unexpected message type")
+
     return ControlTarget(
         speed_mps=message["speed_mps"],
         heading_rad=message["heading_rad"]
