@@ -6,6 +6,8 @@ from control_target import ControlTarget
 
 
 class TestControlCodec(unittest.TestCase):
+
+    #################### 解码端 ####################
     def test_encode_target_contains_protocol_fields(self):
         target = ControlTarget(speed_mps=2.0, heading_rad=0.5)
 
@@ -183,6 +185,25 @@ class TestControlCodec(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             decode_target(packet)
+
+    #################### 编码端 ####################
+    def test_encode_rejects_string_speed(self):
+        target = ControlTarget(speed_mps="2.0", heading_rad=0.5)
+
+        with self.assertRaises(ValueError):
+            encode_target(target)
+
+    def test_encode_rejects_boolean_heading(self):
+        target = ControlTarget(speed_mps=2.0, heading_rad=True)
+
+        with self.assertRaises(ValueError):
+            encode_target(target)
+
+    def test_encode_rejects_nan_speed(self):
+        target = ControlTarget(speed_mps=float("nan"), heading_rad=0.5)
+
+        with self.assertRaises(ValueError):
+            encode_target(target)
 
 if __name__ == "__main__":
     unittest.main()

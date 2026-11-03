@@ -4,8 +4,25 @@ from math import isfinite
 
 MAX_CONTROL_MESSAGE_BYTES = 1200
 
+
+def _validate_motion_value(value: object, field_name: str) -> None:
+    if type(value) not in (int, float):
+        raise ValueError(f"{field_name} must be a number")
+
+    try:
+        numeric_value = float(value)
+    except OverflowError as exc:
+        raise ValueError(f"{field_name} is outside float range") from exc
+
+    if not isfinite(numeric_value):
+        raise ValueError(f"{field_name} must be finite")
+
+
 # 发送：ControlTarget → 字典 → JSON 文本 → UTF-8 字节
 def encode_target(target: ControlTarget) -> bytes:
+    _validate_motion_value(target.speed_mps, "speed_mps")
+    _validate_motion_value(target.heading_rad, "heading_rad")
+
     message = {
         "version": 1,
         "type": "control_target",
@@ -18,8 +35,8 @@ def encode_target(target: ControlTarget) -> bytes:
 
 # 接收：UTF-8 字节 → JSON 文本 → 字典 → ControlTarget
 def decode_target(data: bytes) -> ControlTarget:
-    #data.decode("utf-8")：收到的字节还原成文本
-    #json.loads(...)：解析文本得到字典，再取出字段构造 ControlTarget
+    # data.decode("utf-8")：收到的字节还原成文本
+    # json.loads(...)：解析文本得到字典，再取出字段构造 ControlTarget
 
     if len(data) > MAX_CONTROL_MESSAGE_BYTES:
         raise ValueError("control message is too large")
@@ -41,18 +58,7 @@ def decode_target(data: bytes) -> ControlTarget:
         raise ValueError("missing motion fields")
 
     for field in ("speed_mps", "heading_rad"):
-        value = message[field]
-
-        if type(value) not in (int, float):
-            raise ValueError(f"{field} must be a number")
-
-        try:
-            numeric_value = float(value)
-        except OverflowError as exc: #from exc：保留原始异常原因，方便调试
-            raise ValueError(f"{field} is outside float range") from exc
-
-        if not isfinite(numeric_value):
-            raise ValueError(f"{field} must be finite")
+        _validate_motion_value(message[field], field)
 
     return ControlTarget(
         speed_mps=message["speed_mps"],
