@@ -120,5 +120,44 @@ class TestControlCodec(unittest.TestCase):
         with self.assertRaises(ValueError):
             decode_target(packet)
 
+    #NaN、无穷大本身就是 float，但计算会产生无效结果或触发异常
+    '''对于32位浮点数，IEEE 754 标准规定了三种特殊值：'''
+    #正无穷：0 11111111 00000000000000000000000 (尾数全为0)
+    #负无穷：1 11111111 00000000000000000000000（尾数全为0）
+    #NaN  : 0 11111111 10000000000000000000000 (至少一个1在尾数中)
+
+    #python3的int无限精度，所以超大整数转为 float 则会抛出 OverflowError
+
+    #NaN：不是有效的数值结果
+    def test_decode_rejects_nan_speed(self):
+        packet = (
+            b'{"version":1,"type":"control_target",'
+            b'"speed_mps":NaN,"heading_rad":0.5}'
+        )
+
+        with self.assertRaises(ValueError):
+            decode_target(packet)
+
+    #Infinity：无穷大
+    def test_decode_rejects_infinite_heading(self):
+        packet = (
+            b'{"version":1,"type":"control_target",'
+            b'"speed_mps":2.0,"heading_rad":Infinity}'
+        )
+
+        with self.assertRaises(ValueError):
+            decode_target(packet)
+
+    #在数学上有限，但超出浮点表示范围
+    def test_decode_rejects_out_of_float_range_speed(self):
+        packet = (
+            b'{"version":1,"type":"control_target","speed_mps":'
+            + b"9" * 400 #Python中，字符串或字节串可以做乘法
+            + b',"heading_rad":0.5}'
+        )
+
+        with self.assertRaises(ValueError):
+            decode_target(packet)
+
 if __name__ == "__main__":
     unittest.main()

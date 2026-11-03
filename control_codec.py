@@ -1,5 +1,6 @@
 from control_target import ControlTarget
 import json
+from math import isfinite
 
 #发送：ControlTarget → 字典 → JSON 文本 → UTF-8 字节
 def encode_target(target: ControlTarget) -> bytes:
@@ -34,9 +35,18 @@ def decode_target(data: bytes) -> ControlTarget:
         raise ValueError("missing motion fields")
 
     for field in ("speed_mps", "heading_rad"):
-        #类型必须是int或float，不能是其他类型
-        if type(message[field]) not in (int, float):
+        value = message[field]
+
+        if type(value) not in (int, float):
             raise ValueError(f"{field} must be a number")
+
+        try:
+            numeric_value = float(value)
+        except OverflowError as exc: #from exc：保留原始异常原因，方便调试
+            raise ValueError(f"{field} is outside float range") from exc
+
+        if not isfinite(numeric_value):
+            raise ValueError(f"{field} must be finite")
 
     return ControlTarget(
         speed_mps=message["speed_mps"],
