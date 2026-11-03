@@ -23,7 +23,8 @@ def decode_target(data: bytes) -> ControlTarget:
         # JSON object 是网络传输协议（JSON 标准）的叫法（报错用）
         raise ValueError("message must be a JSON object")
 
-    if message.get("version") != 1:
+    version = message.get("version")
+    if type(version) is not int or version != 1:
         raise ValueError("unsupported protocol version")
 
     if message.get("type") != "control_target":
@@ -31,6 +32,11 @@ def decode_target(data: bytes) -> ControlTarget:
 
     if "speed_mps" not in message or "heading_rad" not in message:
         raise ValueError("missing motion fields")
+
+    for field in ("speed_mps", "heading_rad"):
+        #类型必须是int或float，不能是其他类型
+        if type(message[field]) not in (int, float):
+            raise ValueError(f"{field} must be a number")
 
     return ControlTarget(
         speed_mps=message["speed_mps"],

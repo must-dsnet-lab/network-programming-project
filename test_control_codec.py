@@ -93,5 +93,32 @@ class TestControlCodec(unittest.TestCase):
 
         self.assertIsInstance(caught.exception, ValueError)
 
+    def test_decode_rejects_string_speed(self):
+        packet = (
+            b'{"version":1,"type":"control_target",'
+            b'"speed_mps":"2.0","heading_rad":0.5}'
+        )
+
+        with self.assertRaises(ValueError):
+            decode_target(packet)
+
+    def test_decode_rejects_boolean_heading(self):
+        packet = (
+            b'{"version":1,"type":"control_target",'
+            b'"speed_mps":2.0,"heading_rad":true}'
+        )
+
+        with self.assertRaises(ValueError):
+            decode_target(packet)
+
+    def test_decode_rejects_boolean_version(self):
+        packet = (
+            b'{"version":true,"type":"control_target",'
+            b'"speed_mps":2.0,"heading_rad":0.5}'
+        )
+
+        with self.assertRaises(ValueError):
+            decode_target(packet)
+
 if __name__ == "__main__":
     unittest.main()
