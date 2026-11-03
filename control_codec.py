@@ -18,11 +18,19 @@ def decode_target(data: bytes) -> ControlTarget:
     #data.decode("utf-8")：收到的字节还原成文本
     #json.loads(...)：解析文本得到字典，再取出字段构造 ControlTarget
     message = json.loads(data.decode("utf-8"))
+
+    if not isinstance(message, dict): #dict 是 Python 语言内部的叫法(检查用)
+        # JSON object 是网络传输协议（JSON 标准）的叫法（报错用）
+        raise ValueError("message must be a JSON object")
+
     if message.get("version") != 1:
         raise ValueError("unsupported protocol version")
 
     if message.get("type") != "control_target":
         raise ValueError("unexpected message type")
+
+    if "speed_mps" not in message or "heading_rad" not in message:
+        raise ValueError("missing motion fields")
 
     return ControlTarget(
         speed_mps=message["speed_mps"],

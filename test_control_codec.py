@@ -65,5 +65,33 @@ class TestControlCodec(unittest.TestCase):
         with self.assertRaises(ValueError):
             decode_target(packet)
 
+    def test_decode_rejects_non_object_message(self):
+        with self.assertRaises(Exception) as caught:
+            decode_target(b"[]")
+
+        self.assertIsInstance(caught.exception, ValueError)
+
+    def test_decode_rejects_missing_speed(self):
+        packet = (
+            b'{"version":1,"type":"control_target",'
+            b'"heading_rad":0.5}'
+        )
+
+        with self.assertRaises(Exception) as caught:
+            decode_target(packet)
+
+        self.assertIsInstance(caught.exception, ValueError)
+
+    def test_decode_rejects_missing_heading(self):
+        packet = (
+            b'{"version":1,"type":"control_target",'
+            b'"speed_mps":2.0}'
+        )
+
+        with self.assertRaises(Exception) as caught:
+            decode_target(packet)
+
+        self.assertIsInstance(caught.exception, ValueError)
+
 if __name__ == "__main__":
     unittest.main()
