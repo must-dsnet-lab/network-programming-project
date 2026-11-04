@@ -21,6 +21,7 @@ def receive_target(
     sock: socket.socket,
 ) -> tuple[ControlTarget, tuple[str, int]]:
     # recvfrom() 返回收到的字节和发送端地址，再交给 decode_target() 校验、还原
+    # 真正的数据由 recvfrom() 从操作系统的 Socket 接收队列中取得
     packet, peer = sock.recvfrom(UDP_RECEIVE_BUFFER_BYTES)
     target = decode_target(packet)
     return target, peer
