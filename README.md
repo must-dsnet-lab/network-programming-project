@@ -63,3 +63,35 @@ ControlTarget(speed_mps=2.0, heading_rad=0.5)
 
 `127.0.0.1` 用于同一台电脑内通信。接收端收到一条消息后退出；
 再次演示时，先重新启动接收端。等待期间可按 `Ctrl+C` 结束。
+
+## UDP 控制目标驱动车辆模型
+
+两个终端均进入仓库根目录。
+
+终端 A 启动车辆演示接收端：
+
+```powershell
+.\.venv\Scripts\python.exe demo_udp_vehicle.py
+```
+
+看到等待提示后，终端 B 运行发送端：
+
+```powershell
+.\.venv\Scripts\python.exe demo_udp_sender.py
+```
+
+初始车辆状态由接收端通过 `VehicleState()` 创建，位置位于原点。
+发送端提供目标速度与绝对朝向。
+
+应用目标后，以 `0.02` 秒为步长推进 50 步，共 1 秒模拟时间；
+轨迹包含初始时刻，共 51 个状态。
+
+发送速度 `2.0 m/s`、朝向 `0.5 rad` 时，关键输出为：
+
+```text
+states=51
+start: x=0.0000m y=0.0000m
+end: sim_t=1.00s x=1.7552m y=0.9589m
+```
+
+这是收到一条消息后的离线模拟，1 秒模拟时间可以很快计算完成。
