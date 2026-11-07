@@ -8,7 +8,7 @@ from vehicle_model import VehicleState
 def main() -> None:
     dt_s = 0.1
     steps_per_phase = 5
-    sim_time_s = 0.0
+    sim_time_s = 0.0  # sim_t 是按步长推进的模拟时间
     state = VehicleState()
 
     phases = [
@@ -17,7 +17,7 @@ def main() -> None:
         ("stop", ControlTarget(speed_mps=0.0, heading_rad=pi / 2)),
     ]
 
-    #采用新目标 → 推进一段时间 → 取阶段终点 → 进入下一阶段
+    # 采用新目标 → 推进一段时间 → 取阶段终点 → 进入下一阶段
     for label, target in phases:
         state = apply_target(state, target)
         states = run_steps(state, dt_s, steps_per_phase)
