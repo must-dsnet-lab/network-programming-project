@@ -1,9 +1,10 @@
 import socket
 import unittest
+import select
 
 from control_codec import decode_target, encode_target
 from control_target import ControlTarget
-from udp_transport import receive_target, send_target
+from udp_transport import receive_target, send_target, try_receive_target
 
 
 class TestUdpTransport(unittest.TestCase):
@@ -59,6 +60,41 @@ class TestUdpTransport(unittest.TestCase):
         with self.assertRaises(ValueError):
             receive_target(self.receiver)
 
+    def test_try_receive_target_returns_none_without_data(self):
+        self.receiver.setblocking(False)
 
+        received = try_receive_target(self.receiver)
+
+        self.assertIsNone(received)
+
+    # 函数在“非阻塞”模式下，能够成功接收来自 UDP 网络的数据，并将其正确解码还原为原始对象
+    def test_try_receive_target_restores_message(self):
+        self.receiver.setblocking(False)  # 无数据时，底层 recvfrom() 抛出 BlockingIOError
+        target = ControlTarget(speed_mps=1.5, heading_rad=1.2)
+        self.sender.sendto(
+            encode_target(target),
+            self.receiver.getsockname(),  # 获取当前 Socket 绑定在本机的 IP 和 端口
+        )
+
+        # select(监控读的列表, 监控写的列表, 监控异常的列表, 超时时间)
+        ready, _, _ = select.select([self.receiver], [], [], 1.0) #超时且没有可读数据时，ready 是 []
+        self.assertIn(self.receiver, ready)  # 断言 self.receiver 一定在 ready 里
+
+        received = try_receive_target(self.receiver)
+
+        self.assertEqual(
+            received,
+            (target, self.sender.getsockname()),
+        )
+
+    def test_try_receive_target_rejects_invalid_message(self):
+        self.receiver.setblocking(False)
+        self.sender.sendto(b"[]", self.receiver.getsockname())
+
+        ready, _, _ = select.select([self.receiver], [], [], 1.0)
+        self.assertIn(self.receiver, ready)
+
+        with self.assertRaises(ValueError):
+            try_receive_target(self.receiver)
 if __name__ == "__main__":
     unittest.main()
