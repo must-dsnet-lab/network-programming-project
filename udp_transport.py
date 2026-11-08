@@ -25,3 +25,13 @@ def receive_target(
     packet, peer = sock.recvfrom(UDP_RECEIVE_BUFFER_BYTES)
     target = decode_target(packet)
     return target, peer
+
+
+def try_receive_target(
+    sock: socket.socket,
+) -> tuple[ControlTarget, tuple[str, int]] | None:
+    """尝试接收一次；要求调用方已设置 sock.setblocking(False)。"""
+    try:
+        return receive_target(sock)
+    except BlockingIOError:
+        return None
