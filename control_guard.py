@@ -9,7 +9,7 @@ class ControlGuardState:
     fault_latched: bool = False
 
 # update_control_guard 是“法官”，负责判定系统是否违规（超时），
-# 一旦违规直接判死刑（锁死），并保留案卷（last_accepted）
+# 一旦违规直接判死刑（锁死），并清空有效控制记录（last_accepted）
 def update_control_guard(
     guard: ControlGuardState,
     now_s: float,
