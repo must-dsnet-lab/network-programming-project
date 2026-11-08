@@ -3,7 +3,10 @@ import unittest
 
 from telemetry_codec import TelemetrySnapshot, encode_telemetry
 from vehicle_model import VehicleState
-
+from telemetry_codec import (
+    MAX_TELEMETRY_MESSAGE_BYTES,
+    decode_telemetry,
+)
 
 class TestTelemetryCodec(unittest.TestCase):
     def test_encode_contains_actual_state_and_protocol_fields(self):
@@ -96,6 +99,100 @@ class TestTelemetryCodec(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             encode_telemetry(snapshot)
+
+
+class TestTelemetryDecoder(unittest.TestCase):
+    def setUp(self):
+        self.packet = (
+            b'{"version":1,"type":"vehicle_state",'
+            b'"x_m":3.0,"y_m":-2.0,"heading_rad":0.5,'
+            b'"speed_mps":0.0,"fault_latched":true}'
+        )
+        self.expected = TelemetrySnapshot(
+            state=VehicleState(
+                x_m=3.0,
+                y_m=-2.0,
+                heading_rad=0.5,
+                speed_mps=0.0,
+            ),
+            fault_latched=True,
+        )
+
+    def test_decode_restores_independent_message(self):
+        snapshot = decode_telemetry(self.packet)
+
+        self.assertEqual(snapshot, self.expected)
+
+    def test_decode_rejects_invalid_message_structure(self):
+        message = json.loads(self.packet.decode("utf-8"))
+        invalid_packets = [b"\xff", b"{", b"[]"]
+
+        for field, value in (
+            ("version", True),
+            ("version", 2),
+            ("type", "control_target"),
+        ):
+            changed = message.copy()
+            changed[field] = value
+            invalid_packets.append(json.dumps(changed).encode("utf-8"))
+
+        for field in message:
+            incomplete = message.copy()
+            del incomplete[field]
+            invalid_packets.append(json.dumps(incomplete).encode("utf-8"))
+
+        for index, packet in enumerate(invalid_packets):
+            with self.subTest(case=index):
+                with self.assertRaises(ValueError):
+                    decode_telemetry(packet)
+
+    def test_decode_rejects_invalid_field_values(self):
+        message = json.loads(self.packet.decode("utf-8"))
+
+        for field, value in (
+            ("x_m", float("nan")),
+            ("y_m", float("inf")),
+            ("speed_mps", True),
+            ("speed_mps", "1.5"),
+            ("heading_rad", 10**400),
+            ("fault_latched", 0),
+            ("fault_latched", "false"),
+        ):
+            with self.subTest(field=field, value=value):
+                changed = message.copy()
+                changed[field] = value
+                packet = json.dumps(changed).encode("utf-8")
+
+                with self.assertRaises(ValueError):
+                    decode_telemetry(packet)
+
+    def test_decode_checks_message_size_boundary(self):
+        padding = MAX_TELEMETRY_MESSAGE_BYTES - len(self.packet)
+        packet = self.packet + b" " * padding
+
+        self.assertEqual(len(packet), 1200)
+        self.assertEqual(
+            decode_telemetry(packet),
+            self.expected,
+        )
+
+        with self.assertRaises(ValueError):
+            decode_telemetry(packet + b" ")
+
+    def test_round_trip_preserves_snapshot(self):
+        snapshot = TelemetrySnapshot(
+            state=VehicleState(
+                x_m=-1.0,
+                y_m=2.0,
+                heading_rad=-0.8,
+                speed_mps=-1.5,
+            ),
+            fault_latched=False,
+        )
+
+        restored = decode_telemetry(encode_telemetry(snapshot))
+
+        self.assertEqual(restored, snapshot)
 
 
 if __name__ == "__main__":

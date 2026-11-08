@@ -51,3 +51,47 @@ def _validate_motion_value(value: object, field_name: str) -> None:
 
     if not isfinite(numeric_value):
         raise ValueError(f"{field_name} must be finite")
+
+
+# 收到的字节 → 校验 → 还原遥测快照
+def decode_telemetry(data: bytes) -> TelemetrySnapshot:
+    if len(data) > MAX_TELEMETRY_MESSAGE_BYTES:
+        raise ValueError("telemetry message is too large")
+
+    message = json.loads(data.decode("utf-8"))
+
+    if not isinstance(message, dict):
+        raise ValueError("message must be a JSON object")
+
+    version = message.get("version")
+    if type(version) is not int or version != 1:
+        raise ValueError("unsupported protocol version")
+
+    if message.get("type") != "vehicle_state":
+        raise ValueError("unexpected message type")
+
+    motion_fields = ("x_m", "y_m", "heading_rad", "speed_mps")
+
+    for field in motion_fields:
+        if field not in message:
+            raise ValueError(f"missing field: {field}")
+
+        _validate_motion_value(message[field], field)
+
+    if "fault_latched" not in message:
+        raise ValueError("missing field: fault_latched")
+
+    if type(message["fault_latched"]) is not bool:
+        raise ValueError("fault_latched must be a boolean")
+
+    state = VehicleState(
+        x_m=message["x_m"],
+        y_m=message["y_m"],
+        heading_rad=message["heading_rad"],
+        speed_mps=message["speed_mps"],
+    )
+
+    return TelemetrySnapshot(
+        state=state,
+        fault_latched=message["fault_latched"],
+    )
