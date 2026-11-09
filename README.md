@@ -9,10 +9,91 @@ Group project for Network Programming (MUST).
 - 本地控制超时保护与按真实时间节奏运行的车辆演示。
 - 同机持续 UDP 车辆演示：非阻塞接收、超时停车、故障锁存后忽略普通控制。
 - 实际车辆状态与故障标志的 JSON 编解码、UDP 传输及独立接收端显示。
+- PySide6桌面遥测观察台：地图位置与朝向、状态读数，以及等待/可用/过期提示。
+
+## 学习导图
+
+这两张图分别说明单条消息的收发，以及整个项目的控制与遥测关系。
+图源直接保存在下面的 `mermaid` 代码块中，方便修改名称、调整布局和移动文档位置。
+
+### 图 1：一条控制消息怎样到达接收端
+
+```mermaid
+flowchart TB
+    subgraph TX["发送端：send_target(sock, target, destination)"]
+        direction TB
+        tx_target["target：ControlTarget 对象"]
+        tx_packet["packet：待发送的 JSON 字节"]
+        tx_target -->|"encode_target(target)"| tx_packet
+    end
+
+    subgraph RX["接收端：receive_target(sock)"]
+        direction TB
+        rx_packet["packet, peer = sock.recvfrom(...)<br/>取得字节和来源地址"]
+        rx_target["target：还原的 ControlTarget 对象<br/>最终返回 (target, peer)"]
+        rx_packet -->|"decode_target(packet)"| rx_target
+    end
+
+    tx_packet -->|"sock.sendto(packet, destination)<br/>UDP 字节报文"| rx_packet
+```
+
+- 从上到下只看一条主线：目标对象 → 编码字节 → UDP 发送与接收 → 还原目标对象。
+- 发送端绑定临时来源端口；接收端先绑定 `address = ("127.0.0.1", 9999)` 并等待。`destination` 对应该接收地址。
+- `packet` 是 UTF-8 JSON 载荷字节；`peer` 是 Socket 返回的来源地址，不是 JSON 里的字段。
+- 此图对应单包演示的阻塞接收。`sent` 是本机发送字节数，不是接收确认；当前演示没有回包。
+
+对应源码：[发送演示](demo_udp_sender.py)、[接收演示](demo_udp_receiver.py)、
+[收发函数](udp_transport.py)、[控制编解码](control_codec.py)。
+
+### 图 2：三个终端怎样控制小车并回传状态
+
+```mermaid
+flowchart LR
+    subgraph SG_C["终端 C：控制发送"]
+        direction TB
+        c_target["target = ControlTarget(...)"]
+        c_send["send_target(sock, target, destination)"]
+        c_target --> c_send
+    end
+
+    subgraph SG_B["终端 B：车辆仿真与保护"]
+        direction TB
+        b_receive["try_receive_target(sock)<br/>received = (target, peer) 或 None"]
+        b_guard["guard = update_control_guard(...)<br/>输入 incoming；超时先锁存"]
+        b_step["state = step_vehicle(...)<br/>使用 guard.last_accepted"]
+        b_telemetry["snapshot = TelemetrySnapshot(...)<br/>send_telemetry(telemetry_sock, ...)"]
+        b_receive --> b_guard --> b_step --> b_telemetry
+    end
+
+    subgraph SG_A["终端 A：遥测接收"]
+        direction TB
+        a_receive["try_receive_telemetry(sock)<br/>received = (snapshot, peer) 或 None"]
+        a_display["state = snapshot.state<br/>显示位置、朝向、速度和故障位"]
+        a_receive -->|仅收到合法快照时| a_display
+    end
+
+    SG_C -->|destination 对应车端 address：UDP 9999| SG_B
+    SG_B -->|telemetry_address 对应显示端 address：UDP 10000| SG_A
+```
+
+- C 提供期望目标；B 更新实际 `state` 后，将它与 `guard.fault_latched` 组合成 `snapshot`；A 只显示收到的状态。
+- `incoming` 是本轮收到的目标或 `None`。B 在收包前、收包后都检查保护，图中合并展示；超时锁存后，普通新目标仍会被忽略。
+- 暂无报文返回 `None`，坏报文抛出 `ValueError`。B 仍继续保护、仿真及按期遥测；A 暂无数据时等待，不伪造全零状态。
+- B 用独立的 `telemetry_sock` 发遥测，因此 A 的 `peer` 是车端遥测来源地址，与 B 收到控制时的 `peer` 不同。
+
+对应源码：[周期控制发送](demo_udp_stream_sender.py)、[车辆运行环](demo_udp_vehicle_loop.py)、
+[遥测接收显示](demo_udp_telemetry_receiver.py)、[保护状态](control_guard.py)、[遥测快照与编解码](telemetry_codec.py)。
+
+### 后续怎样维护导图
+
+- 改变量或函数名时，编辑图中文字即可；`c_target`、`b_step` 等节点 ID 只用于连线，不必跟着业务变量改名。Python 改名后需同步图中文字，图不会自动重构代码。
+- 移动整个小节或代码块即可调整图在 README 中的位置；第二张图的 `flowchart LR` 是横排，改成 `flowchart TB` 可竖排，由 Mermaid 自动布局。
+- 源码链接使用仓库相对路径，不绑定本机盘符或 PNG 存放目录。后续疑难点可以按同样的小标题和图源格式继续添加。
 
 ## 运行环境
 
-Windows PowerShell、Python 3.12。当前代码仅使用 Python 标准库。
+Windows PowerShell、Python 3.12。终端演示和核心模型使用 Python 标准库；
+桌面界面开发使用 PySide6，版本记录在 `requirements.txt`。
 
 以下命令均在仓库根目录执行。
 
@@ -24,13 +105,19 @@ Windows PowerShell、Python 3.12。当前代码仅使用 Python 标准库。
 py -3.12 -m venv .venv
 ```
 
+安装桌面界面依赖：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+```
+
 运行测试：
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest -v
 ```
 
-当前共 59 项测试，通过时显示 `OK`。运行演示另按下文进行多终端验收。
+当前共 63 项测试，通过时显示 `OK`。运行演示另按下文进行多终端验收。
 
 ## 离线演示
 
@@ -220,3 +307,40 @@ A 的普通状态日志最多约每秒四行，收到故障标志变化时立即
 
 暂时没有可读遥测时，接收接口返回 `None`，不会伪造全零状态；
 无效报文抛出 `ValueError`，该报文已经从接收队列取走，接收程序可继续处理后续报文。
+
+## 桌面遥测观察台
+
+本机三终端演示中，A改用桌面窗口；B仍运行车端，C仍发送控制。
+先关闭旧的命令行遥测接收器或其他观察台，避免同时占用10000端口；
+重新演示时也要先结束旧车端，清除上一次故障锁存。
+
+终端A启动窗口：
+
+```powershell
+.\.venv\Scripts\python.exe demo_desktop_console.py
+```
+
+随后终端B运行`demo_udp_vehicle_loop.py`，终端C运行`demo_udp_stream_sender.py`。
+二者完整命令见上方三终端演示。窗口展示车端通过UDP回传的状态，不自行推进车辆模型。
+
+2026-11-09用户在本机完成以下六项人工验收，并提供等待、原点、锁定和过期截图：
+
+1. 只启动窗口：显示“等待遥测”，没有车辆，读数为占位符。
+2. 启动B：原点出现车辆，显示“遥测可用”。
+3. C周期发送：车辆向右上方移动，位置、朝向、速度读数更新。
+4. C结束：车端超时停车，“保护”显示“已锁定”，遥测仍可用。
+5. 结束B：约1.0秒未收到合法遥测后显示“遥测过期”，保留最后位置和读数。
+6. 窗口可正常拖动、调整大小和关闭。
+
+界面等待/可用/过期来自本地接收情况，保护锁存来自车端回传的`fault_latched`，
+两者独立。过期时读数只代表最近一次收到的状态，不能证明车辆此刻仍在该位置或具有该速度。
+`telemetry_timeout_s=1.0`只决定界面何时提示过期，与车端0.5秒控制超时保护不同；
+当前合法报文表示通过格式和字段校验，认证、会话及网络新鲜度机制仍待后续接入。
+
+`QTimer`目标每20毫秒调用`poll_telemetry()`；每次最多尝试8包，
+有合法状态时更新地图，无新包时仍检查接收间隔。坏包不刷新`last_received_s`。
+定时器和实际显示频率受调度影响；这组人工验收不代替自动测试、跨机或性能验收。
+
+地图逻辑在[desktop_map.py](desktop_map.py)，收包与显示状态在
+[demo_desktop_console.py](demo_desktop_console.py)，坐标转换在
+[map_geometry.py](map_geometry.py)。当前地图显示最近状态，运行轨迹与控制输入随后接入。
