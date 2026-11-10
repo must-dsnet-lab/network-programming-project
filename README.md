@@ -47,21 +47,23 @@ flowchart TB
 
 ### 图 2：三个终端怎样控制小车并回传状态
 
+按从上到下的 C → B → A 阅读。长调用已分行，地址对应关系见图下说明。
+
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph SG_C["终端 C：控制发送"]
         direction TB
-        c_target["target = ControlTarget(...)"]
-        c_send["send_target(sock, target, destination)"]
+        c_target["target =<br/>ControlTarget(...)"]
+        c_send["send_target(sock, target,<br/>destination)"]
         c_target --> c_send
     end
 
     subgraph SG_B["终端 B：车辆仿真与保护"]
         direction TB
         b_receive["try_receive_target(sock)<br/>received = (target, peer) 或 None"]
-        b_guard["guard = update_control_guard(...)<br/>输入 incoming；超时先锁存"]
+        b_guard["guard =<br/>update_control_guard(...)<br/>输入 incoming；超时先锁存"]
         b_step["state = step_vehicle(...)<br/>使用 guard.last_accepted"]
-        b_telemetry["snapshot = TelemetrySnapshot(...)<br/>send_telemetry(telemetry_sock, ...)"]
+        b_telemetry["snapshot =<br/>TelemetrySnapshot(...)<br/>send_telemetry(...)"]
         b_receive --> b_guard --> b_step --> b_telemetry
     end
 
@@ -69,14 +71,15 @@ flowchart LR
         direction TB
         a_receive["try_receive_telemetry(sock)<br/>received = (snapshot, peer) 或 None"]
         a_display["state = snapshot.state<br/>显示位置、朝向、速度和故障位"]
-        a_receive -->|仅收到合法快照时| a_display
+        a_receive -->|合法快照| a_display
     end
 
-    SG_C -->|destination 对应车端 address：UDP 9999| SG_B
-    SG_B -->|telemetry_address 对应显示端 address：UDP 10000| SG_A
+    SG_C -->|控制 UDP 9999| SG_B
+    SG_B -->|遥测 UDP 10000| SG_A
 ```
 
 - C 提供期望目标；B 更新实际 `state` 后，将它与 `guard.fault_latched` 组合成 `snapshot`；A 只显示收到的状态。
+- 控制发送的 `destination` 对应 B 的 `address`（9999）；遥测发送的 `telemetry_address` 对应 A 的接收地址（10000）。完整调用参数见下方源码链接。
 - `incoming` 是本轮收到的目标或 `None`。B 在收包前、收包后都检查保护，图中合并展示；超时锁存后，普通新目标仍会被忽略。
 - 暂无报文返回 `None`，坏报文抛出 `ValueError`。B 仍继续保护、仿真及按期遥测；A 暂无数据时等待，不伪造全零状态。
 - B 用独立的 `telemetry_sock` 发遥测，因此 A 的 `peer` 是车端遥测来源地址，与 B 收到控制时的 `peer` 不同。
@@ -87,7 +90,7 @@ flowchart LR
 ### 后续怎样维护导图
 
 - 改变量或函数名时，编辑图中文字即可；`c_target`、`b_step` 等节点 ID 只用于连线，不必跟着业务变量改名。Python 改名后需同步图中文字，图不会自动重构代码。
-- 移动整个小节或代码块即可调整图在 README 中的位置；第二张图的 `flowchart LR` 是横排，改成 `flowchart TB` 可竖排，由 Mermaid 自动布局。
+- 移动整个小节或代码块即可调整图在 README 中的位置；第二张图采用 `flowchart TB` 纵排，长标签用 `<br/>` 分行，减少按 README 宽度缩放时文字过小的问题。改回 `LR` 会横向展开三个终端。
 - 源码链接使用仓库相对路径，不绑定本机盘符或 PNG 存放目录。后续疑难点可以按同样的小标题和图源格式继续添加。
 
 ## 运行环境
@@ -117,7 +120,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest -v
 ```
 
-当前共 63 项测试，通过时显示 `OK`。运行演示另按下文进行多终端验收。
+当前共 70 项测试，通过时显示 `OK`。运行演示另按下文进行多终端验收。
 
 ## 离线演示
 
