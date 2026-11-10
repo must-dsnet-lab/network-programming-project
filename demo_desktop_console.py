@@ -66,6 +66,7 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
 
     def poll_telemetry(self):
         latest = None
+        receive_error = None
 
         # 每次最多尝试8包，留出时间处理窗口事件
         for _ in range(8):
@@ -77,8 +78,8 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             except OSError as exc:
                 self.timer.stop()
                 self.sock.close()
-                self.status.setText(f"接收错误：{exc}")
-                return
+                receive_error = exc
+                break
 
             if received is None:
                 break
@@ -86,9 +87,11 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             latest, peer = received
             self.last_received_s = monotonic()
 
+            # 每个合法状态都交给地图，保留中间位置
+            self.map.set_state(latest.state)
+
         if latest is not None:
             state = latest.state
-            self.map.set_state(state) # 更新地图上的车辆位置,调用update()后会触发paintEvent()重绘
             fault_text = "已锁定" if latest.fault_latched else "未锁定"
 
             self.values.setText(
@@ -99,6 +102,11 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
                 f"保护 = {fault_text}\n"
                 f"来源 = {peer[0]}:{peer[1]}"
             )
+
+        # 报错前若收到过合法数据，先同步读数，再显示错误
+        if receive_error is not None:
+            self.status.setText(f"接收错误：{receive_error}")
+            return
 
         # 没有新包时，也继续检查显示状态是否过期
         if self.last_received_s is None:

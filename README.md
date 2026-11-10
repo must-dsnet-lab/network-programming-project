@@ -9,7 +9,7 @@ Group project for Network Programming (MUST).
 - 本地控制超时保护与按真实时间节奏运行的车辆演示。
 - 同机持续 UDP 车辆演示：非阻塞接收、超时停车、故障锁存后忽略普通控制。
 - 实际车辆状态与故障标志的 JSON 编解码、UDP 传输及独立接收端显示。
-- PySide6桌面遥测观察台：地图位置与朝向、状态读数，以及等待/可用/过期提示。
+- PySide6桌面遥测观察台：地图位置与朝向、有界运行轨迹、状态读数，以及等待/可用/过期提示。
 
 ## 学习导图
 
@@ -47,21 +47,23 @@ flowchart TB
 
 ### 图 2：三个终端怎样控制小车并回传状态
 
+按从上到下的 C → B → A 阅读。长调用已分行，地址对应关系见图下说明。
+
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph SG_C["终端 C：控制发送"]
         direction TB
-        c_target["target = ControlTarget(...)"]
-        c_send["send_target(sock, target, destination)"]
+        c_target["target =<br/>ControlTarget(...)"]
+        c_send["send_target(sock, target,<br/>destination)"]
         c_target --> c_send
     end
 
     subgraph SG_B["终端 B：车辆仿真与保护"]
         direction TB
         b_receive["try_receive_target(sock)<br/>received = (target, peer) 或 None"]
-        b_guard["guard = update_control_guard(...)<br/>输入 incoming；超时先锁存"]
+        b_guard["guard =<br/>update_control_guard(...)<br/>输入 incoming；超时先锁存"]
         b_step["state = step_vehicle(...)<br/>使用 guard.last_accepted"]
-        b_telemetry["snapshot = TelemetrySnapshot(...)<br/>send_telemetry(telemetry_sock, ...)"]
+        b_telemetry["snapshot =<br/>TelemetrySnapshot(...)<br/>send_telemetry(...)"]
         b_receive --> b_guard --> b_step --> b_telemetry
     end
 
@@ -69,14 +71,15 @@ flowchart LR
         direction TB
         a_receive["try_receive_telemetry(sock)<br/>received = (snapshot, peer) 或 None"]
         a_display["state = snapshot.state<br/>显示位置、朝向、速度和故障位"]
-        a_receive -->|仅收到合法快照时| a_display
+        a_receive -->|合法快照| a_display
     end
 
-    SG_C -->|destination 对应车端 address：UDP 9999| SG_B
-    SG_B -->|telemetry_address 对应显示端 address：UDP 10000| SG_A
+    SG_C -->|控制 UDP 9999| SG_B
+    SG_B -->|遥测 UDP 10000| SG_A
 ```
 
 - C 提供期望目标；B 更新实际 `state` 后，将它与 `guard.fault_latched` 组合成 `snapshot`；A 只显示收到的状态。
+- 控制发送的 `destination` 对应 B 的 `address`（9999）；遥测发送的 `telemetry_address` 对应 A 的接收地址（10000）。完整调用参数见下方源码链接。
 - `incoming` 是本轮收到的目标或 `None`。B 在收包前、收包后都检查保护，图中合并展示；超时锁存后，普通新目标仍会被忽略。
 - 暂无报文返回 `None`，坏报文抛出 `ValueError`。B 仍继续保护、仿真及按期遥测；A 暂无数据时等待，不伪造全零状态。
 - B 用独立的 `telemetry_sock` 发遥测，因此 A 的 `peer` 是车端遥测来源地址，与 B 收到控制时的 `peer` 不同。
@@ -87,7 +90,7 @@ flowchart LR
 ### 后续怎样维护导图
 
 - 改变量或函数名时，编辑图中文字即可；`c_target`、`b_step` 等节点 ID 只用于连线，不必跟着业务变量改名。Python 改名后需同步图中文字，图不会自动重构代码。
-- 移动整个小节或代码块即可调整图在 README 中的位置；第二张图的 `flowchart LR` 是横排，改成 `flowchart TB` 可竖排，由 Mermaid 自动布局。
+- 移动整个小节或代码块即可调整图在 README 中的位置；第二张图采用 `flowchart TB` 纵排，长标签用 `<br/>` 分行，减少按 README 宽度缩放时文字过小的问题。改回 `LR` 会横向展开三个终端。
 - 源码链接使用仓库相对路径，不绑定本机盘符或 PNG 存放目录。后续疑难点可以按同样的小标题和图源格式继续添加。
 
 ## 运行环境
@@ -117,7 +120,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest -v
 ```
 
-当前共 63 项测试，通过时显示 `OK`。运行演示另按下文进行多终端验收。
+当前共 70 项测试，通过时显示 `OK`。运行演示另按下文进行多终端验收。
 
 ## 离线演示
 
@@ -337,10 +340,25 @@ A 的普通状态日志最多约每秒四行，收到故障标志变化时立即
 `telemetry_timeout_s=1.0`只决定界面何时提示过期，与车端0.5秒控制超时保护不同；
 当前合法报文表示通过格式和字段校验，认证、会话及网络新鲜度机制仍待后续接入。
 
-`QTimer`目标每20毫秒调用`poll_telemetry()`；每次最多尝试8包，
+`QTimer`目标每20毫秒调用`poll_telemetry()`；每次最多进行8次接收尝试，
 有合法状态时更新地图，无新包时仍检查接收间隔。坏包不刷新`last_received_s`。
 定时器和实际显示频率受调度影响；这组人工验收不代替自动测试、跨机或性能验收。
 
 地图逻辑在[desktop_map.py](desktop_map.py)，收包与显示状态在
 [demo_desktop_console.py](demo_desktop_console.py)，坐标转换在
-[map_geometry.py](map_geometry.py)。当前地图显示最近状态，运行轨迹与控制输入随后接入。
+[map_geometry.py](map_geometry.py)。地图已显示最近状态和运行轨迹，控制输入随后接入。
+
+### 运行轨迹
+
+[trajectory.py](trajectory.py)中的`TrajectoryHistory`最多保存1000个世界坐标位置点。
+相邻位置相同则跳过，但A→B→A这样的返回会保留；达到容量后追加新点会移除最旧点。
+轨迹是收到的位置采样连线，不保证UDP没有丢包或乱序。
+
+控制台在每个合法遥测包到达时更新地图与历史，右侧数字使用该轮最后一个合法包。
+无数据或坏包不追加位置。绘制时才用`screen_point()`转换坐标，且先画轨迹、
+再平移和旋转绘图坐标系画小车；`QPainter`变换不会修改`VehicleState`中的世界坐标。
+重绘只读历史，因为一次重绘可能对应多次收包，也可能只是窗口缩放。
+
+2026-11-10用户本机确认：移动留线、停车后轨迹不扩展、调整窗口大小后车辆与轨迹对应、
+停止车端后遥测过期且保留车辆和轨迹。
+完整70项测试及两界面文件语法检查通过；这四项人工验收不增加单元测试计数。

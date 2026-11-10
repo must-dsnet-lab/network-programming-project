@@ -7,18 +7,20 @@ from PySide6.QtWidgets import QWidget
 
 from map_geometry import world_to_screen
 from vehicle_model import VehicleState
-
+from trajectory import TrajectoryHistory
 
 class VehicleMap(QWidget):
     def __init__(self):
         super().__init__()
         self.state: VehicleState | None = None
+        self.history = TrajectoryHistory(max_points=1000)
         self.pixels_per_meter = 50
         self.setMinimumSize(600, 450) #画布最小尺寸
 
     # 收到状态后保存，并请求重绘
     def set_state(self, state: VehicleState) -> None:
         self.state = state
+        self.history.record(state)
         self.update() #update() 告诉 Qt 去调用被重写的 paintEvent()
 
     # 调用坐标转换函数
@@ -34,6 +36,7 @@ class VehicleMap(QWidget):
 
     # Qt 需要刷新画面时调用，负责画网格和车辆
     def paintEvent(self, event):
+        # 只要代码离开了 with 的缩进块，清理就必然会触发
         with QPainter(self) as painter: # 获取画笔对象
             painter.setRenderHint(QPainter.RenderHint.Antialiasing)  # 开启抗锯齿
             painter.fillRect(self.rect(), QColor("#0f172a")) # 填充背景色
@@ -72,6 +75,17 @@ class VehicleMap(QWidget):
                     "等待遥测",
                 )
                 return
+
+            # 先把世界坐标转换为当前画布坐标，再用 drawPolyline() 连成折线。
+            # 轨迹要在小车的平移、旋转之前画，否则整条路径也会跟着小车的坐标系移动。
+            points = self.history.points()
+            if len(points) >= 2:
+                path = QPolygonF(
+                    [self.screen_point(x_m, y_m) for x_m, y_m in points]
+                )
+                painter.setPen(QPen(QColor("#0e7490"), 2))
+                painter.setBrush(Qt.BrushStyle.NoBrush)
+                painter.drawPolyline(path)
 
             # 把画布整个移动到已转换的世界坐标
             painter.translate(self.screen_point(self.state.x_m, self.state.y_m))
