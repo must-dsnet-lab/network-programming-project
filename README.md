@@ -1,94 +1,198 @@
 # network-programming-project
-Group project for Network Programming (MUST).
 
-## 当前可运行内容
+虚拟小车网络遥控 · 网络编程小组项目（MUST）。
 
-- 离线车辆运动与分阶段控制演示。
-- 控制目标的 JSON 编解码与输入校验。
-- 同一台电脑上，两个独立进程通过 UDP 传递控制目标。
-- 本地控制超时保护与按真实时间节奏运行的车辆演示。
-- 同机持续 UDP 车辆演示：非阻塞接收、超时停车、故障锁存后忽略普通控制。
-- 实际车辆状态与故障标志的 JSON 编解码、UDP 传输及独立接收端显示。
-- PySide6桌面遥测观察台：地图位置与朝向、有界运行轨迹、状态读数，以及等待/可用/过期提示。
-- 桌面数值控制输入与“开始／应用”、正常停车、停止发包及发送异常隔离；桌面控制8项自动测试及真实A+B双进程验收通过。
+## 1. 项目概况
 
-## 阅读导航
+### 1.1 当前功能与范围
 
-- [单包UDP收发与图1](#single-udp-flow)
-- [三终端控制、遥测与图2](#three-terminal-flow)
-- [桌面数值控制与图3](#desktop-ui-flow)
+- **运动模型**：车辆状态、单步推进、固定步长轨迹及分阶段控制。
+- **网络与保护**：UDP控制与遥测、报文校验、控制超时停车和故障锁存。
+- **桌面控制**：数值输入、正常停车/停发、地图与轨迹、遥测可用/过期提示。
 
-三张导图分别放在对应的正文旁，图源保留为可编辑的Mermaid代码块。
+当前是无需硬件的本机原型；跨机、认证会话和专家机制仍待接入。
+最终交付目标为Windows EXE；当前仍按下文的源码方式运行，发布包尚未制作。
+本页按开发顺序保留各阶段示例，当前完整桌面操作可直接看[5.1启动](#quick-start)和[5.4数值控制](#desktop-control-acceptance)。
+旧示例中的A/B/C是该例自己的终端标签。
 
-## 运行环境
+### 1.2 阅读导航
 
-Windows PowerShell、Python 3.12。终端演示和核心模型使用 Python 标准库；
-桌面界面开发使用 PySide6，版本记录在 `requirements.txt`。
+| 板块 | 内容 |
+| --- | --- |
+| [2. 环境准备与项目结构](#environment) | 安装、测试、目录职责、包配置与Git协作 |
+| [3. 车辆运动与UDP控制](#motion-control) | 离线运动、单包收发、目标驱动、超时与持续控制 |
+| [4. 遥测回传](#telemetry) | 三终端运行、状态观察与图2 |
+| [5. 桌面控制台](#desktop-console) | 地图/轨迹、运动与坐标图、按钮控制、图3与实现要点 |
+| [6. 导图维护](#diagram-maintenance) | 修改Mermaid、SVG和生成源 |
 
-以下命令均在仓库根目录执行。
+<a id="environment"></a>
 
-## 创建环境与运行测试
+## 2. 环境准备与项目结构
 
-首次使用时创建虚拟环境：
+### 2.1 运行环境
+
+Windows PowerShell、Python 3.12；运行依赖及版本见[pyproject.toml](pyproject.toml)。
+以下命令均在仓库根目录执行，使用虚拟环境中的Python，无需先激活环境。
+
+### 2.2 创建环境与安装依赖
 
 ```powershell
 py -3.12 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -e .
 ```
 
-安装桌面界面依赖：
+这是可编辑安装：首次配置后，日常修改源码会直接生效，无需每次重新安装。
+
+### 2.3 运行测试
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-运行测试：
+最近本机验证为78项测试通过，含8项桌面控制测试；下文八步人工验收另行记录，不增加单元测试计数。
 
-```powershell
-.\.venv\Scripts\python.exe -m unittest -v
-```
+### 2.4 项目结构与职责
 
-当前共 78 项测试，通过时显示 `OK`。运行演示另按下文进行多终端验收。
-
-## 离线演示
-
-```powershell
-.\.venv\Scripts\python.exe demo_simulation.py
-.\.venv\Scripts\python.exe demo_control.py
-```
-
-## 同机 UDP 收发演示
-
-打开两个终端，分别进入仓库根目录。
-
-终端 A 先启动接收端：
-
-```powershell
-.\.venv\Scripts\python.exe demo_udp_receiver.py
-```
-
-看到 `waiting for UDP` 后保持运行，在终端 B 启动发送端：
-
-```powershell
-.\.venv\Scripts\python.exe demo_udp_sender.py
-```
-
-发送端会打印发送字节数、来源地址和目标地址。接收端应打印来源地址，以及：
+代码按职责归类；应用入口组合公共模块，测试与教学示例分别存放。
 
 ```text
-ControlTarget(speed_mps=2.0, heading_rad=0.5)
+src/rover/
+  __init__.py
+  core/           公共状态与运动模型
+  protocol/       消息格式与编解码
+  transport/      网络收发
+  vehicle/        车端保护与运行入口
+  desktop/        窗口、地图与轨迹
+tests/            自动化测试
+examples/         各课独立示例
+reference_image/  导图与可编辑图源
+pyproject.toml    项目安装与构建配置
+requirements.txt 第三方依赖清单
+README.md        使用说明与原理
+.gitignore       Git忽略规则
+LICENSE          项目许可证
 ```
 
-接收端绑定 `127.0.0.1:9999`；发送端绑定端口 `0`，
-由操作系统分配临时源端口。两端打印的来源端口应一致。
+| 模块 | 文件与职责 |
+| --- | --- |
+| `core` | `vehicle_model.py`保存状态并计算单步运动；`control_target.py`定义/应用运动目标；`simulation.py`用于离线多步轨迹。 |
+| `protocol` | `control_codec.py`、`telemetry_codec.py`定义控制/遥测的JSON编解码与字段校验。 |
+| `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误。 |
+| `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理接受记录与超时锁存；`vehicle_runtime.py`组合一次受保护步进；`app.py`运行车端循环。 |
+| `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹。 |
+| `tests` | 13个测试模块，共78项用例；对应验证模型、协议、传输、保护与界面行为。 |
+| `examples` | 8个教学示例，可单独观察离线运动、单包/周期控制、超时及命令行遥测。 |
+| `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
-`127.0.0.1` 用于同一台电脑内通信。接收端收到一条消息后退出；
-再次演示时，先重新启动接收端。等待期间可按 `Ctrl+C` 结束。
+`core`负责运动规则，车端`vehicle`决定何时应用什么目标；同一模型可用于离线示例和联网运行。
+`protocol`负责消息怎样解释，`transport`负责消息怎样收发。目录本身不规定执行顺序，运行顺序由函数调用决定。
+
+#### 2.4.1 两个应用入口
+
+| 模块 | 原文件 | 作用 |
+| --- | --- | --- |
+| `rover.desktop.app` | `demo_desktop_console.py` | 创建桌面窗口、Socket与定时器，连接用户操作和遥测显示。 |
+| `rover.vehicle.app` | `demo_udp_vehicle_loop.py` | 维护车辆/保护状态，循环收包、步进并回传遥测。 |
+
+两个`app.py`用完整模块名区分。它们保留原程序逻辑，不是另写一套程序。
+当前双终端完整命令见[5.1](#quick-start)；示例按本页命令使用`-m examples.示例名`。
+单独运行测试时，例如`.\.venv\Scripts\python.exe -m unittest -v tests.test_vehicle_model`。
+不要直接运行`src/`内的文件。
+
+### 2.5 项目安装配置
+
+#### 2.5.1 为什么现在增加pyproject.toml
+
+早期所有脚本在根目录，直接运行脚本时Python可以找到同目录的其他模块，因此当时没有项目安装配置。
+本次采用`src/rover`包布局，通过[pyproject.toml](pyproject.toml)声明源码位置、依赖和构建方式，统一两端的导入与启动。
+这项配置服务于当前包布局，并非所有Python脚本都必须有它。[Python包布局说明](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/)
+
+| 配置 | 本项目含义 |
+| --- | --- |
+| `[build-system]` | 使用`setuptools.build_meta`构建，构建工具要求`setuptools>=64`。 |
+| `[project]`的`name`、`version` | 安装名称`dsnet-rover`，当前项目版本`0.1.0`；版本号不表示完成百分比。 |
+| `description`、`readme` | 简介及用于项目说明的README文件。 |
+| `requires-python` | 声明Python最低版本3.12；目前实际验证环境为3.12。 |
+| `dependencies` | 运行依赖为`PySide6==6.12.0`，与构建工具依赖分开。 |
+| `[tool.setuptools.packages.find]` | 从`src`收集`rover`及全部子包；测试、示例和参考图不作为应用包收集。 |
+
+`dsnet-rover`是安装名称，`rover`是代码导入名称，`src`是源码存放区。
+例如`from rover.core.vehicle_model import VehicleState`，导入名称不包含`src`。
+
+#### 2.5.2 可编辑安装与依赖清单
+
+2.2中的`pip install -e .`表示将当前项目以可编辑方式安装到所用Python环境，同时处理项目声明的依赖。
+修改现有源码后，下次运行直接使用修改；调整依赖或安装配置后，应重新执行安装命令。
+`-m rover.desktop.app`会按包路径找到模块，以主程序方式执行并进入其`main()`。[pip本地安装说明](https://pip.pypa.io/en/stable/topics/local-project-installs/)
+
+[requirements.txt](requirements.txt)继续保留第三方依赖清单；两处目前均固定PySide6 6.12.0，修改依赖时须同步。
+只执行`pip install -r requirements.txt`会安装第三方库，不能替代本项目的包安装。
+当前可编辑安装及wheel构建均依赖Python环境，最终独立Windows EXE仍需单独制作。
+
+#### 2.5.3 空的__init__.py为什么也要提交
+
+`rover`及五个子包、`tests`、`examples`各有一个空`__init__.py`，共8个。
+它们明确本项目采用的普通Python包边界，支持完整包导入、测试定位和示例模块启动。
+这些是源码文件，应提交；不需要往里面填`main()`，窗口和Socket仍由应用入口创建。
+
+### 2.6 Git协作与目录迁移
+
+| 提交到仓库 | 用途 |
+| --- | --- |
+| `src/rover/`，含全部`__init__.py` | 应用源码与包结构 |
+| `tests/`、`examples/` | 验证与教学复现 |
+| `pyproject.toml`、`requirements.txt` | 项目安装配置与依赖版本 |
+| `.gitignore`、`README.md`、`LICENSE` | 忽略规则、说明与许可证 |
+| `reference_image/`中的所需图片/图源 | README配图及后续修改依据 |
+
+本机环境、缓存和构建产物按`.gitignore`排除；队友从源码与配置重新生成自己的环境。
+个人本地环境笔记按`.gitignore`排除；本页只保留组员复现所需信息。
+
+迁移作为原仓库的新提交处理：先核对文件移动、修改、图片改名/删除，再在功能分支暂存并审查、提交、推送，按PR流程合入`main`。
+旧路径会退出新版本，新路径进入新版本；仓库地址和历史提交保留，不用重新创建仓库。
+队友拉取迁移后的版本后，先按2.2在自己的虚拟环境执行可编辑安装，再使用新的模块入口启动。
+暂存时需要同时覆盖新路径与旧路径删除记录；`git add -A -- <已核对的路径>`可记录对应新增、修改和删除。[Git暂存说明](https://git-scm.com/docs/git-add)
+
+<a id="motion-control"></a>
+
+## 3. 车辆运动与UDP控制
+
+### 3.1 离线运动与分阶段控制
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.demo_simulation
+.\.venv\Scripts\python.exe -m examples.demo_control
+```
+
+`apply_target()`更新速度与绝对朝向，`advance()`根据步长计算新位置；
+`run_steps()`重复推进并保存初始状态及每步结果。
+运动公式与世界/画布坐标关系见[5.3运动原理图](#vehicle-motion-coordinates)。
+
+### 3.2 同机单包UDP收发
+
+本例终端A是接收端，终端B是发送端。先在A运行：
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.demo_udp_receiver
+```
+
+看到`waiting for UDP`后，在B运行：
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.demo_udp_sender
+```
+
+接收端应打印来源地址及`ControlTarget(speed_mps=2.0, heading_rad=0.5)`。
+接收端绑定`127.0.0.1:9999`，发送端绑定端口`0`，由系统分配临时源端口。
+两端打印的来源端口应一致；发送字节数仅表示本机发送结果，不是接收确认。
+
+接收端处理一条消息后退出；再次演示须先重启接收端，等待时可按`Ctrl+C`结束。
 
 <a id="single-udp-flow"></a>
 
-### 图 1：一条控制消息怎样到达接收端
+#### 3.2.1 图1：一条控制消息怎样到达接收端
 
-左侧深色竖条顶格标明发送端／接收端；右侧集中列出函数、参数与关键变量。每端只保留一个内容框，减少外框留白。
+`packet`由`recvfrom()`从Socket接收队列取得，`peer`是来源地址；再由`decode_target()`校验和还原。
 
 ```mermaid
 %%{init: {"flowchart": {"wrappingWidth": 390, "nodeSpacing": 10, "rankSpacing": 16, "padding": 8, "curve": "linear", "subGraphTitleMargin": {"top": 0, "bottom": 0}}}}%%
@@ -111,41 +215,24 @@ flowchart TB
 
     style TX fill:#f8fafc,stroke:#94a3b8
     style RX fill:#f8fafc,stroke:#94a3b8
-    classDef role fill:#1e3a8a,stroke:#1e3a8a,color:#fff,font-size:16px,font-weight:bold;
+    classDef role fill:#1e3a8a,stroke:#1e3a8a,color:#f4fbff,font-family:Microsoft YaHei,font-size:24px,font-weight:900,line-height:26px,text-shadow:1.5px 2px 0 #5685c4,-webkit-text-stroke:0.3px #d8edff;
     class tx_role,rx_role role;
 ```
 
-- 从上到下只看一条主线：目标对象 → 编码字节 → UDP 发送与接收 → 还原目标对象。
-- 发送端绑定临时来源端口；接收端先绑定 `address = ("127.0.0.1", 9999)` 并等待。`destination` 对应该接收地址。
-- `packet` 是 UTF-8 JSON 载荷字节；`peer` 是 Socket 返回的来源地址，不是 JSON 里的字段。
-- 此图对应单包演示的阻塞接收。`sent` 是本机发送字节数，不是接收确认；当前演示没有回包。
+对应源码：[发送](examples/demo_udp_sender.py)、[接收](examples/demo_udp_receiver.py)、[UDP收发](src/rover/transport/udp_transport.py)、[控制编解码](src/rover/protocol/control_codec.py)。
 
-对应源码：[发送演示](demo_udp_sender.py)、[接收演示](demo_udp_receiver.py)、
-[收发函数](udp_transport.py)、[控制编解码](control_codec.py)。
+### 3.3 UDP目标驱动车辆模型
 
-## UDP 控制目标驱动车辆模型
-
-两个终端均进入仓库根目录。
-
-终端 A 启动车辆演示接收端：
+先在终端A运行：
 
 ```powershell
-.\.venv\Scripts\python.exe demo_udp_vehicle.py
+.\.venv\Scripts\python.exe -m examples.demo_udp_vehicle
 ```
 
-看到等待提示后，终端 B 运行发送端：
+再在终端B运行`-m examples.demo_udp_sender`，完整命令见3.2。初始位置由接收端的`VehicleState()`创建；
+发送端只提供目标速度和朝向。
 
-```powershell
-.\.venv\Scripts\python.exe demo_udp_sender.py
-```
-
-初始车辆状态由接收端通过 `VehicleState()` 创建，位置位于原点。
-发送端提供目标速度与绝对朝向。
-
-应用目标后，以 `0.02` 秒为步长推进 50 步，共 1 秒模拟时间；
-轨迹包含初始时刻，共 51 个状态。
-
-发送速度 `2.0 m/s`、朝向 `0.5 rad` 时，关键输出为：
+接收目标后以`0.02 s`推进50步，即1秒模拟时间，轨迹含初始帧共51个状态：
 
 ```text
 states=51
@@ -153,135 +240,85 @@ start: x=0.0000m y=0.0000m
 end: sim_t=1.00s x=1.7552m y=0.9589m
 ```
 
-这是收到一条消息后的离线模拟，1 秒模拟时间可以很快计算完成。
+这是收到一条消息后的离线计算，1秒模拟时间可以很快算完。
 
-## 控制超时与定时运行演示
-
-在一个终端中运行：
+### 3.4 控制超时与定时运行
 
 ```powershell
-.\.venv\Scripts\python.exe demo_watchdog_loop.py
+.\.venv\Scripts\python.exe -m examples.demo_watchdog_loop
 ```
 
-脚本在启动时构造一次速度为 `2.0 m/s`、朝向为 `0 rad` 的已接受目标，
-随后以 `0.02 s` 固定模拟步长循环更新车辆，并使用单调时钟计时与等待。
-控制记录不再更新时，第一次检查到距接受时刻已达 `0.5 s` 就返回停车目标；
-约 `1 s` 后结束演示。输出包括速度变化及最终位置。
+脚本构造一次`2.0 m/s、0 rad`目标，以`0.02 s`模拟步长运行；
+约0.5秒后停车，约1秒后结束，停车后坐标不变。
 
-- `accepted_at_s` 记录最后一次接受有效控制的时刻，决定控制是否超时。
-- `started_at_s` 记录演示启动时刻，决定是否达到总演示时长。
-- `wall_t` 是实际经过时间，`sim_t` 是累计模拟时间；调度会使两者不同。
+| 时间变量 | 用途 |
+| --- | --- |
+| `accepted_at_s` | 最后接受有效控制的时刻，用于判断控制超时 |
+| `started_at_s` | 程序启动时刻，用于计算总运行时长 |
+| `wall_t` / `sim_t` | 实际经过时间 / 累计模拟时间；两者可能因调度不同 |
 
-验收时观察速度从 `2.0` 变为 `0.0`，且停车记录与最终记录的 `x` 相同。
-具体停车时刻、模拟总时长和终点位置以实际输出为准，不要求恰好为 `0.500 s`、
-`1.000 s` 或 `1.000 m`。调度延迟可能推迟超时检查，此演示不提供硬实时保证。
+### 3.5 持续接收、周期控制与故障锁存
 
-本脚本使用本地构造的控制目标验证运行节奏与超时行为；实际 UDP 收发见下方演示。
-
-## 持续 UDP 车辆与故障锁存演示
-
-两个终端均进入仓库根目录。终端 A 启动持续接收端：
+先在终端A启动持续车端：
 
 ```powershell
-.\.venv\Scripts\python.exe demo_udp_vehicle_loop.py
+.\.venv\Scripts\python.exe -m rover.vehicle.app
 ```
 
-看到等待提示后，终端 B 运行原单包发送器：
+在终端B选择一种发送方式。单条目标用于观察接受一次后的超时停车：
 
 ```powershell
-.\.venv\Scripts\python.exe demo_udp_sender.py
+.\.venv\Scripts\python.exe -m examples.demo_udp_sender
 ```
 
-首次目标被 `accepted`，车辆开始运动。停止发送后，接收端首次检查到距最后一次接受
-有效控制已达 `0.5 s` 时停车，打印 `fault_latched=True`。
-此时在 B 再运行一次发送器，应显示 `ignored`，速度仍为零，坐标与停车记录相同。
-
-接收端每轮最多尝试接收一个报文，无数据立即继续；无效报文打印 `rejected`，
-仍会执行本轮保护和运动更新。每步模拟推进 `0.02 s`，循环使用单调时钟安排等待。
-
-`wall_t` 从接收端启动时累计，包含首次发送前的等待；坐标是在本轮推进后打印，
-因此首次接受目标的日志已包含一次模拟位移。日志时间有舍入及调度误差，不表示硬实时保证。
-
-按 `Ctrl+C` 结束接收端。本阶段故障后通过人工重启接收端重新演示，
-普通控制包不能解除锁存。当前仅为本机教学原型，显式使能、身份认证、
-会话与序号和新鲜度窗口将在后续实现。遥测回传见下方三终端演示。
-
-## 周期发送与控制时效刷新
-
-先重启上述持续接收端，清除上一轮的故障锁存；然后在另一个终端运行：
+周期目标每约0.1秒一条，共20条：
 
 ```powershell
-.\.venv\Scripts\python.exe demo_udp_stream_sender.py
+.\.venv\Scripts\python.exe -m examples.demo_udp_stream_sender
 ```
 
-发送器使用同一个 Socket，每隔约 `0.1 s` 发送一次相同控制目标，共20次，
-首末发送约相隔 `1.9 s`。控制台的 `1/20` 等数字只表示发送进度，不是报文协议序号。
+比较两种方式时先重启车端，清除上一轮锁存。观察重点：
 
-每次目标被接受都会更新接受时间，因此持续发送期间，车辆应保持运动超过
-首次接受后的 `0.5 s`；发送结束后，接收端按最后一次接受时间计算超时并停车锁存。
-验收时比较接收端首条、末条接受记录及停车记录，不能仅凭发送字节数认定已送达。
+1. 首次目标被`accepted`后开始运动；新有效目标刷新接受时间。
+2. 距最后接受已达0.5秒时停车并设置`fault_latched=True`；重发普通目标显示`ignored`，不能解除锁存。
+3. 无包时返回`None`，坏包抛出`ValueError`并打印`rejected`；保护与仿真仍继续。车端每轮只推进一次。
+4. `wall_t`包含首次控制前的等待；日志在本轮推进后打印，因此首条接受记录的坐标可能已非零。
 
-## 三终端控制与遥测回传
+发送日志的`1/20`表示发送进度，不是协议序号。车端用`Ctrl+C`退出。
+本页时刻均受系统调度影响，不要求恰好在某个毫秒或固定终点停车。
 
-控制发送器将目标发往车端 `127.0.0.1:9999`；车端使用另一个 UDP Socket，
-将实际状态发往遥测接收端 `127.0.0.1:10000`。三个程序均在同一台电脑运行。
-遥测包含位置、绝对朝向、实际速度和 `fault_latched`，来自车端本轮更新后的状态。
+<a id="telemetry"></a>
 
-三个终端均进入仓库根目录。先结束旧车辆程序，按以下顺序启动。
+## 4. 遥测回传
 
-终端 A，启动遥测接收端：
+### 4.1 三终端启动
 
-```powershell
-.\.venv\Scripts\python.exe demo_udp_telemetry_receiver.py
-```
+三个终端按以下顺序启动，先结束旧车端和旧接收器：
 
-终端 B，启动持续车辆程序：
+| 终端 | 职责 | 命令 |
+| --- | --- | --- |
+| A | 接收遥测 | `.\.venv\Scripts\python.exe -m examples.demo_udp_telemetry_receiver` |
+| B | 车辆仿真 | `.\.venv\Scripts\python.exe -m rover.vehicle.app` |
+| C | 周期控制 | `.\.venv\Scripts\python.exe -m examples.demo_udp_stream_sender` |
 
-```powershell
-.\.venv\Scripts\python.exe demo_udp_vehicle_loop.py
-```
+C向B的`127.0.0.1:9999`发控制；B使用另一个Socket向A的`127.0.0.1:10000`回传实际位置、朝向、速度和故障标志。
 
-终端 C，发送 20 条周期控制：
+### 4.2 观察与核对
 
-```powershell
-.\.venv\Scripts\python.exe demo_udp_stream_sender.py
-```
+- 首次控制前为原点、零速、未锁定；从未接受控制时，等待本身不触发当前锁存。
+- C发送期间位置变化；C结束后B超时停车，A继续收到零速、已锁定状态。再次发送仍应被忽略。
+- 保持B运行，只重启A，可以再次收到当前状态；若B已退出，只重启A会等待。
+- B每次启动创建新的原点状态；显示端重启不清除车端故障。
+- 遥测目标周期为`0.05 s`，终端A日志限速，不能用显示行数推算发送频率；遥测发送失败不停止车端保护循环。
 
-按以下步骤验收，并保留 A、B 对应同一次车辆运行的日志：
-
-1. 发送控制前，A 应显示原点、零速度和 `fault_latched=False`。
-   从未接受控制时，启动等待本身不会触发当前故障锁存。
-2. 周期发送期间，B 显示 `accepted`，A 显示位置变化、速度 `2.0 m/s`、
-   朝向 `0.5 rad` 和 `fault_latched=False`。
-3. 停止发送后，B 按最后一次有效控制接受时间检查超时并停车；
-   A 随后显示零速度、`fault_latched=True`，后续坐标保持不变。
-   最终坐标随实际循环调度变化，不固定要求某个数值。
-4. 保持 B 运行，再在 C 运行一次周期发送器；B 应显示 `ignored`，
-   A 仍显示锁定停车，不能因普通新控制自动恢复。
-5. 保持 B 运行，只在 A 按 `Ctrl+C` 退出并重新运行接收端；
-   A 应再次收到当前车辆状态。重启显示端不清除车端故障。
-
-若 B 的车辆程序已经退出，只重启 A 时会停留在等待提示：此时没有车端继续发送，
-A 不会自行生成车辆状态，需要重新启动 B。当前虚拟车进程每次启动都会创建新的原点状态，
-与仅重启 A 并保留车端状态不同。若 A 一直运行而 B 退出，旧日志只是最后一次收到的状态；
-当前终端演示尚无遥测过期提示，后续控制台阶段补充。
-
-车端仍按 `0.02 s` 固定模拟步长推进；遥测目标发送周期为 `0.05 s`（20 Hz），
-每轮最多尝试一次，落后时跳过积压。实际发送节奏受系统调度影响，不提供硬实时保证。
-遥测发送异常只在发送支路记录，错误日志最多每秒一次，后续车辆保护循环继续执行。
-
-A 的普通状态日志最多约每秒四行，收到故障标志变化时立即显示；
-因此显示行数不能用来测量实际遥测发送频率。A 打印的来源地址属于车端专用遥测 Socket，
-与 C 的控制发送端口不同；程序重启后临时来源端口可能变化。
-
-暂时没有可读遥测时，接收接口返回 `None`，不会伪造全零状态；
-无效报文抛出 `ValueError`，该报文已经从接收队列取走，接收程序可继续处理后续报文。
+无包`None`不代表全零状态；坏报文已被取出并抛出`ValueError`，程序可以继续处理后续报文。
+命令行接收器没有过期提示，桌面窗口的过期提示见第5节。
 
 <a id="three-terminal-flow"></a>
 
-### 图 2：三个终端怎样控制小车并回传状态
+### 4.3 图2：三个终端怎样控制并回传状态
 
-按从上到下的 C → B → A 阅读。加粗的是函数名，参数与变量分行列出；跨端箭头只标通信方式和目标端口。
+按C → B → A阅读；加粗为函数名，参数与变量分行，跨端箭头标明通道和端口。
 
 ```mermaid
 %%{init: {"flowchart": {"wrappingWidth": 380, "nodeSpacing": 22, "rankSpacing": 24, "padding": 10, "curve": "linear", "subGraphTitleMargin": {"top": 10, "bottom": 16}}}}%%
@@ -313,113 +350,95 @@ flowchart TB
     SG_B ---->|"遥测 UDP 10000"| SG_A
 ```
 
-- C 提供期望目标；B 更新实际 `state` 后，将它与 `guard.fault_latched` 组合成 `snapshot`；A 只显示收到的状态。
-- 控制发送的 `destination` 对应 B 的 `address`（9999）；遥测发送的 `telemetry_address` 对应 A 的接收地址（10000）。完整调用参数见下方源码链接。
-- `incoming` 是本轮收到的目标或 `None`。B 在收包前、收包后都检查保护，图中合并展示；超时锁存后，普通新目标仍会被忽略。
-- 暂无报文返回 `None`，坏报文抛出 `ValueError`。B 仍继续保护、仿真及按期遥测；A 暂无数据时等待，不伪造全零状态。
-- B 用独立的 `telemetry_sock` 发遥测，因此 A 的 `peer` 是车端遥测来源地址，与 B 收到控制时的 `peer` 不同。
+A看到的`peer`属于车端遥测Socket，与C的控制来源端口不同。
+对应源码：[车辆运行环](src/rover/vehicle/app.py)、[保护状态](src/rover/vehicle/control_guard.py)、[遥测编解码](src/rover/protocol/telemetry_codec.py)。
 
-对应源码：[周期控制发送](demo_udp_stream_sender.py)、[车辆运行环](demo_udp_vehicle_loop.py)、
-[遥测接收显示](demo_udp_telemetry_receiver.py)、[保护状态](control_guard.py)、[遥测快照与编解码](telemetry_codec.py)。
+<a id="desktop-console"></a>
 
-## 桌面遥测观察台
+## 5. 桌面控制台
 
-以下保留已验收的观察模式：A使用桌面窗口，B运行车端，C发送控制。
-当前分支已加入桌面数值输入与按钮；使用桌面按钮时由A接替C，不同时运行旧C发送器。
-三个控制按钮与发送异常隔离已通过8项自动测试；2026-11-11用户已完成双进程人工验收，步骤与结果见下方，原理见[图3](#desktop-ui-flow)。
-先关闭旧的命令行遥测接收器或其他观察台，避免同时占用10000端口；
-重新演示时也要先结束旧车端，清除上一次故障锁存。
+<a id="quick-start"></a>
 
-终端A启动窗口：
+### 5.1 启动与状态显示
+
+桌面A接替上一节的遥测A和发送C，当前完整操作只需A＋B。
+先退出旧程序，避免端口冲突及多个控制源覆盖目标。
+
+终端A打开桌面：
 
 ```powershell
-.\.venv\Scripts\python.exe demo_desktop_console.py
+.\.venv\Scripts\python.exe -m rover.desktop.app
 ```
 
-随后终端B运行`demo_udp_vehicle_loop.py`，终端C运行`demo_udp_stream_sender.py`。
-二者完整命令见上方三终端演示。窗口展示车端通过UDP回传的状态，不自行推进车辆模型。
+终端B在另一个终端运行车端：
 
-2026-11-09用户在本机完成以下六项人工验收，并提供等待、原点、锁定和过期截图：
+```powershell
+.\.venv\Scripts\python.exe -m rover.vehicle.app
+```
 
-1. 只启动窗口：显示“等待遥测”，没有车辆，读数为占位符。
-2. 启动B：原点出现车辆，显示“遥测可用”。
-3. C周期发送：车辆向右上方移动，位置、朝向、速度读数更新。
-4. C结束：车端超时停车，“保护”显示“已锁定”，遥测仍可用。
-5. 结束B：约1.0秒未收到合法遥测后显示“遥测过期”，保留最后位置和读数。
-6. 窗口可正常拖动、调整大小和关闭。
+只启动A时显示“等待遥测”，没有车辆；B启动后出现原点车辆并显示“遥测可用”。
+约1秒无合法遥测后提示“遥测过期”，保留最后车辆、轨迹和读数；它们此时仅代表最后收到的状态。
 
-界面等待/可用/过期来自本地接收情况，保护锁存来自车端回传的`fault_latched`，
-两者独立。过期时读数只代表最近一次收到的状态，不能证明车辆此刻仍在该位置或具有该速度。
-`telemetry_timeout_s=1.0`只决定界面何时提示过期，与车端0.5秒控制超时保护不同；
-当前合法报文表示通过格式和字段校验，认证、会话及网络新鲜度机制仍待后续接入。
+`status`表示遥测情况，`fault_latched`来自车端保护，`control_status`表示本地发送情况，三者独立。
+当前地址固定为本机回环，跨机配置尚未接入。
 
-`QTimer`目标每20毫秒调用`poll_telemetry()`；每次最多进行8次接收尝试，
-有合法状态时更新地图，无新包时仍检查接收间隔。坏包不刷新`last_received_s`。
-定时器和实际显示频率受调度影响；这组人工验收不代替自动测试、跨机或性能验收。
+### 5.2 地图与运行轨迹
 
-地图逻辑在[desktop_map.py](desktop_map.py)，收包与显示状态在
-[demo_desktop_console.py](demo_desktop_console.py)，坐标转换在
-[map_geometry.py](map_geometry.py)。地图已显示最近状态和运行轨迹；当前分支已接入数值输入、按钮首发与已应用目标的周期发送，正常停车与停止发包操作已实现，并通过本机双进程人工验收。
+`TrajectoryHistory`保存最多1000个世界坐标位置，只跳过相邻重复；A→B→A仍保留。
+每个合法遥测包都保存位置，重绘只读历史；窗口变尺寸后重新换算像素，原始位置不变。
 
-### 运行轨迹
+绘制时先画轨迹，再平移和旋转车头，避免整条轨迹跟着车辆转动。
+地图目前固定比例，超出视野时车辆会被裁切；平移、缩放和跟随后续完善。
 
-[trajectory.py](trajectory.py)中的`TrajectoryHistory`最多保存1000个世界坐标位置点。
-相邻位置相同则跳过，但A→B→A这样的返回会保留；达到容量后追加新点会移除最旧点。
-轨迹是收到的位置采样连线，不保证UDP没有丢包或乱序。
+<a id="vehicle-motion-coordinates"></a>
 
-控制台在每个合法遥测包到达时更新地图与历史，右侧数字使用该轮最后一个合法包。
-无数据或坏包不追加位置。绘制时才用`screen_point()`转换坐标，且先画轨迹、
-再平移和旋转绘图坐标系画小车；`QPainter`变换不会修改`VehicleState`中的世界坐标。
-重绘只读历史，因为一次重绘可能对应多次收包，也可能只是窗口缩放。
+### 5.3 车辆运动与画布坐标
 
-2026-11-10用户本机确认：移动留线、停车后轨迹不扩展、调整窗口大小后车辆与轨迹对应、
-停止车端后遥测过期且保留车辆和轨迹。
-完整70项测试及两界面文件语法检查通过；这四项人工验收不增加单元测试计数。
+沿图阅读：车端计算世界运动 → 桌面保存世界状态 → 换算画布坐标并绘制。
+世界位置用米、朝向用弧度；画布原点在左上，世界原点映射到地图中心。
+世界+Y向上、画布+Y向下，因此像素Y和绘制角度需转换。`update()`只请求Qt稍后重绘，不推进车辆。
+
+[![车辆运动、世界坐标与画布显示的关系](reference_image/diagrams/04-vehicle-motion.svg)](reference_image/diagrams/04-vehicle-motion.svg)
+
+[可缩放SVG](reference_image/diagrams/04-vehicle-motion.svg) · [高清PNG](reference_image/diagrams/04-vehicle-motion.png)
+
+对应源码：[运动模型](src/rover/core/vehicle_model.py)、[应用目标](src/rover/core/control_target.py)、[运行组合](src/rover/vehicle/vehicle_runtime.py)、[坐标换算](src/rover/desktop/map_geometry.py)、[地图绘制](src/rover/desktop/desktop_map.py)。
 
 <a id="desktop-control-acceptance"></a>
 
-### 桌面按钮控制：双进程验收（2026-11-11已通过）
+### 5.4 数值控制与八步验收
 
-本模式只运行桌面A和车端B。先结束旧桌面窗口、旧车端、旧命令行遥测接收器及旧C发送器，避免端口占用或多个控制源覆盖目标。
+输入朝向使用度，发送前转为弧度；只编辑输入不会改变已应用目标。
 
-A在仓库根目录启动：
-
-```powershell
-.\.venv\Scripts\python.exe demo_desktop_console.py
-```
-
-B在另一个终端、同一仓库根目录启动：
-
-```powershell
-.\.venv\Scripts\python.exe demo_udp_vehicle_loop.py
-```
-
-| 步骤 | 用户已确认的实际结果 |
+| 操作 | 行为 |
 | --- | --- |
-| 1 | A等待；启动B后原点车辆、遥测可用、未锁定。 |
-| 2 | 1.0 m/s、45°控制后向右上移动，显示0.785 rad。 |
-| 3 | 正常停车后速度0、位置保持，未锁定且遥测仍可用。 |
-| 4 | 重新设置1.0 m/s、0°并应用后恢复向右运动。 |
-| 5 | 停止发包后车端停车锁存，遥测仍可用。 |
-| 6 | 锁定后重发仍不移动，B打印ignored；位置维持约(12.521, 5.501)m。 |
-| 7 | 关闭B后A提示遥测过期，保留车辆状态和轨迹。 |
-| 8 | 用窗口×关闭A后，A/B均可重新启动，新车端原点等待，桌面不自动发送。 |
+| 开始／应用 | 保存当前输入，立即发送并继续周期发送 |
+| 正常停车 | 正在发送时改发零速目标，保留已应用朝向；未发送或已停发时不启动发送 |
+| 停止发包 | 停止控制发送，遥测接收继续；车端按最后有效控制计时停车 |
+| 关闭 | A用窗口“×”，B在终端按Ctrl+C |
 
-0.5秒与1秒都从各自最后一次有效接收计算，实际显示允许少量调度延迟；不要求固定终点坐标。
-重新演示前先退出旧A，再重新启动B，避免旧A的周期控制被新车端立即接受。
-当前尚未接入会话与重连未使能机制，本次重启只检查资源释放和初始等待。
-用户已提供八张截图和关闭/重启确认；这8步人工验收独立于8项桌面控制单元测试，不增加完整78项测试的计数。
-桌面A当前请用窗口“×”关闭；Ctrl+C可能只打印KeyboardInterrupt而保留窗口，应用内退出按钮后续再加。
-地图目前采用固定比例，超出画布的车辆会被裁切；读数与遥测仍正常。平移、缩放或自动跟随后续完善。
+2026-11-11用户已完成以下真实A＋B验收：
+
+| 步骤 | 操作与已确认结果 |
+| --- | --- |
+| 1 | 只有A时等待；B启动后原点车辆、遥测可用、未锁定。 |
+| 2 | 设1.0 m/s、45°并应用，车辆向右上移动，朝向显示约0.785 rad。 |
+| 3 | 正常停车，速度为0、位置保持；保护未锁定，遥测仍可用。 |
+| 4 | 重新设1.0 m/s、0°并应用，车辆恢复向右运动。 |
+| 5 | 停止发包，距最后接受控制约0.5秒后停车锁存，遥测仍可用。 |
+| 6 | 锁定后重新应用，B打印ignored，位置不变；随后停止发包。 |
+| 7 | 结束B，约1秒后A提示遥测过期，车辆、轨迹和最后读数保留。 |
+| 8 | 关闭旧A/B后重启，端口正常释放，新车端原点等待，桌面不自动发送。 |
+
+故障锁存后，普通目标及正常停车都不能解除锁存。
+重新演示应先退出旧A再重启B，避免旧A的周期目标被新车端接受。
+当前A的Ctrl+C可能只打印异常而不退出，请用窗口“×”；正式会话与重连未使能机制后续接入。
 
 <a id="desktop-ui-flow"></a>
 
-### 图 3：桌面数值控制与遥测关系
+### 5.5 图3：桌面数值控制与遥测关系
 
-这里是桌面按钮控制模式：由A接替旧C发送器，只运行桌面A与车端B。
-按从上到下的 **A控制发送 → B接收并回传 → A遥测显示** 阅读。
-三个框表示收发职责，实际只有桌面A和车端B两个进程；顶部、底部属于同一个桌面窗口。
-框内加粗的是函数名，普通行用“参数／变量”注明含义；跨端箭头只标通信方式与目标端口。
+按A发送 → B计算并回传 → A显示阅读；上下两个A属于同一个桌面进程。
 
 ```mermaid
 %%{init: {"flowchart": {"wrappingWidth": 380, "nodeSpacing": 22, "rankSpacing": 24, "padding": 10, "curve": "linear", "subGraphTitleMargin": {"top": 10, "bottom": 16}}}}%%
@@ -456,75 +475,58 @@ flowchart TB
     class car_receive,car_step,car_send vehicle;
 ```
 
-- `current_target`是桌面已应用的期望目标；`state`是车端仿真状态；`latest.state`是桌面最近收到的车端状态。
-- 桌面用`control_sock`向`control_address`（车端9999端口）发送控制；用`self.sock`在`listen_address`（本机10000端口）接收遥测。
-- `control_timer`约100ms调用`send_control()`，`timer`约20ms调用`poll_telemetry()`；接收轮询独立运行，不必先点击发送。使用桌面控制时，不同时运行旧C发送器。
+### 5.6 关键实现要点
 
-<details>
-<summary>展开：变量、定时器、轨迹与测试细节</summary>
+#### 5.6.1 三种数据
 
-#### 先分清三种数据
-
-| 数据 | 对应变量 | 什么时候改变 |
+| 数据 | 变量 | 改变时机 |
 | --- | --- | --- |
-| 正在编辑的输入值 | `speed_input.value()`、`heading_input.value()` | 编辑数值时改变；朝向输入单位为度 |
-| 最近一次已应用的目标 | `current_target`，类型为`ControlTarget` | 点击“开始／应用”时从输入重建；正常停车时替换为零速目标；周期发送读取它 |
-| 最近收到的车端仿真状态 | `latest.state`，随后保存为`map.state` | 合法遥测到达时改变；地图和实际读数使用它，不使用输入框推算 |
+| 输入草稿 | `speed_input / heading_input` | 编辑数值时改变 |
+| 已应用目标 | `current_target` | 点击应用，或正在发送时执行正常停车 |
+| 实际状态 | `state / latest.state / map.state` | 车端推进后回传，桌面使用收到的状态绘图 |
 
-编辑输入只修改草稿；点击应用会将草稿保存为`current_target`。正常停车也会替换它：速度为0，保留已应用朝向。
-发送目标也不会直接移动地图上的车辆：车端先计算，桌面再通过遥测得知结果。
+`sent`只是本机发送字节数，不是车端接收或执行确认。
 
-#### 两个定时器、两个Socket各管什么
+#### 5.6.2 两个定时器与两个Socket
 
-| 对象 | 配置与启用时机 | 职责 |
-| --- | --- | --- |
-| `self.timer` | 初始化时`start(20)` | 调用`poll_telemetry()`；每轮最多8次接收尝试，无包也检查显示是否过期 |
-| `self.control_timer` | 初始化只`setInterval(100)`；点击应用后`start()` | 后续`timeout`调用`send_control()`，约100ms一包；不是另一个线程 |
-| `self.sock` | 监听`listen_address = ("127.0.0.1", 10000)` | 接收遥测，来源地址记为`peer` |
-| `self.control_sock` | 绑定`("127.0.0.1", 0)`临时源端口 | 向`control_address = ("127.0.0.1", 9999)`发送控制 |
+| 对象 | 配置与职责 |
+| --- | --- |
+| `self.timer` | 初始化启动，约20ms轮询遥测；每轮最多8次接收尝试 |
+| `self.control_timer` | 初始不启动；应用后约100ms发送一次已应用目标 |
+| `self.sock` | 监听本机10000端口，接收遥测 |
+| `self.control_sock` | 使用临时源端口，向车端9999端口发送控制 |
 
-`start_control()`先保存目标，再启动控制定时器，最后主动调用一次`send_control()`立即首发。
-这个顺序是因为`send_control()`会检查`isActive()`；未启动时直接返回，
-不是为了把发送耗时算进计时。定时器配置间隔也不保证严格实时。
+`start_control()`先保存目标、启动控制定时器，再立即首发，因为`send_control()`会检查定时器是否活动。
+收到合法遥测才刷新`last_received_s`；无包或坏包都不延长有效显示时间。
 
-#### 遥测、轨迹与重绘的边界
+#### 5.6.3 FakeSocket测试
 
-- `latest`是本轮快照`TelemetrySnapshot`，`latest.state`才是其中的`VehicleState`。每个合法包更新`last_received_s`并调用`map.set_state()`；循环结束后，右侧`values`使用本轮最后一个合法包。
-- `status`显示等待/可用/过期；`control_status`显示本地发送情况，二者独立。`fault_latched`来自车端遥测。`sent`只表示本机发送字节数，不是车端收到或执行确认。
-- 无报文返回`None`，坏报文抛出`ValueError`；两者都不刷新合法遥测时效、不追加轨迹。约1秒无合法遥测时保留最后位置并提示过期；这与车端0.5秒控制超时停车是两个机制。车端从未接受控制时保持初始等待，控制超时从最后一次接受目标计算。
-- `history.record(state)`保存世界坐标，最多1000点，只跳过相邻重复；A→B→A仍保留。`update()`请求稍后重绘，多次请求可能合并，窗口缩放也会重绘，所以不能在`paintEvent()`里才记录轨迹。
-- 绘制时由`screen_point() → world_to_screen()`转换当前像素坐标；先画轨迹，再平移、旋转画车辆。绘图变换不改写世界状态，GUI也不推进车辆模型。`closeEvent()`负责停止两个定时器并关闭两个Socket。
+- 替换发生在创建窗口前，因此窗口的网络对象变为`FakeSocket`；Qt控件、信号、目标构造与JSON编码仍真实执行。
+- `control("speed_input")`通过`getattr(window, ...)`读取窗口属性；它不在按钮内部寻找或创建输入框。
+- `click()`触发真实信号并调用业务函数，`FakeSocket.sendto()`记录报文与地址供断言检查。
+- `timeout.emit()`只手动调用一次回调，不证明实际经过100ms；真实UDP由传输测试和双进程联调验证。
 
-#### 测试中的FakeSocket
+对应源码：[桌面窗口](src/rover/desktop/app.py)、[桌面测试](tests/test_desktop_control.py)、[轨迹历史](src/rover/desktop/trajectory.py)、[UDP传输](src/rover/transport/udp_transport.py)。
 
-[test_desktop_control.py](test_desktop_control.py)先执行`socket_patch.start()`，再创建`DesktopConsole()`。
-因此窗口创建两个Socket时，都会得到独立的`FakeSocket`实例；它们共享测试的`sent`记录列表。
+<a id="diagram-maintenance"></a>
 
-测试里的`control("speed_input")`调用`getattr(window, "speed_input", None)`，
-读取窗口属性，不是在`QPushButton`内部查找，也不会替窗口创建控件。
-`speed_input`和`heading_input`指向`QDoubleSpinBox`，`start_button`指向`QPushButton`。
+## 6. 导图维护
 
-`start_button.click()`仍通过真实Qt信号调用`start_control()`，
-目标构造、度转弧度、JSON编码仍执行；只有最后的网络收发被替换。
-`FakeSocket.sendto()`记录`(packet, address)`，测试的`message()`再读取记录检查JSON。测试中的`self.sent`是记录列表；业务`send_control()`中的局部变量`sent`是字节数，二者不同。
-`timeout.emit()`是手动触发一次发送回调，没有等待或证明真实经过100ms。
-真实UDP收发仍由已有传输测试与后续A+B联调验证。
+### 6.1 Mermaid图
 
-当前用户本地桌面控制8项和完整78项测试通过，覆盖开始/应用、零速停车、主动停发、发送异常隔离及未发送时不自动启动。
-正常停车与停止发包已通过本地自动测试及真实桌面A+B人工验收；认证、会话、跨机和专家机制仍按后续计划实现。
+图1—图3保留为正文中的可编辑Mermaid代码块。
+函数名加粗，参数/变量分行；节点ID只负责连线，不必与Python变量同名。
+改名或移动图时同步检查正文引用，避免箭头标签挤到边框。
 
+### 6.2 运动与坐标图
 
-</details>
+[生成源](reference_image/diagrams/render_vehicle_motion.py)包含可修改的文字、变量名及布局。
+使用项目已有PySide6，在仓库根目录运行：
 
-对应源码：[桌面窗口与控制](demo_desktop_console.py)、[UDP收发](udp_transport.py)、
-[控制目标](control_target.py)、[控制编解码](control_codec.py)、[车辆运行环](demo_udp_vehicle_loop.py)、
-[地图绘制](desktop_map.py)、[坐标转换](map_geometry.py)、[轨迹缓存](trajectory.py)。
+```powershell
+.\.venv\Scripts\python.exe reference_image/diagrams/render_vehicle_motion.py
+```
 
-## 导图维护
+SVG和高清PNG输出到生成源所在目录。README使用相对链接，图的位置和资源目录均可调整。
 
-- 函数名用`<b>函数名()</b>`加粗；参数、变量和构造类型分行写，避免把对象名误当成函数名。
-- 直接编辑对应正文中的Mermaid代码块即可改名或移动整张图；节点ID只负责连线，不必与Python变量名相同。
-- `rankSpacing`控制框内纵向间距；跨端使用更长的连线保留通信文字空间。调整时不要把跨端留白一起压缩。
-- 图1左侧深色竖条只标明端名称，`~~~`是不可见的布局连接，不表示数据发送。
-- 源码链接使用仓库相对路径，图不绑定本机盘符或PNG目录。
-- 后续导图以图2、图3为基准：按收发职责分区，函数名加粗，参数与变量分行，跨端箭头只标通信方式和端口。
+功能或文件职责变化时，先更新可复用的已有模块与说明，职责确实不同时再新增。同步修订受影响的函数/变量名、调用关系、README运行命令和图源，必要时重新导出SVG/PNG；过时内容合并或删改，保留已验证的历史示例时明确其适用阶段。
