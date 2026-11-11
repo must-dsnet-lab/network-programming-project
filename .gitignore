@@ -3,3 +3,7 @@ __pycache__/
 *.py[cod]
 .env
 .ipynb_checkpoints/
+*.egg-info/
+build/
+dist/
+/本地环境与忽略内容说明.md

@@ -1,0 +1,230 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="2195" viewBox="0 0 1000 2195" role="img" aria-labelledby="title description">
+<title id="title">车辆运动与画布坐标：从世界状态到窗口显示</title>
+<desc id="description">车端每轮选择目标、更新运动参数、用速度时间和三角函数计算新世界位置。桌面保存遥测状态及世界轨迹，Qt稍后重绘，将米制世界坐标映射到画布像素坐标，先画轨迹再定位和旋转车头。</desc>
+<rect x="0" y="0" width="1000" height="2195" rx="0" fill="#ffffff" stroke="#ffffff" stroke-width="1.4"/>
+<text x="30" y="38" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="28" font-weight="700" fill="#172b4d" text-anchor="start">车辆怎样运动，又怎样显示在画布上？</text>
+<text x="30" y="67" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="400" fill="#4b6078" text-anchor="start">沿主箭头阅读；函数名加粗，参数与关键变量分行；两种坐标始终分开。</text>
+<rect x="20" y="92" width="960" height="764" rx="14" fill="#f5f8ff" stroke="#8ba5cc" stroke-width="1.8"/>
+<text x="40" y="124" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#172b4d" text-anchor="start">① 世界坐标中的运动 · 车端每轮调用 step_vehicle()</text>
+<g class="flow-card">
+<rect x="55" y="151" width="430" height="91" rx="10" fill="#ffffff" stroke="#a5b8d0" stroke-width="1.4"/>
+<text x="69" y="176" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">本轮输入：当前车辆状态 state</text>
+<text x="69" y="203" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">位置 x_m / y_m（m）</text>
+<text x="69" y="228" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">heading_rad（rad）· speed_mps（m/s）</text>
+</g>
+<g class="flow-card">
+<rect x="55" y="258" width="430" height="66" rx="10" fill="#e9efff" stroke="#a5b8d0" stroke-width="1.4"/>
+<text x="69" y="283" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">target_for_tick()</text>
+<text x="69" y="310" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">选择有效目标／零速目标</text>
+</g>
+<g class="flow-card">
+<rect x="55" y="350" width="430" height="91" rx="10" fill="#e9efff" stroke="#a5b8d0" stroke-width="1.4"/>
+<text x="69" y="375" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">apply_target()</text>
+<text x="69" y="402" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">参数：state, target → 返回 controlled_state</text>
+<text x="69" y="427" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">更新速度与绝对朝向；位置 x_m / y_m 不变</text>
+</g>
+<g class="flow-card">
+<rect x="55" y="459" width="430" height="91" rx="10" fill="#e9efff" stroke="#a5b8d0" stroke-width="1.4"/>
+<text x="69" y="484" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">advance() · ① 计算有向位移</text>
+<text x="69" y="511" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">参数：controlled_state, dt_s</text>
+<text x="69" y="536" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">distance_m = speed_mps × dt_s</text>
+</g>
+<g class="flow-card">
+<rect x="55" y="559" width="430" height="116" rx="10" fill="#e9efff" stroke="#a5b8d0" stroke-width="1.4"/>
+<text x="69" y="584" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">advance() · ② 分解位移并累加位置</text>
+<text x="69" y="611" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="start">新x_m = 旧x_m + distance_m×cos(heading_rad)</text>
+<text x="69" y="636" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="start">新y_m = 旧y_m + distance_m×sin(heading_rad)</text>
+<text x="69" y="661" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="start">返回新 VehicleState；原来的状态对象保持不变</text>
+</g>
+<g class="flow-card">
+<rect x="55" y="686" width="430" height="91" rx="10" fill="#e5eefb" stroke="#a5b8d0" stroke-width="1.4"/>
+<text x="69" y="711" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">返回并保存新状态</text>
+<text x="69" y="738" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">赋值：state = step_vehicle(...)</text>
+<text x="69" y="763" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">下一轮从新 state 继续计算</text>
+</g>
+<polyline points="270,242 270,258" fill="none" stroke="#2563b8" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="270.00,258.00 266.00,249.00 274.00,249.00" fill="#2563b8"/>
+<polyline points="270,324 270,350" fill="none" stroke="#2563b8" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="270.00,350.00 266.00,341.00 274.00,341.00" fill="#2563b8"/>
+<polyline points="270,441 270,459" fill="none" stroke="#2563b8" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="270.00,459.00 266.00,450.00 274.00,450.00" fill="#2563b8"/>
+<polyline points="270,550 270,559" fill="none" stroke="#2563b8" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="270.00,559.00 266.00,550.00 274.00,550.00" fill="#2563b8"/>
+<polyline points="270,675 270,686" fill="none" stroke="#2563b8" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="270.00,686.00 266.00,677.00 274.00,677.00" fill="#2563b8"/>
+<polyline points="55,725 36,725 36,191 55,191" fill="none" stroke="#2563b8" stroke-width="1.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="55.00,191.00 46.00,195.00 46.00,187.00" fill="#2563b8"/>
+<text x="55" y="800" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#2563b8" text-anchor="start">虚线回到下一轮：累积运动，不从初始位置重算。</text>
+<rect x="525" y="151" width="430" height="327" rx="10" fill="#ffffff" stroke="#a5b8d0" stroke-width="1.4"/>
+<text x="541" y="177" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">世界坐标：把沿车头的位移分解到两根轴</text>
+<text x="541" y="202" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">旧位置取 (0,0)；图示不按数值比例</text>
+<polyline points="555,416 920,416" fill="none" stroke="#7890ad" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="920.00,416.00 911.00,420.00 911.00,412.00" fill="#7890ad"/>
+<polyline points="580,446 580,228" fill="none" stroke="#7890ad" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="580.00,228.00 584.00,237.00 576.00,237.00" fill="#7890ad"/>
+<text x="920" y="439" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="end">+X（m）</text>
+<text x="592" y="231" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">+Y（m）</text>
+<polyline points="580,416 850,253" fill="none" stroke="#2563b8" stroke-width="2.6" stroke-linejoin="round"/>
+<polygon points="850.00,253.00 844.36,261.08 840.23,254.23" fill="#2563b8"/>
+<polyline points="850,253 850,416" fill="none" stroke="#087f8c" stroke-width="1.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polyline points="580,416 850,416" fill="none" stroke="#087f8c" stroke-width="2.6" stroke-linejoin="round"/>
+<circle cx="580" cy="416" r="4" fill="#2563b8"/>
+<circle cx="850" cy="253" r="4" fill="#2563b8"/>
+<text x="593" y="445" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#2563b8" text-anchor="start">旧位置</text>
+<text x="860" y="246" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#2563b8" text-anchor="start">新位置</text>
+<text x="715" y="439" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#087f8c" text-anchor="start">Δx</text>
+<text x="863" y="343" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#087f8c" text-anchor="start">Δy</text>
+<text x="717" y="309" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="700" fill="#2563b8" text-anchor="start" transform="rotate(-31 717 309)">distance_m</text>
+<path d="M 643 416 A 63 63 0 0 0 634 383" fill="none" stroke="#a77915" stroke-width="1.8"/>
+<text x="654" y="397" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#95640c" text-anchor="start">heading_rad</text>
+<g class="flow-card">
+<rect x="525" y="503" width="430" height="128" rx="10" fill="#ffffff" stroke="#a5b8d0" stroke-width="1.4"/>
+<text x="539" y="528" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">单步例子：向右上方移动</text>
+<text x="539" y="555" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">speed_mps = 1；heading_rad = π/4（45°）</text>
+<text x="539" y="580" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">dt_s = 0.02 s → distance_m = 0.02 m</text>
+<text x="539" y="605" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">Δx ≈ 0.0141 m；Δy ≈ 0.0141 m</text>
+</g>
+<g class="flow-card">
+<rect x="525" y="656" width="430" height="141" rx="10" fill="#ffffff" stroke="#a5b8d0" stroke-width="1.4"/>
+<text x="539" y="681" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">模型与时间边界</text>
+<text x="539" y="708" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">绝对朝向直接设定；未模拟加速度与转弯半径</text>
+<text x="539" y="733" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">正速度沿车头运动；负速度沿相反方向倒退</text>
+<text x="539" y="758" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">now_s：本地单调时钟，交给保护逻辑</text>
+<text x="539" y="783" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">dt_s = 0.02：本轮模拟推进量，用于位移</text>
+</g>
+<text x="55" y="832" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">连续车端：每轮只推进一次；没有新控制包时，也继续检查保护和更新车辆。</text>
+<polyline points="500,856 500,919" fill="none" stroke="#58718f" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="500.00,919.00 496.00,910.00 504.00,910.00" fill="#58718f"/>
+<text x="524" y="887" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">遥测采样、传输与解码（收发过程见图 2 / 图 3）</text>
+<text x="524" y="909" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">桌面得到 snapshot.state；两端不共享 Python 对象</text>
+<rect x="20" y="923" width="960" height="287" rx="14" fill="#f6fafc" stroke="#9aafbf" stroke-width="1.8"/>
+<text x="40" y="955" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#172b4d" text-anchor="start">② 桌面保存状态 · VehicleMap.set_state()</text>
+<g class="flow-card">
+<rect x="50" y="982" width="280" height="100" rx="10" fill="#ffffff" stroke="#a5b8d0" stroke-width="1.4"/>
+<text x="64" y="1007" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">保存当前状态</text>
+<text x="64" y="1034" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">self.state = state</text>
+<text x="64" y="1059" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">保留世界位置、朝向与速度</text>
+</g>
+<g class="flow-card">
+<rect x="360" y="982" width="280" height="100" rx="10" fill="#ffffff" stroke="#a5b8d0" stroke-width="1.4"/>
+<text x="374" y="1007" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">history.record()</text>
+<text x="374" y="1034" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">参数：state</text>
+<text x="374" y="1059" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">记录 (x_m, y_m)，不存像素</text>
+</g>
+<g class="flow-card">
+<rect x="670" y="982" width="280" height="100" rx="10" fill="#ffffff" stroke="#a5b8d0" stroke-width="1.4"/>
+<text x="684" y="1007" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">update()</text>
+<text x="684" y="1034" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">请求 Qt 稍后重绘</text>
+<text x="684" y="1059" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">不是同步调用 paintEvent()</text>
+</g>
+<polyline points="330,1032 360,1032" fill="none" stroke="#58718f" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="360.00,1032.00 351.00,1036.00 351.00,1028.00" fill="#58718f"/>
+<polyline points="640,1032 670,1032" fill="none" stroke="#58718f" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="670.00,1032.00 661.00,1036.00 661.00,1028.00" fill="#58718f"/>
+<text x="50" y="1123" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">先保存状态与轨迹，再请求绘图。</text>
+<text x="50" y="1150" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">重绘读取历史，不在重绘时追加历史。</text>
+<polyline points="810,1082 810,1168 500,1168 500,1307" fill="none" stroke="#087f8c" stroke-width="1.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="500.00,1307.00 496.00,1298.00 504.00,1298.00" fill="#087f8c"/>
+<text x="524" y="1130" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#087f8c" text-anchor="start">Qt 调度：多个请求可能合并</text>
+<text x="524" y="1153" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#087f8c" text-anchor="start">窗口尺寸变化也会触发重绘</text>
+<rect x="20" y="1235" width="960" height="911" rx="14" fill="#f2faf9" stroke="#7eada8" stroke-width="1.8"/>
+<text x="40" y="1267" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#172b4d" text-anchor="start">③ 画布显示 · 米制世界坐标 → 地图控件的像素坐标</text>
+<g class="flow-card">
+<rect x="50" y="1308" width="900" height="70" rx="10" fill="#ffffff" stroke="#7eada8" stroke-width="1.4"/>
+<text x="64" y="1333" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">paintEvent()</text>
+<text x="64" y="1360" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">读取 self.state 与 history；绘制这一帧画面</text>
+</g>
+<g class="flow-card">
+<rect x="50" y="1410" width="280" height="96" rx="10" fill="#ffffff" stroke="#7eada8" stroke-width="1.4"/>
+<text x="64" y="1435" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">screen_point()</text>
+<text x="64" y="1462" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">参数：x_m, y_m（m）</text>
+<text x="64" y="1487" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">供车辆和每个轨迹点共同使用</text>
+</g>
+<g class="flow-card">
+<rect x="360" y="1410" width="280" height="96" rx="10" fill="#ffffff" stroke="#7eada8" stroke-width="1.4"/>
+<text x="374" y="1435" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">确定显示参数</text>
+<text x="374" y="1462" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="start">原点：(width//2, height//2)</text>
+<text x="374" y="1487" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="start">pixels_per_meter = 50 px/m</text>
+</g>
+<g class="flow-card">
+<rect x="670" y="1410" width="280" height="96" rx="10" fill="#ffffff" stroke="#7eada8" stroke-width="1.4"/>
+<text x="684" y="1435" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">world_to_screen()</text>
+<text x="684" y="1462" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">参数：世界位置、原点、比例</text>
+<text x="684" y="1487" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">→ screen_x_px/screen_y_px</text>
+</g>
+<polyline points="500,1378 500,1393 190,1393 190,1410" fill="none" stroke="#087f8c" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="190.00,1410.00 186.00,1401.00 194.00,1401.00" fill="#087f8c"/>
+<polyline points="330,1458 360,1458" fill="none" stroke="#087f8c" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="360.00,1458.00 351.00,1462.00 351.00,1454.00" fill="#087f8c"/>
+<polyline points="640,1458 670,1458" fill="none" stroke="#087f8c" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="670.00,1458.00 661.00,1462.00 661.00,1454.00" fill="#087f8c"/>
+<polyline points="810,1506 810,1520 500,1520 500,1537" fill="none" stroke="#087f8c" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="500.00,1537.00 496.00,1528.00 504.00,1528.00" fill="#087f8c"/>
+<g class="flow-card">
+<rect x="50" y="1538" width="900" height="104" rx="10" fill="#ffffff" stroke="#7eada8" stroke-width="1.4"/>
+<text x="64" y="1563" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">坐标转换公式：+X 同向，+Y 反向</text>
+<text x="64" y="1590" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="start">screen_x_px = origin_x_px + x_m × pixels_per_meter</text>
+<text x="64" y="1618" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="start">screen_y_px = origin_y_px − y_m × pixels_per_meter</text>
+</g>
+<rect x="50" y="1682" width="440" height="365" rx="10" fill="#ffffff" stroke="#7eada8" stroke-width="1.4"/>
+<text x="66" y="1708" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">坐标对应例子 · 地图控件 800 × 600</text>
+<rect x="84" y="1755" width="304" height="228" rx="0" fill="#f8fafc" stroke="#b7c7d2" stroke-width="1"/>
+<polyline points="84,1755 415,1755" fill="none" stroke="#718096" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="415.00,1755.00 406.00,1759.00 406.00,1751.00" fill="#718096"/>
+<polyline points="84,1755 84,1995" fill="none" stroke="#718096" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="84.00,1995.00 80.00,1986.00 88.00,1986.00" fill="#718096"/>
+<text x="84" y="1745" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="start">画布原点 (0,0)</text>
+<text x="422" y="1760" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="start">+X</text>
+<text x="78" y="1980" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="end">+Y</text>
+<polyline points="236.0,1869.0 355.0,1869.0" fill="none" stroke="#2563b8" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="355.00,1869.00 346.00,1873.00 346.00,1865.00" fill="#2563b8"/>
+<polyline points="236.0,1869.0 236.0,1787.0" fill="none" stroke="#2563b8" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="236.00,1787.00 240.00,1796.00 232.00,1796.00" fill="#2563b8"/>
+<text x="340.0" y="1889.0" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#2563b8" text-anchor="end">+X 世界</text>
+<text x="246.0" y="1789.0" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#2563b8" text-anchor="start">+Y 世界</text>
+<circle cx="236.0" cy="1869.0" r="4" fill="#2563b8"/>
+<circle cx="274.0" cy="1850.0" r="5" fill="#087f8c"/>
+<polyline points="274.0,1850.0 299.0,1820.0 422,1820.0" fill="none" stroke="#087f8c" stroke-width="1.2" stroke-linejoin="round"/>
+<text x="422" y="1812.0" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#087f8c" text-anchor="end">(500,250) px</text>
+<polyline points="236.0,1869.0 199.0,1921.0 106,1921.0" fill="none" stroke="#2563b8" stroke-width="1.2" stroke-linejoin="round"/>
+<text x="106" y="1942.0" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#2563b8" text-anchor="start">世界 (0,0) m</text>
+<text x="106" y="1962.0" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#2563b8" text-anchor="start">对应画布 (400,300) px</text>
+<text x="66" y="2024" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="400" fill="#087f8c" text-anchor="start">世界 (2,1) m → 画布 (500,250) px</text>
+<polyline points="500,1642 500,1661 740,1661 740,1681" fill="none" stroke="#087f8c" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="740.00,1681.00 736.00,1672.00 744.00,1672.00" fill="#087f8c"/>
+<g class="flow-card">
+<rect x="530" y="1682" width="420" height="91" rx="10" fill="#e5f4f0" stroke="#7eada8" stroke-width="1.4"/>
+<text x="544" y="1707" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">drawPolyline()</text>
+<text x="544" y="1734" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">参数：path（逐点转换后的轨迹）</text>
+<text x="544" y="1759" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">先画轨迹，再画车</text>
+</g>
+<g class="flow-card">
+<rect x="530" y="1787" width="420" height="91" rx="10" fill="#e5f4f0" stroke="#7eada8" stroke-width="1.4"/>
+<text x="544" y="1812" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">translate()</text>
+<text x="544" y="1839" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">参数：screen_point(x_m, y_m)</text>
+<text x="544" y="1864" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">把车的局部原点移到该画布位置</text>
+</g>
+<g class="flow-card">
+<rect x="530" y="1888" width="420" height="91" rx="10" fill="#e5f4f0" stroke="#7eada8" stroke-width="1.4"/>
+<text x="544" y="1913" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">rotate()</text>
+<text x="544" y="1940" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">参数：-degrees(heading_rad)</text>
+<text x="544" y="1965" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">世界逆时针为正；画布绘制取负角</text>
+</g>
+<g class="flow-card">
+<rect x="530" y="1990" width="420" height="66" rx="10" fill="#e5f4f0" stroke="#7eada8" stroke-width="1.4"/>
+<text x="544" y="2015" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">drawPolygon()</text>
+<text x="544" y="2042" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">画车（默认车头向右）；绘图不改世界状态</text>
+</g>
+<polyline points="740,1773 740,1787" fill="none" stroke="#087f8c" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="740.00,1787.00 736.00,1778.00 744.00,1778.00" fill="#087f8c"/>
+<polyline points="740,1878 740,1888" fill="none" stroke="#087f8c" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="740.00,1888.00 736.00,1879.00 744.00,1879.00" fill="#087f8c"/>
+<polyline points="740,1979 740,1990" fill="none" stroke="#087f8c" stroke-width="1.8" stroke-linejoin="round"/>
+<polygon points="740.00,1990.00 736.00,1981.00 744.00,1981.00" fill="#087f8c"/>
+<g class="flow-card">
+<rect x="50" y="2070" width="900" height="66" rx="10" fill="#ffffff" stroke="#7eada8" stroke-width="1.4"/>
+<text x="64" y="2095" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">窗口变尺寸 → 重新计算画布中心与像素位置</text>
+<text x="64" y="2122" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">state / history 保持世界数据；pixels_per_meter 当前固定为 50，不自动缩放或跟随。</text>
+</g>
+<text x="30" y="2180" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">读图边界：运动发生在车端；桌面使用收到的状态绘制，重绘本身不推动小车运动。</text>
+</svg>
