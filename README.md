@@ -20,7 +20,7 @@
 | 板块 | 内容 |
 | --- | --- |
 | [2. 环境准备与项目结构](#environment) | 安装、测试、目录职责、包配置与Git协作 |
-| [3. 车辆运动与UDP控制](#motion-control) | 离线运动、单包收发、目标驱动、超时与持续控制 |
+| [3. 车辆运动与UDP控制](#motion-control) | 离线运动、UDP收发与保护、项目网络分层与进展 |
 | [4. 遥测回传](#telemetry) | 三终端运行、状态观察与图2 |
 | [5. 桌面控制台](#desktop-console) | 地图/轨迹、运动与坐标图、按钮控制、图3与实现要点 |
 | [6. 导图维护](#diagram-maintenance) | 修改Mermaid、SVG和生成源 |
@@ -49,7 +49,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-最近本机验证为78项测试通过，含8项桌面控制测试；下文八步人工验收另行记录，不增加单元测试计数。
+最近本机完整验证为99项测试通过，其中控制编解码40项、桌面控制8项；下文八步人工验收另行记录，不增加单元测试计数。
 
 ### 2.4 项目结构与职责
 
@@ -80,7 +80,7 @@ LICENSE          项目许可证
 | `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误。 |
 | `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理接受记录与超时锁存；`vehicle_runtime.py`组合一次受保护步进；`app.py`运行车端循环。 |
 | `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹。 |
-| `tests` | 13个测试模块，共78项用例；对应验证模型、协议、传输、保护与界面行为。 |
+| `tests` | 13个测试模块，最近完整验证99项，覆盖模型、协议、真实UDP、保护与界面行为。 |
 | `examples` | 8个教学示例，可单独观察离线运动、单包/周期控制、超时及命令行遥测。 |
 | `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
@@ -287,6 +287,64 @@ end: sim_t=1.00s x=1.7552m y=0.9589m
 发送日志的`1/20`表示发送进度，不是协议序号。车端用`Ctrl+C`退出。
 本页时刻均受系统调度影响，不要求恰好在某个毫秒或固定终点停车。
 
+<a id="network-layers"></a>
+
+### 3.6 项目网络分层与协议进展
+
+#### 3.6.1 图5：各层实际用了什么
+
+OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信结构。
+本项目在应用代码中承担消息语义、数据表示和会话管理功能；不能把写了`session_id`直接当作独立实现了OSI的L5。[分层与应用内会话功能的说明](https://docs.oracle.com/cd/E19504-01/802-5886/intro-45828/index.html)。
+下图对照2026-11-12源码，区分已使用、开发中、系统提供及跨机待验；功能变化时同步修订。
+
+[![本项目网络协议分层与实现状态](reference_image/diagrams/05-network-layers.svg)](reference_image/diagrams/05-network-layers.svg)
+
+[可缩放SVG](reference_image/diagrams/05-network-layers.svg) · [高清PNG](reference_image/diagrams/05-network-layers.png)
+
+当前载荷是**自定义消息 → JSON文本 → UTF-8字节**，再由UDP/IPv4承载。
+`sendto(packet, address)`中的IP与端口交给操作系统处理，不是编码器写进JSON的字段。
+UDP不保证送达、顺序或去重；`127.0.0.1`只在本机流转，不作为已完成局域网实验的证据。[UDP标准](https://www.rfc-editor.org/rfc/rfc768.html)、[主机回环规定](https://www.rfc-editor.org/rfc/rfc1122.html#section-3.2.1.3)。
+
+#### 3.6.2 已完成的工作怎样归类
+
+| 前面完成的内容 | 在系统中的作用与关键入口 |
+| --- | --- |
+| 车辆状态、目标与步进 | `VehicleState`、`apply_target()`、`advance()`提供运动计算，本身不是网络协议。 |
+| 控制与遥测编解码 | `encode_target()/decode_target()`、`encode_telemetry()/decode_telemetry()`定义应用消息并转换数据表示。 |
+| UDP收发与非阻塞接收 | `send_target()`、`try_receive_target()`及遥测对应函数使用系统Socket；无包、坏包与系统错误分别处理。 |
+| 超时停车与故障锁存 | `AcceptedTarget`、`update_control_guard()`、`step_vehicle()`执行本地保护，不代表已完成认证会话。 |
+| 桌面显示与周期控制 | `start_control()`、`send_control()`、`poll_telemetry()`组合两条UDP方向；`world_to_screen()`是GUI坐标换算。 |
+
+#### 3.6.3 当前控制信封与后续升级
+
+`ControlCommand(session_id, seq, target)`复用现有`control_codec.py`，把会话标识、报文序号与运动目标组合起来。
+最近通过的控制编解码基线为40项（旧格式19项、新格式21项），涵盖合法编解码、倒车往返、两端元数据/运动值校验、两端1200字节边界、解析前拒绝超限、严格版本类型及新旧格式互拒；完整项目回归已通过。新格式尚未接入真实收发链路。实际运行仍使用原`control_target`和`vehicle_state`消息。
+
+新解码器先检查原始`bytes`长度，再进行UTF-8解码和JSON解析：超限已违反约定，无需再创建字符串与对象。限制按字节而非字符或字典字段数计算；先解析再检查仍能判定长度，但解析开销已经发生。超限且同时无法解析时，优先报告长度错误。
+
+当前新格式的JSON载荷示例：
+
+```json
+{
+  "version": 1,
+  "type": "control_command",
+  "session_id": "session-a",
+  "seq": 12,
+  "speed_mps": 2.0,
+  "heading_rad": 0.5
+}
+```
+
+格式要求：版本为整数1，类型为`control_command`；会话标识为非空且非纯空白字符串；序号为非负整数，布尔值不作为整数接受；运动值须为可表示成有限float的int/float。整条UTF-8载荷最多1200字节。
+
+- `session_id`区分哪次控制会话，不是密码或源端口；会话建立、认证、使能和撤销后续接入。
+- `seq`对同一会话中的新报文递增，即使目标值相同。它为后续重复/乱序判断提供依据，不要求保存或执行每一条；序号较大也不等于报文足够新鲜；比较须结合已确认有效的所属会话，不能把不同会话的序号混用。
+- 先按教师高级标准完成基础版本：以TLS握手/证书校验等对应高级参考的技术能力为依据，结合跨机闭环、保护及实验验证。专家阶段复用基础，扩展控制权交接、授权代次与租约；不是从OSI某层升级到另一层。
+
+新增不兼容的必填字段或授权语义时，应明确调整消息类型或协议版本，并让校验与HMAC覆盖新内容。
+TLS只保护对应的TCP管理连接，不自动保护UDP；HMAC校验真实性/完整性，不提供加密保密性。
+具体实现按已约定计划推进，图中的后续项不作为已实现功能；目标是达到教师认可的高级/专家标准；A01—A10仅是实现与验证的拆解，不能代替评分标准或保证定档。
+
 <a id="telemetry"></a>
 
 ## 4. 遥测回传
@@ -394,9 +452,14 @@ A看到的`peer`属于车端遥测Socket，与C的控制来源端口不同。
 
 ### 5.3 车辆运动与画布坐标
 
-沿图阅读：车端计算世界运动 → 桌面保存世界状态 → 换算画布坐标并绘制。
+沿图阅读：车端推进世界状态 → 按期限采样并回传遥测 → 桌面逐包保存 → Qt读取缓存并绘制。
+`poll_telemetry()`对每个合法包调用`map.set_state(latest.state)`；后者依次保存最新状态、按规则维护世界轨迹、请求重绘。
+侧栏只取本轮最后一个合法快照；多个重绘请求可能合并，因此收包、记录轨迹与绘图不是一一对应。[Qt重绘调度说明](https://doc.qt.io/qt-6/qwidget.html#update)
+
+蓝色实线表示调用/执行顺序，灰线表示数据保存/读取，青色虚线表示Qt稍后调度。
 世界位置用米、朝向用弧度；画布原点在左上，世界原点映射到地图中心。
-世界+Y向上、画布+Y向下，因此像素Y和绘制角度需转换。`update()`只请求Qt稍后重绘，不推进车辆。
+`screen_point()`调用`world_to_screen()`执行公式，再将返回像素二元组包装成`QPointF`；轨迹与车辆位置分别复用此换算。
+世界+Y向上、画布+Y向下，因此像素Y和绘制角度需转换；重绘只读缓存，不推进车辆或追加轨迹。
 
 [![车辆运动、世界坐标与画布显示的关系](reference_image/diagrams/04-vehicle-motion.svg)](reference_image/diagrams/04-vehicle-motion.svg)
 
@@ -518,15 +581,18 @@ flowchart TB
 函数名加粗，参数/变量分行；节点ID只负责连线，不必与Python变量同名。
 改名或移动图时同步检查正文引用，避免箭头标签挤到边框。
 
-### 6.2 运动与坐标图
+### 6.2 SVG导图与生成源
 
-[生成源](reference_image/diagrams/render_vehicle_motion.py)包含可修改的文字、变量名及布局。
+图4的[运动与坐标生成源](reference_image/diagrams/render_vehicle_motion.py)、图5的[网络分层生成源](reference_image/diagrams/render_network_layers.py)包含可修改的文字、变量名及布局。
 使用项目已有PySide6，在仓库根目录运行：
 
 ```powershell
 .\.venv\Scripts\python.exe reference_image/diagrams/render_vehicle_motion.py
+.\.venv\Scripts\python.exe reference_image/diagrams/render_network_layers.py
 ```
 
-SVG和高清PNG输出到生成源所在目录。README使用相对链接，图的位置和资源目录均可调整。
+两个命令各自更新对应的SVG与高清PNG，输出到生成源所在目录。图5复用同目录图4生成源的绘图工具，须一并保留；运行图5命令不会重绘图4。README使用相对链接，图的位置和资源目录均可调整。
+
+新增协议能力时，同步修订图5的核对日期、各层状态、报文类型和通道说明；以实际接入与验证结果标记进展。安全机制不硬塞到单个OSI层，未做的跨机实验也不写成已完成。
 
 功能或文件职责变化时，先更新可复用的已有模块与说明，职责确实不同时再新增。同步修订受影响的函数/变量名、调用关系、README运行命令和图源，必要时重新导出SVG/PNG；过时内容合并或删改，保留已验证的历史示例时明确其适用阶段。
