@@ -7,6 +7,7 @@ from math import isfinite
 MAX_CONTROL_MESSAGE_BYTES = 1200
 
 @dataclass(frozen=True)
+# controlCommand控制的是一个具体的报文
 class ControlCommand:
     session_id: str  # 属于哪次控制会话
     seq: int  # 该会话的第几条控制报文

@@ -10,20 +10,21 @@
 - **网络与保护**：UDP控制与遥测、报文校验、控制超时停车和故障锁存。
 - **桌面控制**：数值输入、正常停车/停发、地图与轨迹、遥测可用/过期提示。
 
-当前是无需硬件的本机原型；跨机、认证会话和专家机制仍待接入。
+当前是无需硬件的本机原型；控制信封及准入逻辑已完成独立单元验证，尚未接入实际收发；跨机、认证会话和专家机制仍待接入。
 最终交付目标为Windows EXE；当前仍按下文的源码方式运行，发布包尚未制作。
-本页按开发顺序保留各阶段示例，当前完整桌面操作可直接看[5.1启动](#quick-start)和[5.4数值控制](#desktop-control-acceptance)。
+本页按开发顺序保留各阶段示例，当前完整桌面操作可直接看[5.1启动](#quick-start)和[5.3数值控制](#desktop-control-acceptance)。
 旧示例中的A/B/C是该例自己的终端标签。
 
 ### 1.2 阅读导航
 
 | 板块 | 内容 |
 | --- | --- |
-| [2. 环境准备与项目结构](#environment) | 安装、测试、目录职责、包配置与Git协作 |
-| [3. 车辆运动与UDP控制](#motion-control) | 离线运动、UDP收发与保护、项目网络分层与进展 |
+| [2. 环境准备与项目结构](#environment) | 安装、测试、目录职责与应用入口 |
+| [3. 车辆运动与UDP控制](#motion-control) | 离线运动 → 单包UDP控制 → 持续运行与本地保护 |
 | [4. 遥测回传](#telemetry) | 三终端运行、状态观察与图2 |
-| [5. 桌面控制台](#desktop-console) | 地图/轨迹、运动与坐标图、按钮控制、图3与实现要点 |
-| [6. 导图维护](#diagram-maintenance) | 修改Mermaid、SVG和生成源 |
+| [5. 桌面控制台](#desktop-console) | 启动与状态 → 地图/轨迹/坐标 → 数值控制与验收 → 实现要点 |
+| [6. 网络分层与控制信封](#network-layers) | 各层职责、控制信封与车端准入 |
+| [7. 项目配置与文档维护](#project-maintenance) | 包配置、Git协作、目录迁移与导图维护 |
 
 <a id="environment"></a>
 
@@ -49,7 +50,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-最近本机完整验证为99项测试通过，其中控制编解码40项、桌面控制8项；下文八步人工验收另行记录，不增加单元测试计数。
+最近本机完整验证为107项测试通过，其中控制编解码40项、控制保护11项、桌面控制8项；下文八步人工验收另行记录，不增加单元测试计数。
 
 ### 2.4 项目结构与职责
 
@@ -78,9 +79,9 @@ LICENSE          项目许可证
 | `core` | `vehicle_model.py`保存状态并计算单步运动；`control_target.py`定义/应用运动目标；`simulation.py`用于离线多步轨迹。 |
 | `protocol` | `control_codec.py`、`telemetry_codec.py`定义控制/遥测的JSON编解码与字段校验。 |
 | `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误。 |
-| `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理接受记录与超时锁存；`vehicle_runtime.py`组合一次受保护步进；`app.py`运行车端循环。 |
+| `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理接受记录、超时锁存与控制信封准入（新入口尚未接入运行）；`vehicle_runtime.py`组合一次受保护步进；`app.py`运行车端循环。 |
 | `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹。 |
-| `tests` | 13个测试模块，最近完整验证99项，覆盖模型、协议、真实UDP、保护与界面行为。 |
+| `tests` | 13个测试模块，最近完整验证107项，覆盖模型、协议、真实UDP、保护与界面行为。 |
 | `examples` | 8个教学示例，可单独观察离线运动、单包/周期控制、超时及命令行遥测。 |
 | `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
@@ -99,60 +100,6 @@ LICENSE          项目许可证
 单独运行测试时，例如`.\.venv\Scripts\python.exe -m unittest -v tests.test_vehicle_model`。
 不要直接运行`src/`内的文件。
 
-### 2.5 项目安装配置
-
-#### 2.5.1 为什么现在增加pyproject.toml
-
-早期所有脚本在根目录，直接运行脚本时Python可以找到同目录的其他模块，因此当时没有项目安装配置。
-本次采用`src/rover`包布局，通过[pyproject.toml](pyproject.toml)声明源码位置、依赖和构建方式，统一两端的导入与启动。
-这项配置服务于当前包布局，并非所有Python脚本都必须有它。[Python包布局说明](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/)
-
-| 配置 | 本项目含义 |
-| --- | --- |
-| `[build-system]` | 使用`setuptools.build_meta`构建，构建工具要求`setuptools>=64`。 |
-| `[project]`的`name`、`version` | 安装名称`dsnet-rover`，当前项目版本`0.1.0`；版本号不表示完成百分比。 |
-| `description`、`readme` | 简介及用于项目说明的README文件。 |
-| `requires-python` | 声明Python最低版本3.12；目前实际验证环境为3.12。 |
-| `dependencies` | 运行依赖为`PySide6==6.12.0`，与构建工具依赖分开。 |
-| `[tool.setuptools.packages.find]` | 从`src`收集`rover`及全部子包；测试、示例和参考图不作为应用包收集。 |
-
-`dsnet-rover`是安装名称，`rover`是代码导入名称，`src`是源码存放区。
-例如`from rover.core.vehicle_model import VehicleState`，导入名称不包含`src`。
-
-#### 2.5.2 可编辑安装与依赖清单
-
-2.2中的`pip install -e .`表示将当前项目以可编辑方式安装到所用Python环境，同时处理项目声明的依赖。
-修改现有源码后，下次运行直接使用修改；调整依赖或安装配置后，应重新执行安装命令。
-`-m rover.desktop.app`会按包路径找到模块，以主程序方式执行并进入其`main()`。[pip本地安装说明](https://pip.pypa.io/en/stable/topics/local-project-installs/)
-
-[requirements.txt](requirements.txt)继续保留第三方依赖清单；两处目前均固定PySide6 6.12.0，修改依赖时须同步。
-只执行`pip install -r requirements.txt`会安装第三方库，不能替代本项目的包安装。
-当前可编辑安装及wheel构建均依赖Python环境，最终独立Windows EXE仍需单独制作。
-
-#### 2.5.3 空的__init__.py为什么也要提交
-
-`rover`及五个子包、`tests`、`examples`各有一个空`__init__.py`，共8个。
-它们明确本项目采用的普通Python包边界，支持完整包导入、测试定位和示例模块启动。
-这些是源码文件，应提交；不需要往里面填`main()`，窗口和Socket仍由应用入口创建。
-
-### 2.6 Git协作与目录迁移
-
-| 提交到仓库 | 用途 |
-| --- | --- |
-| `src/rover/`，含全部`__init__.py` | 应用源码与包结构 |
-| `tests/`、`examples/` | 验证与教学复现 |
-| `pyproject.toml`、`requirements.txt` | 项目安装配置与依赖版本 |
-| `.gitignore`、`README.md`、`LICENSE` | 忽略规则、说明与许可证 |
-| `reference_image/`中的所需图片/图源 | README配图及后续修改依据 |
-
-本机环境、缓存和构建产物按`.gitignore`排除；队友从源码与配置重新生成自己的环境。
-个人本地环境笔记按`.gitignore`排除；本页只保留组员复现所需信息。
-
-迁移作为原仓库的新提交处理：先核对文件移动、修改、图片改名/删除，再在功能分支暂存并审查、提交、推送，按PR流程合入`main`。
-旧路径会退出新版本，新路径进入新版本；仓库地址和历史提交保留，不用重新创建仓库。
-队友拉取迁移后的版本后，先按2.2在自己的虚拟环境执行可编辑安装，再使用新的模块入口启动。
-暂存时需要同时覆盖新路径与旧路径删除记录；`git add -A -- <已核对的路径>`可记录对应新增、修改和删除。[Git暂存说明](https://git-scm.com/docs/git-add)
-
 <a id="motion-control"></a>
 
 ## 3. 车辆运动与UDP控制
@@ -166,9 +113,11 @@ LICENSE          项目许可证
 
 `apply_target()`更新速度与绝对朝向，`advance()`根据步长计算新位置；
 `run_steps()`重复推进并保存初始状态及每步结果。
-运动公式与世界/画布坐标关系见[5.3运动原理图](#vehicle-motion-coordinates)。
+运动公式与世界/画布坐标关系见[5.2.2运动原理图](#vehicle-motion-coordinates)。
 
-### 3.2 同机单包UDP收发
+### 3.2 单包UDP控制
+
+#### 3.2.1 同机单包UDP收发
 
 本例终端A是接收端，终端B是发送端。先在A运行：
 
@@ -190,7 +139,7 @@ LICENSE          项目许可证
 
 <a id="single-udp-flow"></a>
 
-#### 3.2.1 图1：一条控制消息怎样到达接收端
+#### 3.2.2 图1：一条控制消息怎样到达接收端
 
 `packet`由`recvfrom()`从Socket接收队列取得，`peer`是来源地址；再由`decode_target()`校验和还原。
 
@@ -221,7 +170,7 @@ flowchart TB
 
 对应源码：[发送](examples/demo_udp_sender.py)、[接收](examples/demo_udp_receiver.py)、[UDP收发](src/rover/transport/udp_transport.py)、[控制编解码](src/rover/protocol/control_codec.py)。
 
-### 3.3 UDP目标驱动车辆模型
+#### 3.2.3 UDP目标驱动车辆模型
 
 先在终端A运行：
 
@@ -229,7 +178,7 @@ flowchart TB
 .\.venv\Scripts\python.exe -m examples.demo_udp_vehicle
 ```
 
-再在终端B运行`-m examples.demo_udp_sender`，完整命令见3.2。初始位置由接收端的`VehicleState()`创建；
+再在终端B运行`-m examples.demo_udp_sender`，完整命令见3.2.1。初始位置由接收端的`VehicleState()`创建；
 发送端只提供目标速度和朝向。
 
 接收目标后以`0.02 s`推进50步，即1秒模拟时间，轨迹含初始帧共51个状态：
@@ -242,7 +191,9 @@ end: sim_t=1.00s x=1.7552m y=0.9589m
 
 这是收到一条消息后的离线计算，1秒模拟时间可以很快算完。
 
-### 3.4 控制超时与定时运行
+### 3.3 持续控制与车端保护
+
+#### 3.3.1 控制超时与定时运行
 
 ```powershell
 .\.venv\Scripts\python.exe -m examples.demo_watchdog_loop
@@ -257,7 +208,7 @@ end: sim_t=1.00s x=1.7552m y=0.9589m
 | `started_at_s` | 程序启动时刻，用于计算总运行时长 |
 | `wall_t` / `sim_t` | 实际经过时间 / 累计模拟时间；两者可能因调度不同 |
 
-### 3.5 持续接收、周期控制与故障锁存
+#### 3.3.2 持续接收、周期控制与故障锁存
 
 先在终端A启动持续车端：
 
@@ -286,64 +237,6 @@ end: sim_t=1.00s x=1.7552m y=0.9589m
 
 发送日志的`1/20`表示发送进度，不是协议序号。车端用`Ctrl+C`退出。
 本页时刻均受系统调度影响，不要求恰好在某个毫秒或固定终点停车。
-
-<a id="network-layers"></a>
-
-### 3.6 项目网络分层与协议进展
-
-#### 3.6.1 图5：各层实际用了什么
-
-OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信结构。
-本项目在应用代码中承担消息语义、数据表示和会话管理功能；不能把写了`session_id`直接当作独立实现了OSI的L5。[分层与应用内会话功能的说明](https://docs.oracle.com/cd/E19504-01/802-5886/intro-45828/index.html)。
-下图对照2026-11-12源码，区分已使用、开发中、系统提供及跨机待验；功能变化时同步修订。
-
-[![本项目网络协议分层与实现状态](reference_image/diagrams/05-network-layers.svg)](reference_image/diagrams/05-network-layers.svg)
-
-[可缩放SVG](reference_image/diagrams/05-network-layers.svg) · [高清PNG](reference_image/diagrams/05-network-layers.png)
-
-当前载荷是**自定义消息 → JSON文本 → UTF-8字节**，再由UDP/IPv4承载。
-`sendto(packet, address)`中的IP与端口交给操作系统处理，不是编码器写进JSON的字段。
-UDP不保证送达、顺序或去重；`127.0.0.1`只在本机流转，不作为已完成局域网实验的证据。[UDP标准](https://www.rfc-editor.org/rfc/rfc768.html)、[主机回环规定](https://www.rfc-editor.org/rfc/rfc1122.html#section-3.2.1.3)。
-
-#### 3.6.2 已完成的工作怎样归类
-
-| 前面完成的内容 | 在系统中的作用与关键入口 |
-| --- | --- |
-| 车辆状态、目标与步进 | `VehicleState`、`apply_target()`、`advance()`提供运动计算，本身不是网络协议。 |
-| 控制与遥测编解码 | `encode_target()/decode_target()`、`encode_telemetry()/decode_telemetry()`定义应用消息并转换数据表示。 |
-| UDP收发与非阻塞接收 | `send_target()`、`try_receive_target()`及遥测对应函数使用系统Socket；无包、坏包与系统错误分别处理。 |
-| 超时停车与故障锁存 | `AcceptedTarget`、`update_control_guard()`、`step_vehicle()`执行本地保护，不代表已完成认证会话。 |
-| 桌面显示与周期控制 | `start_control()`、`send_control()`、`poll_telemetry()`组合两条UDP方向；`world_to_screen()`是GUI坐标换算。 |
-
-#### 3.6.3 当前控制信封与后续升级
-
-`ControlCommand(session_id, seq, target)`复用现有`control_codec.py`，把会话标识、报文序号与运动目标组合起来。
-最近通过的控制编解码基线为40项（旧格式19项、新格式21项），涵盖合法编解码、倒车往返、两端元数据/运动值校验、两端1200字节边界、解析前拒绝超限、严格版本类型及新旧格式互拒；完整项目回归已通过。新格式尚未接入真实收发链路。实际运行仍使用原`control_target`和`vehicle_state`消息。
-
-新解码器先检查原始`bytes`长度，再进行UTF-8解码和JSON解析：超限已违反约定，无需再创建字符串与对象。限制按字节而非字符或字典字段数计算；先解析再检查仍能判定长度，但解析开销已经发生。超限且同时无法解析时，优先报告长度错误。
-
-当前新格式的JSON载荷示例：
-
-```json
-{
-  "version": 1,
-  "type": "control_command",
-  "session_id": "session-a",
-  "seq": 12,
-  "speed_mps": 2.0,
-  "heading_rad": 0.5
-}
-```
-
-格式要求：版本为整数1，类型为`control_command`；会话标识为非空且非纯空白字符串；序号为非负整数，布尔值不作为整数接受；运动值须为可表示成有限float的int/float。整条UTF-8载荷最多1200字节。
-
-- `session_id`区分哪次控制会话，不是密码或源端口；会话建立、认证、使能和撤销后续接入。
-- `seq`对同一会话中的新报文递增，即使目标值相同。它为后续重复/乱序判断提供依据，不要求保存或执行每一条；序号较大也不等于报文足够新鲜；比较须结合已确认有效的所属会话，不能把不同会话的序号混用。
-- 先按教师高级标准完成基础版本：以TLS握手/证书校验等对应高级参考的技术能力为依据，结合跨机闭环、保护及实验验证。专家阶段复用基础，扩展控制权交接、授权代次与租约；不是从OSI某层升级到另一层。
-
-新增不兼容的必填字段或授权语义时，应明确调整消息类型或协议版本，并让校验与HMAC覆盖新内容。
-TLS只保护对应的TCP管理连接，不自动保护UDP；HMAC校验真实性/完整性，不提供加密保密性。
-具体实现按已约定计划推进，图中的后续项不作为已实现功能；目标是达到教师认可的高级/专家标准；A01—A10仅是实现与验证的拆解，不能代替评分标准或保证定档。
 
 <a id="telemetry"></a>
 
@@ -440,7 +333,9 @@ A看到的`peer`属于车端遥测Socket，与C的控制来源端口不同。
 `status`表示遥测情况，`fault_latched`来自车端保护，`control_status`表示本地发送情况，三者独立。
 当前地址固定为本机回环，跨机配置尚未接入。
 
-### 5.2 地图与运行轨迹
+### 5.2 地图、轨迹与坐标
+
+#### 5.2.1 地图与运行轨迹
 
 `TrajectoryHistory`保存最多1000个世界坐标位置，只跳过相邻重复；A→B→A仍保留。
 每个合法遥测包都保存位置，重绘只读历史；窗口变尺寸后重新换算像素，原始位置不变。
@@ -450,7 +345,7 @@ A看到的`peer`属于车端遥测Socket，与C的控制来源端口不同。
 
 <a id="vehicle-motion-coordinates"></a>
 
-### 5.3 车辆运动与画布坐标
+#### 5.2.2 车辆运动与画布坐标
 
 沿图阅读：车端推进世界状态 → 按期限采样并回传遥测 → 桌面逐包保存 → Qt读取缓存并绘制。
 `poll_telemetry()`对每个合法包调用`map.set_state(latest.state)`；后者依次保存最新状态、按规则维护世界轨迹、请求重绘。
@@ -469,7 +364,7 @@ A看到的`peer`属于车端遥测Socket，与C的控制来源端口不同。
 
 <a id="desktop-control-acceptance"></a>
 
-### 5.4 数值控制与八步验收
+### 5.3 数值控制与八步验收
 
 输入朝向使用度，发送前转为弧度；只编辑输入不会改变已应用目标。
 
@@ -499,7 +394,7 @@ A看到的`peer`属于车端遥测Socket，与C的控制来源端口不同。
 
 <a id="desktop-ui-flow"></a>
 
-### 5.5 图3：桌面数值控制与遥测关系
+#### 5.3.1 图3：桌面数值控制与遥测关系
 
 按A发送 → B计算并回传 → A显示阅读；上下两个A属于同一个桌面进程。
 
@@ -538,9 +433,9 @@ flowchart TB
     class car_receive,car_step,car_send vehicle;
 ```
 
-### 5.6 关键实现要点
+### 5.4 关键实现要点
 
-#### 5.6.1 三种数据
+#### 5.4.1 三种数据
 
 | 数据 | 变量 | 改变时机 |
 | --- | --- | --- |
@@ -550,7 +445,7 @@ flowchart TB
 
 `sent`只是本机发送字节数，不是车端接收或执行确认。
 
-#### 5.6.2 两个定时器与两个Socket
+#### 5.4.2 两个定时器与两个Socket
 
 | 对象 | 配置与职责 |
 | --- | --- |
@@ -562,7 +457,7 @@ flowchart TB
 `start_control()`先保存目标、启动控制定时器，再立即首发，因为`send_control()`会检查定时器是否活动。
 收到合法遥测才刷新`last_received_s`；无包或坏包都不延长有效显示时间。
 
-#### 5.6.3 FakeSocket测试
+#### 5.4.3 FakeSocket测试
 
 - 替换发生在创建窗口前，因此窗口的网络对象变为`FakeSocket`；Qt控件、信号、目标构造与JSON编码仍真实执行。
 - `control("speed_input")`通过`getattr(window, ...)`读取窗口属性；它不在按钮内部寻找或创建输入框。
@@ -571,17 +466,170 @@ flowchart TB
 
 对应源码：[桌面窗口](src/rover/desktop/app.py)、[桌面测试](tests/test_desktop_control.py)、[轨迹历史](src/rover/desktop/trajectory.py)、[UDP传输](src/rover/transport/udp_transport.py)。
 
+<a id="network-layers"></a>
+
+## 6. 网络分层与控制信封
+
+### 6.1 图5：各层实际用了什么
+
+OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信结构。
+本项目在应用代码中承担消息语义、数据表示和会话管理功能；不能把写了`session_id`直接当作独立实现了OSI的L5。[分层与应用内会话功能的说明](https://docs.oracle.com/cd/E19504-01/802-5886/intro-45828/index.html)。
+下图对照2026-11-12源码，区分已使用、开发中、系统提供及跨机待验；功能变化时同步修订。
+
+[![本项目网络协议分层与实现状态](reference_image/diagrams/05-network-layers.svg)](reference_image/diagrams/05-network-layers.svg)
+
+[可缩放SVG](reference_image/diagrams/05-network-layers.svg) · [高清PNG](reference_image/diagrams/05-network-layers.png)
+
+当前载荷是**自定义消息 → JSON文本 → UTF-8字节**，再由UDP/IPv4承载。
+`sendto(packet, address)`中的IP与端口交给操作系统处理，不是编码器写进JSON的字段。
+UDP不保证送达、顺序或去重；`127.0.0.1`只在本机流转，不作为已完成局域网实验的证据。[UDP标准](https://www.rfc-editor.org/rfc/rfc768.html)、[主机回环规定](https://www.rfc-editor.org/rfc/rfc1122.html#section-3.2.1.3)。
+
+### 6.2 已完成的工作怎样归类
+
+| 前面完成的内容 | 在系统中的作用与关键入口 |
+| --- | --- |
+| 车辆状态、目标与步进 | `VehicleState`、`apply_target()`、`advance()`提供运动计算，本身不是网络协议。 |
+| 控制与遥测编解码 | `encode_target()/decode_target()`、`encode_telemetry()/decode_telemetry()`定义应用消息并转换数据表示。 |
+| UDP收发与非阻塞接收 | `send_target()`、`try_receive_target()`及遥测对应函数使用系统Socket；无包、坏包与系统错误分别处理。 |
+| 超时停车与故障锁存 | `AcceptedTarget`、`update_control_guard()`、`step_vehicle()`执行本地保护，不代表已完成认证会话。 |
+| 桌面显示与周期控制 | `start_control()`、`send_control()`、`poll_telemetry()`组合两条UDP方向；`world_to_screen()`是GUI坐标换算。 |
+
+### 6.3 控制信封与车端准入
+
+`ControlCommand(session_id, seq, target)`复用现有`control_codec.py`，把会话标识、报文序号与运动目标组合起来。
+
+#### 6.3.1 报文格式与编解码
+
+最近通过的控制编解码基线为40项（旧格式19项、新格式21项），涵盖合法编解码、倒车往返、两端元数据/运动值校验、两端1200字节边界、解析前拒绝超限、严格版本类型及新旧格式互拒；完整项目回归已通过。
+
+新解码器先检查原始`bytes`长度，再进行UTF-8解码和JSON解析：超限已违反约定，无需再创建字符串与对象。限制按字节而非字符或字典字段数计算；先解析再检查仍能判定长度，但解析开销已经发生。超限且同时无法解析时，优先报告长度错误。
+
+当前新格式的JSON载荷示例：
+
+```json
+{
+  "version": 1,
+  "type": "control_command",
+  "session_id": "session-a",
+  "seq": 12,
+  "speed_mps": 2.0,
+  "heading_rad": 0.5
+}
+```
+
+格式要求：版本为整数1，类型为`control_command`；会话标识为非空且非纯空白字符串；序号为非负整数，布尔值不作为整数接受；运动值须为可表示成有限float的int/float。整条UTF-8载荷最多1200字节。
+
+- `session_id`区分哪次控制会话，不是密码或源端口；会话建立、认证、显式使能和撤销流程后续接入。
+- `seq`对同一会话中的新报文递增，即使目标值相同。它为后续重复/乱序判断提供依据，不要求保存或执行每一条；序号较大也不等于报文足够新鲜；比较须结合已确认有效的所属会话，不能把不同会话的序号混用。
+
+<a id="control-admission"></a>
+
+#### 6.3.2 车端准入与超时保护
+
+`control_guard.py`新增`update_command_guard()`，对解码后的`ControlCommand`判断是否接受；它不收包，也不推进车辆位置。
+
+| 车端状态字段 | 含义 |
+| --- | --- |
+| `session_id` | 车端当前登记的会话；此阶段在测试中预置，真实会话建立流程尚未接入。 |
+| `enabled` | 是否明确允许控制，默认`False`；已使能也可以接受合法零速目标，不表示必须运动。 |
+| `last_seq` | 最后实际接受的序号；`None`表示尚无历史，`0`是有效序号。 |
+| `last_accepted` | 当前可执行的目标与本地接受时刻；`None`表示当前没有有效执行记录。 |
+| `fault_latched` | 故障是否锁存；普通新命令不能解除锁存，单独打开使能位也不能绕过。 |
+
+新入口按以下顺序处理：
+
+1. 调用`update_control_guard(guard, now_s=now_s)`复用超时与锁存检查。此次调用省略`incoming`，只检查保护状态。
+2. 已锁存则返回；随后检查有无新命令、是否使能、会话是否匹配、序号是否比本会话最后接受的大。允许跳号，拒绝重复或倒退。
+3. 全部通过后，用`replace()`同时保存新目标、`accepted_at_s`与`last_seq`；未到期时被拒绝的命令不刷新这些记录。
+
+到达最后接受后`0.5 s`时，先锁存故障、撤销使能并清空`last_accepted`，保留会话及序号历史；即使同一轮收到较新命令，也不能刷新到期记录。
+`incoming=None`只表示本轮没有新命令，未超时时旧目标仍有效；它不同于`last_accepted=None`。车辆执行层的`target_for_tick()`在没有有效记录时选择零速目标。
+
+控制保护模块11项测试通过：旧入口3项、新入口8项，覆盖首条序号0、跳号、未使能、错会话、重复/乱序（含重复0）、无包未到期、已锁存故障优先及超时边界。
+对应源码：[准入与保护](src/rover/vehicle/control_guard.py)、[保护测试](tests/test_control_guard.py)、[有效目标选择](src/rover/vehicle/control_watchdog.py)。
+
+#### 6.3.3 当前接入范围与后续升级
+
+新格式及准入逻辑尚未接入真实收发链路。实际运行仍使用原`control_target`和`vehicle_state`消息；车端`app.py`仍调用`try_receive_target()`与旧入口`update_control_guard()`。
+测试直接构造会话和使能状态，用于验证准入规则，不代表已经实现身份认证或正式使能流程。两个接受入口是迁移过渡，后续切换正式收发时统一严格准入入口，继续复用公共保护逻辑。
+
+会话建立/撤销、显式使能与恢复、使能后首包等待期限、车端有效窗口、HMAC及TCP/TLS管理通道仍待接入。
+
+- 先按教师高级标准完成基础版本：以TLS握手/证书校验等对应高级参考的技术能力为依据，结合跨机闭环、保护及实验验证。专家阶段复用基础，扩展控制权交接、授权代次与租约；不是从OSI某层升级到另一层。
+
+新增不兼容的必填字段或授权语义时，应明确调整消息类型或协议版本，并让校验与HMAC覆盖新内容。
+TLS只保护对应的TCP管理连接，不自动保护UDP；HMAC校验真实性/完整性，不提供加密保密性。
+具体实现按已约定计划推进，图中的后续项不作为已实现功能；目标是达到教师认可的高级/专家标准；A01—A10仅是实现与验证的拆解，不能代替评分标准或保证定档。
+
+<a id="project-maintenance"></a>
+
+## 7. 项目配置与文档维护
+
+### 7.1 项目安装配置
+
+#### 7.1.1 为什么现在增加pyproject.toml
+
+早期所有脚本在根目录，直接运行脚本时Python可以找到同目录的其他模块，因此当时没有项目安装配置。
+本次采用`src/rover`包布局，通过[pyproject.toml](pyproject.toml)声明源码位置、依赖和构建方式，统一两端的导入与启动。
+这项配置服务于当前包布局，并非所有Python脚本都必须有它。[Python包布局说明](https://packaging.python.org/en/latest/discussions/src-layout-vs-flat-layout/)
+
+| 配置 | 本项目含义 |
+| --- | --- |
+| `[build-system]` | 使用`setuptools.build_meta`构建，构建工具要求`setuptools>=64`。 |
+| `[project]`的`name`、`version` | 安装名称`dsnet-rover`，当前项目版本`0.1.0`；版本号不表示完成百分比。 |
+| `description`、`readme` | 简介及用于项目说明的README文件。 |
+| `requires-python` | 声明Python最低版本3.12；目前实际验证环境为3.12。 |
+| `dependencies` | 运行依赖为`PySide6==6.12.0`，与构建工具依赖分开。 |
+| `[tool.setuptools.packages.find]` | 从`src`收集`rover`及全部子包；测试、示例和参考图不作为应用包收集。 |
+
+`dsnet-rover`是安装名称，`rover`是代码导入名称，`src`是源码存放区。
+例如`from rover.core.vehicle_model import VehicleState`，导入名称不包含`src`。
+
+#### 7.1.2 可编辑安装与依赖清单
+
+2.2中的`pip install -e .`表示将当前项目以可编辑方式安装到所用Python环境，同时处理项目声明的依赖。
+修改现有源码后，下次运行直接使用修改；调整依赖或安装配置后，应重新执行安装命令。
+`-m rover.desktop.app`会按包路径找到模块，以主程序方式执行并进入其`main()`。[pip本地安装说明](https://pip.pypa.io/en/stable/topics/local-project-installs/)
+
+[requirements.txt](requirements.txt)继续保留第三方依赖清单；两处目前均固定PySide6 6.12.0，修改依赖时须同步。
+只执行`pip install -r requirements.txt`会安装第三方库，不能替代本项目的包安装。
+当前可编辑安装及wheel构建均依赖Python环境，最终独立Windows EXE仍需单独制作。
+
+#### 7.1.3 空的__init__.py为什么也要提交
+
+`rover`及五个子包、`tests`、`examples`各有一个空`__init__.py`，共8个。
+它们明确本项目采用的普通Python包边界，支持完整包导入、测试定位和示例模块启动。
+这些是源码文件，应提交；不需要往里面填`main()`，窗口和Socket仍由应用入口创建。
+
+### 7.2 Git协作与目录迁移
+
+| 提交到仓库 | 用途 |
+| --- | --- |
+| `src/rover/`，含全部`__init__.py` | 应用源码与包结构 |
+| `tests/`、`examples/` | 验证与教学复现 |
+| `pyproject.toml`、`requirements.txt` | 项目安装配置与依赖版本 |
+| `.gitignore`、`README.md`、`LICENSE` | 忽略规则、说明与许可证 |
+| `reference_image/`中的所需图片/图源 | README配图及后续修改依据 |
+
+本机环境、缓存和构建产物按`.gitignore`排除；队友从源码与配置重新生成自己的环境。
+个人本地环境笔记按`.gitignore`排除；本页只保留组员复现所需信息。
+
+迁移作为原仓库的新提交处理：先核对文件移动、修改、图片改名/删除，再在功能分支暂存并审查、提交、推送，按PR流程合入`main`。
+旧路径会退出新版本，新路径进入新版本；仓库地址和历史提交保留，不用重新创建仓库。
+队友拉取迁移后的版本后，先按2.2在自己的虚拟环境执行可编辑安装，再使用新的模块入口启动。
+暂存时需要同时覆盖新路径与旧路径删除记录；`git add -A -- <已核对的路径>`可记录对应新增、修改和删除。[Git暂存说明](https://git-scm.com/docs/git-add)
+
 <a id="diagram-maintenance"></a>
 
-## 6. 导图维护
+### 7.3 导图维护
 
-### 6.1 Mermaid图
+#### 7.3.1 Mermaid图
 
 图1—图3保留为正文中的可编辑Mermaid代码块。
 函数名加粗，参数/变量分行；节点ID只负责连线，不必与Python变量同名。
 改名或移动图时同步检查正文引用，避免箭头标签挤到边框。
 
-### 6.2 SVG导图与生成源
+#### 7.3.2 SVG导图与生成源
 
 图4的[运动与坐标生成源](reference_image/diagrams/render_vehicle_motion.py)、图5的[网络分层生成源](reference_image/diagrams/render_network_layers.py)包含可修改的文字、变量名及布局。
 使用项目已有PySide6，在仓库根目录运行：
