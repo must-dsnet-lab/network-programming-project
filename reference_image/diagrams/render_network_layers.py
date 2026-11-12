@@ -33,10 +33,10 @@ LAYERS = [
      "encode_target() / decode_target()；遥测也有编解码",
      "对象 ↔ JSON文本 ↔ bytes；由应用代码完成转换。",
      "这是表示功能的对照；画布坐标换算属于GUI。"),
-    ("L5", "会话层", "Session", "会话与报文身份：本轮正在补充", "开发中",
+    ("L5", "会话层", "Session", "会话与控制准入：独立逻辑已验证", "开发中",
      "ControlCommand(session_id, seq, target)",
-     "两端字段与长度已验；运行链路尚未改用新格式。",
-     "会话建立／撤销待做；seq是应用字段，非L5专有。"),
+     "update_command_guard()：使能、会话、序号与超时已单测。",
+     "实际收发仍用旧消息；认证／会话管理与有效窗口待接入。"),
     ("L4", "传输层", "Transport", "UDP：控制与遥测各用一个通道", "已使用",
      "SOCK_DGRAM；sendto() / recvfrom()",
      "控制 → 9999；遥测 → 10000；系统处理UDP头部。",
@@ -77,7 +77,7 @@ def build_svg():
              f'viewBox="0 0 {WIDTH} {HEIGHT}" role="img" aria-labelledby="title description">')
     draw.raw('<title id="title">本项目的网络协议分层与实现状态</title>')
     draw.raw('<desc id="description">OSI七层用于功能对照；本项目的表示与会话功能放在TCP/IP应用代码中。'
-             '当前使用自定义JSON、UTF-8、UDP、IPv4回环；控制信封开发中，TCP、TLS、HMAC和真实局域网验证待接入。'
+             '当前使用自定义JSON、UTF-8、UDP、IPv4回环；控制信封编解码与准入已单测但尚未接入实际收发，TCP、TLS、HMAC和真实局域网验证待接入。'
              '底层由操作系统和硬件提供，高级验收后复用基础扩展专家控制权机制。</desc>')
     draw.rect(0, 0, WIDTH, HEIGHT, '#ffffff', '#ffffff', 0)
     label(30, 40, '我们用到了哪些网络层？哪些还在开发？', bold=True, size=25, width=940)
