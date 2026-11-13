@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1830" viewBox="0 0 1000 1830" role="img" aria-labelledby="title description">
 <title id="title">本项目的网络协议分层与实现状态</title>
-<desc id="description">OSI七层用于功能对照；本项目的表示与会话功能放在TCP/IP应用代码中。当前使用自定义JSON、UTF-8、UDP、IPv4回环；控制信封编解码与准入已单测但尚未接入实际收发，TCP、TLS、HMAC和真实局域网验证待接入。底层由操作系统和硬件提供，高级验收后复用基础扩展专家控制权机制。</desc>
+<desc id="description">OSI七层用于功能对照；本项目的表示与会话功能放在TCP/IP应用代码中。当前使用自定义JSON、UTF-8、UDP、IPv4回环；控制信封编解码、准入与会话登记／使能／关闭已独立单测，首包等待及接受后超时由车端状态保护；尚未接入真实管理及新格式收发，TCP、TLS、HMAC、有效窗口和真实局域网验证待接入。底层由操作系统和硬件提供，高级验收后复用基础扩展专家控制权机制。</desc>
 <rect x="0" y="0" width="1000" height="1830" rx="0" fill="#ffffff" stroke="#ffffff" stroke-width="1.4"/>
 <text x="30" y="40" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#172b4d" text-anchor="start">我们用到了哪些网络层？哪些还在开发？</text>
-<text x="30" y="72" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">按源码核对：2026-11-12；OSI是功能参照，不是开发进度条。</text>
+<text x="30" y="72" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">按源码核对：2026-11-13；OSI是功能参照，不是开发进度条。</text>
 <rect x="30" y="92" width="115" height="32" rx="7" fill="#e5f4f0" stroke="#087f70" stroke-width="1.4"/>
 <text x="87.5" y="114" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="700" fill="#087f70" text-anchor="middle">已使用</text>
 <rect x="240" y="92" width="115" height="32" rx="7" fill="#fff0d5" stroke="#946000" stroke-width="1.4"/>
@@ -47,12 +47,12 @@
 <text x="85" y="593" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="middle">会话层</text>
 <text x="85" y="627" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="16" font-weight="400" fill="#4b6078" text-anchor="middle">Session</text>
 <rect x="170" y="514" width="620" height="148" rx="10" fill="#ffffff" stroke="#2563b8" stroke-width="1.4"/>
-<text x="185" y="544" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">会话与控制准入：独立逻辑已验证</text>
+<text x="185" y="544" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">会话状态与控制准入：独立逻辑已验证</text>
 <rect x="679" y="524" width="99" height="28" rx="6" fill="#fff0d5" stroke="none" stroke-width="1.4"/>
 <text x="728.5" y="544" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="16" font-weight="700" fill="#946000" text-anchor="middle">开发中</text>
-<text x="185" y="578" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#2563b8" text-anchor="start">ControlCommand(session_id, seq, target)</text>
-<text x="185" y="611" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#172b4d" text-anchor="start">update_command_guard()：使能、会话、序号与超时已单测。</text>
-<text x="185" y="643" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">实际收发仍用旧消息；认证／会话管理与有效窗口待接入。</text>
+<text x="185" y="578" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#2563b8" text-anchor="start">open_control_session() / enable_control_session()</text>
+<text x="185" y="611" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#172b4d" text-anchor="start">close_control_session()；指令准入、首包等待与锁存已单测。</text>
+<text x="185" y="643" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">面向后续管理调用；认证、新格式收发与有效窗口待接入。</text>
 </g>
 <g class="layer-row" data-level="L4" data-status="已使用">
 <rect x="20" y="678" width="130" height="148" rx="10" fill="#f0f9f8" stroke="#087f8c" stroke-width="1.4"/>

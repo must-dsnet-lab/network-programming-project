@@ -9,6 +9,7 @@ CONTROL_TIMEOUT_S = 0.5
 @dataclass(frozen=True)
 class AcceptedTarget:
     target: ControlTarget
+    # accepted_at_s：真正接受有效指令的时间，用于后续控制超时检查
     accepted_at_s: float  # 接收端单调时钟读数，单位秒
 
 # target_for_tick 是“司机”，每次调用都在看判决书，没超时就继续开，超时了立刻踩刹车
