@@ -50,7 +50,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-最近本机完整验证为124项测试通过，其中控制编解码40项、控制保护28项、桌面控制8项；下文八步人工验收另行记录，不增加单元测试计数。
+最近本机完整验证为141项测试通过，其中控制编解码40项、管理消息编解码17项、控制保护28项、桌面控制8项；下文八步人工验收另行记录，不增加单元测试计数。
 
 ### 2.4 项目结构与职责
 
@@ -77,11 +77,11 @@ LICENSE          项目许可证
 | 模块 | 文件与职责 |
 | --- | --- |
 | `core` | `vehicle_model.py`保存状态并计算单步运动；`control_target.py`定义/应用运动目标；`simulation.py`用于离线多步轨迹。 |
-| `protocol` | `control_codec.py`、`telemetry_codec.py`定义控制/遥测的JSON编解码与字段校验。 |
+| `protocol` | `control_codec.py`、`telemetry_codec.py`与`management_codec.py`定义控制、遥测和会话建立消息的JSON编解码与字段校验。 |
 | `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误。 |
 | `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理会话状态、接受记录、首包/后续超时与控制信封准入（新入口和状态操作尚未接入运行）；`vehicle_runtime.py`组合一次受保护步进；`app.py`运行车端循环。 |
 | `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹。 |
-| `tests` | 13个测试模块，最近完整验证124项，覆盖模型、协议、真实UDP、保护、内部会话状态与界面行为。 |
+| `tests` | 当前14个测试模块，完整回归141项通过，覆盖模型、控制/遥测/管理消息、真实UDP、保护、内部会话状态与界面行为。 |
 | `examples` | 8个教学示例，可单独观察离线运动、单包/周期控制、超时及命令行遥测。 |
 | `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
@@ -552,6 +552,8 @@ UDP不保证送达、顺序或去重；`127.0.0.1`只在本机流转，不作为
 #### 6.3.3 会话登记、使能与关闭
 
 以下是供可信管理上下文调用的内部纯状态接口，不收发报文，也不完成认证；`session_id`匹配只表示与当前登记一致。
+`open_control_session()`只登记调用方提供的ID，不负责生成或传输。当前测试使用`session-a/b`等固定样例；自动生成、管理回复及桌面保存仍待正式管理链路接入。
+
 
 | 操作 | 条件与状态转换 | 重复或不匹配时 |
 | --- | --- | --- |
@@ -571,6 +573,22 @@ UDP不保证送达、顺序或去重；`127.0.0.1`只在本机流转，不作为
 新格式、严格准入及内部会话状态操作尚未接入真实管理与UDP收发链路。实际运行仍使用原`control_target`和`vehicle_state`消息；车端`app.py`仍调用`try_receive_target()`与旧入口`update_control_guard()`。两个接受入口是迁移过渡，后续切换正式收发时统一严格准入入口，继续复用公共保护逻辑。
 
 当前完成的是内部会话生命周期与首包/后续超时的纯状态基础；真实管理侧的会话建立/撤销、显式使能流程、身份认证、车端有效窗口、HMAC及TCP/TLS管理通道仍待实现与接入，正式故障复位也尚未实现。
+
+`management_codec.py`已完成`open_session`请求和`session_opened`成功回复的JSON编解码，17项模块测试通过，覆盖消息头、必填字段、ID格式、编解码两端4096字节正文上限，以及畸形输入拒绝和后续独立调用。大小限制按完整JSON正文的UTF-8字节计算，不含后续TCP帧头；解码时先检查长度，再解析正文。这些函数仅处理数据，不生成/登记会话或完成认证，尚未接入实际管理收发。
+
+当前两种管理消息的职责如下，`version`均为严格整数`1`：
+
+| 消息 | 数据与职责 | 编解码入口 |
+| --- | --- | --- |
+| `open_session` | `OpenSessionRequest(request_id)`申请建立会话，此时尚无`session_id`。 | `encode_open_session_request()` / `decode_open_session_request()` |
+| `session_opened` | `SessionOpened(request_id, session_id)`携带成功回复；回复应回显对应申请的编号，实际匹配由后续管理逻辑完成。 | `encode_session_opened()` / `decode_session_opened()` |
+
+`request_id`必须为非负整数，允许`0`，拒绝布尔值；`session_id`必须为非空白字符串，编解码保留原值。`_encode_management_message()`、`_decode_management_message()`共用JSON与大小处理，两个ID校验函数共用字段规则。对应源码：[管理消息](src/rover/protocol/management_codec.py)、[管理消息测试](tests/test_management_codec.py)。
+
+后续按依赖推进：完整会话流程与ID约定 → 复用现有状态做内存串联 → 管理消息与TCP分帧 → 本机TCP传输 → TLS/身份与会话绑定 → 新UDP控制及HMAC/有效窗口/急停与恢复 → 桌面整合 → 双机高级验收。普通TCP教学仅验证传输；新链路的正式会话控制须完成对应身份、权限与会话校验。管理I/O不得阻塞车端更新和超时检查。
+
+本次只重排教学顺序，原功能和验收范围保留：观察端、故障注入、重复实验及原始数据、专家交接/授权代次/租约和机制对照均继续推进。第二台机器预检及最小EXE打包提前穿插；最终配置/资源/证书/日志、跨机验证、报告/PPT与录像随版本持续更新。
+
 
 - 先按教师高级标准完成基础版本：以TLS握手/证书校验等对应高级参考的技术能力为依据，结合跨机闭环、保护及实验验证。专家阶段复用基础，扩展控制权交接、授权代次与租约；不是从OSI某层升级到另一层。
 
