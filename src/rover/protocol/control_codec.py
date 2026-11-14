@@ -7,6 +7,7 @@ from math import isfinite
 MAX_CONTROL_MESSAGE_BYTES = 1200
 
 @dataclass(frozen=True)
+# 在已有会话中更新运动目标
 # controlCommand控制的是一个具体的报文
 class ControlCommand:
     session_id: str  # 属于哪次控制会话
