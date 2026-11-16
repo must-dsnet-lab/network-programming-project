@@ -1,0 +1,130 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1570" viewBox="0 0 1400 1570" role="img" aria-labelledby="title description">
+<title id="title">应用记录边界与网络逐层封装</title>
+<desc id="description">参考课堂HTTP、TCP、IPv4和以太网的封装示意，以本项目管理JSON代替HTTP。应用长度前缀位于TCP的Data内，不是TCP首部或L2帧头。图示一条短消息装入一段的逻辑例子，实际可跨段或合并；本机回环不走真实以太网。UDP保留数据报边界，本项目不额外加应用长度前缀。TCP应用记录编解码与增量解析均已验证，实际收发待接入。</desc>
+<rect x="0" y="0" width="1400" height="1570" rx="0" fill="#ffffff" stroke="#ffffff" stroke-width="0"/>
+<text x="28" y="48" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="34" font-weight="700" fill="#172b4d" text-anchor="start">上层定义消息，下层负责承载：我们的数据怎样逐层封装？</text>
+<text x="28" y="88" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#4b6078" text-anchor="start">管理JSON编解码、TCP记录编解码与增量解析已通过测试，实际TCP收发待接入。</text>
+<rect x="24" y="112" width="1352" height="100" rx="12" fill="#f5f8ff" stroke="#9cb2d2" stroke-width="1.4"/>
+<text x="44" y="151" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="400" fill="#172b4d" text-anchor="start">管理对象 → encode_open_session_request(request) → payload（JSON UTF-8字节）</text>
+<text x="44" y="190" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#2563b8" text-anchor="start">长度小例：正文b'hello'为5字节 → 前缀为00 00 00 05 → 应用记录共9字节</text>
+<text x="24" y="253" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="start">谁负责</text>
+<text x="235" y="253" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="start">同色字段：上层字节在下层数据区域中继续被承载</text>
+<text x="1215" y="253" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#172b4d" text-anchor="start">PDU／记录</text>
+<rect x="24" y="276" width="185" height="148" rx="10" fill="#f4f7ff" stroke="#2563b8" stroke-width="1.8"/>
+<text x="116.5" y="314" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#2563b8" text-anchor="middle">应用协议</text>
+<text x="116.5" y="355" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">Python代码</text>
+<text x="116.5" y="394" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">TCP/IP应用层</text>
+<rect x="1215" y="276" width="160" height="148" rx="10" fill="#f4f7ff" stroke="#2563b8" stroke-width="1.8"/>
+<text x="1295.0" y="314" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#2563b8" text-anchor="middle">应用记录</text>
+<text x="1295.0" y="355" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">Record</text>
+<text x="1295.0" y="394" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">自定消息格式</text>
+<rect x="665" y="300" width="170" height="100" rx="0" fill="#e9efff" stroke="#2563b8" stroke-width="1.8"/>
+<text x="750.0" y="340" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">应用长度N</text>
+<text x="750.0" y="377" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">4字节·大端</text>
+<rect x="835" y="300" width="290" height="100" rx="0" fill="#f6f8fc" stroke="#7890ad" stroke-width="1.8"/>
+<text x="980.0" y="340" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">JSON正文</text>
+<text x="980.0" y="377" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">payload：N字节</text>
+<g class="layer-marker" data-row="0" data-y="300"/>
+<rect x="24" y="496" width="185" height="148" rx="10" fill="#f0f9f6" stroke="#087f70" stroke-width="1.8"/>
+<text x="116.5" y="534" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#087f70" text-anchor="middle">传输层L4</text>
+<text x="116.5" y="575" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">系统TCP栈</text>
+<text x="116.5" y="614" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">提供字节流</text>
+<rect x="1215" y="496" width="160" height="148" rx="10" fill="#f0f9f6" stroke="#087f70" stroke-width="1.8"/>
+<text x="1295.0" y="534" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#087f70" text-anchor="middle">TCP段</text>
+<text x="1295.0" y="575" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">Segment</text>
+<text x="1295.0" y="614" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">含TCP头</text>
+<rect x="515" y="520" width="150" height="100" rx="0" fill="#e5f4f0" stroke="#087f70" stroke-width="1.8"/>
+<text x="590.0" y="560" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">TCP头</text>
+<text x="590.0" y="597" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">系统添加</text>
+<rect x="665" y="520" width="170" height="100" rx="0" fill="#e9efff" stroke="#2563b8" stroke-width="1.8"/>
+<text x="750.0" y="560" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">应用长度N</text>
+<text x="750.0" y="597" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">4字节·大端</text>
+<rect x="835" y="520" width="290" height="100" rx="0" fill="#f6f8fc" stroke="#7890ad" stroke-width="1.8"/>
+<text x="980.0" y="560" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">JSON正文</text>
+<text x="980.0" y="597" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">payload：N字节</text>
+<g class="layer-marker" data-row="1" data-y="520"/>
+<rect x="24" y="716" width="185" height="148" rx="10" fill="#fff9ef" stroke="#a37820" stroke-width="1.8"/>
+<text x="116.5" y="754" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#a37820" text-anchor="middle">网络层L3</text>
+<text x="116.5" y="795" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">系统IP栈</text>
+<text x="116.5" y="834" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">负责IP承载</text>
+<rect x="1215" y="716" width="160" height="148" rx="10" fill="#fff9ef" stroke="#a37820" stroke-width="1.8"/>
+<text x="1295.0" y="754" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#a37820" text-anchor="middle">IP包</text>
+<text x="1295.0" y="795" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">Packet</text>
+<text x="1295.0" y="834" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">含IP头</text>
+<rect x="385" y="740" width="130" height="100" rx="0" fill="#fff3dc" stroke="#a37820" stroke-width="1.8"/>
+<text x="450.0" y="780" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">IPv4头</text>
+<text x="450.0" y="817" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">系统添加</text>
+<rect x="515" y="740" width="150" height="100" rx="0" fill="#e5f4f0" stroke="#087f70" stroke-width="1.8"/>
+<text x="590.0" y="780" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">TCP头</text>
+<text x="590.0" y="817" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">系统添加</text>
+<rect x="665" y="740" width="170" height="100" rx="0" fill="#e9efff" stroke="#2563b8" stroke-width="1.8"/>
+<text x="750.0" y="780" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">应用长度N</text>
+<text x="750.0" y="817" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">4字节·大端</text>
+<rect x="835" y="740" width="290" height="100" rx="0" fill="#f6f8fc" stroke="#7890ad" stroke-width="1.8"/>
+<text x="980.0" y="780" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">JSON正文</text>
+<text x="980.0" y="817" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">payload：N字节</text>
+<g class="layer-marker" data-row="2" data-y="740"/>
+<rect x="24" y="936" width="185" height="148" rx="10" fill="#f5f7fa" stroke="#66798f" stroke-width="1.8"/>
+<text x="116.5" y="974" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#66798f" text-anchor="middle">链路层L2</text>
+<text x="116.5" y="1015" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">驱动／网卡</text>
+<text x="116.5" y="1054" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">Ethernet示例</text>
+<rect x="1215" y="936" width="160" height="148" rx="10" fill="#f5f7fa" stroke="#66798f" stroke-width="1.8"/>
+<text x="1295.0" y="974" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#66798f" text-anchor="middle">以太网帧</text>
+<text x="1295.0" y="1015" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">L2 Frame</text>
+<text x="1295.0" y="1054" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="middle">含链路头尾</text>
+<rect x="235" y="960" width="150" height="100" rx="0" fill="#edf1f7" stroke="#66798f" stroke-width="1.8"/>
+<text x="310.0" y="1000" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">以太网头</text>
+<text x="310.0" y="1037" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">MAC等</text>
+<rect x="385" y="960" width="130" height="100" rx="0" fill="#fff3dc" stroke="#a37820" stroke-width="1.8"/>
+<text x="450.0" y="1000" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">IPv4头</text>
+<text x="450.0" y="1037" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">系统添加</text>
+<rect x="515" y="960" width="150" height="100" rx="0" fill="#e5f4f0" stroke="#087f70" stroke-width="1.8"/>
+<text x="590.0" y="1000" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">TCP头</text>
+<text x="590.0" y="1037" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">系统添加</text>
+<rect x="665" y="960" width="170" height="100" rx="0" fill="#e9efff" stroke="#2563b8" stroke-width="1.8"/>
+<text x="750.0" y="1000" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">应用长度N</text>
+<text x="750.0" y="1037" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">4字节·大端</text>
+<rect x="835" y="960" width="290" height="100" rx="0" fill="#f6f8fc" stroke="#7890ad" stroke-width="1.8"/>
+<text x="980.0" y="1000" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">JSON正文</text>
+<text x="980.0" y="1037" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">payload：N字节</text>
+<rect x="1125" y="960" width="70" height="100" rx="0" fill="#edf1f7" stroke="#66798f" stroke-width="1.8"/>
+<text x="1160.0" y="1000" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">FCS</text>
+<text x="1160.0" y="1037" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="middle">尾</text>
+<g class="layer-marker" data-row="3" data-y="960"/>
+<text x="235" y="319" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="start">应用自行约定消息边界</text>
+<text x="235" y="359" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="400" fill="#2563b8" text-anchor="start">N = len(payload)</text>
+<text x="235" y="399" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="start">长度不含前缀自身4字节</text>
+<text x="665" y="283" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="400" fill="#2563b8" text-anchor="start">encode_record(payload)</text>
+<polyline points="920,400 920,520" fill="none" stroke="#58718f" stroke-width="2.3" stroke-linejoin="round"/>
+<polygon points="920.00,520.00 916.00,511.00 924.00,511.00" fill="#58718f"/>
+<text x="955" y="468.0" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#4b6078" text-anchor="start">交给下层承载</text>
+<polyline points="920,620 920,740" fill="none" stroke="#58718f" stroke-width="2.3" stroke-linejoin="round"/>
+<polygon points="920.00,740.00 916.00,731.00 924.00,731.00" fill="#58718f"/>
+<text x="955" y="688.0" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#4b6078" text-anchor="start">交给下层承载</text>
+<polyline points="920,840 920,960" fill="none" stroke="#58718f" stroke-width="2.3" stroke-linejoin="round"/>
+<polygon points="920.00,960.00 916.00,951.00 924.00,951.00" fill="#58718f"/>
+<text x="955" y="908.0" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#4b6078" text-anchor="start">交给下层承载</text>
+<text x="675" y="500" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="start">Data / Payload</text>
+<text x="525" y="720" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="start">Data / Payload</text>
+<text x="395" y="940" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="start">Data / Payload</text>
+<text x="24" y="1119" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#4b6078" text-anchor="start">逻辑封装示例：这里画一条短消息；实际可跨多个TCP段，多条消息也可同批收到。</text>
+<text x="24" y="1155" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#4b6078" text-anchor="start">本机127.0.0.1回环不经过真实以太网；图中链路层用于理解以太网跨机通信。</text>
+<rect x="24" y="1190" width="660" height="264" rx="14" fill="#f0f9f8" stroke="#7eada8" stroke-width="1.8"/>
+<text x="44" y="1222" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#172b4d" text-anchor="start">UDP对照：已有数据报边界</text>
+<rect x="48" y="1252" width="164" height="72" rx="0" fill="#e5f4f0" stroke="#087f70" stroke-width="1.4"/>
+<rect x="212" y="1252" width="448" height="72" rx="0" fill="#f6f8fc" stroke="#7890ad" stroke-width="1.4"/>
+<text x="130" y="1296" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#172b4d" text-anchor="middle">系统UDP头</text>
+<text x="436" y="1296" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="middle">JSON正文</text>
+<text x="48" y="1361" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#172b4d" text-anchor="start">sendto：一条JSON → 一份数据报</text>
+<text x="48" y="1399" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#172b4d" text-anchor="start">recvfrom：返回正文（接收容量足够）</text>
+<text x="48" y="1435" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="start">本项目不额外加应用长度前缀。</text>
+<rect x="704" y="1190" width="672" height="264" rx="14" fill="#f5f8ff" stroke="#8ba5cc" stroke-width="1.8"/>
+<text x="724" y="1222" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#172b4d" text-anchor="start">TCP接收：先累计头，再累计正文</text>
+<text x="728" y="1268" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#172b4d" text-anchor="start">累计4字节头 → 读出N → 累计N字节正文</text>
+<text x="728" y="1310" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#172b4d" text-anchor="start">一次recv()可得到半条或多条应用记录。</text>
+<text x="728" y="1352" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#172b4d" text-anchor="start">decode_open_session_request(payload)</text>
+<text x="728" y="1394" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#172b4d" text-anchor="start">系统处理TCP/IP头，Python处理应用记录。</text>
+<text x="728" y="1435" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="start">长度前缀也可能分次到达；应用记录≠L2帧。</text>
+<text x="28" y="1495" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="start">参考老师课堂封装示意，以本项目管理消息替代HTTP；四字节前缀是项目约定。</text>
+<text x="28" y="1532" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="start">字段宽度仅供阅读，不表示真实字节比例；文字、函数名和布局可在生成源中修改。  2026-11-16</text>
+</svg>

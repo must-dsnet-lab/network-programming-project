@@ -50,7 +50,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-最近本机完整验证为141项测试通过，其中控制编解码40项、管理消息编解码17项、控制保护28项、桌面控制8项；下文八步人工验收另行记录，不增加单元测试计数。
+最近本机完整验证为156项测试通过，其中控制编解码40项、管理消息编解码17项、TCP应用记录15项、控制保护28项、桌面控制8项；下文八步人工验收另行记录，不增加单元测试计数。
 
 ### 2.4 项目结构与职责
 
@@ -78,10 +78,10 @@ LICENSE          项目许可证
 | --- | --- |
 | `core` | `vehicle_model.py`保存状态并计算单步运动；`control_target.py`定义/应用运动目标；`simulation.py`用于离线多步轨迹。 |
 | `protocol` | `control_codec.py`、`telemetry_codec.py`与`management_codec.py`定义控制、遥测和会话建立消息的JSON编解码与字段校验。 |
-| `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误。 |
+| `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误；`tcp_records.py`编解码TCP应用记录并从分次到达的字节中提取完整正文。 |
 | `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理会话状态、接受记录、首包/后续超时与控制信封准入（新入口和状态操作尚未接入运行）；`vehicle_runtime.py`组合一次受保护步进；`app.py`运行车端循环。 |
 | `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹。 |
-| `tests` | 当前14个测试模块，完整回归141项通过，覆盖模型、控制/遥测/管理消息、真实UDP、保护、内部会话状态与界面行为。 |
+| `tests` | 最近完整回归覆盖15个测试模块、156项测试，涵盖模型、控制/遥测/管理消息、真实UDP、TCP应用记录、保护、内部会话状态与界面行为。 |
 | `examples` | 8个教学示例，可单独观察离线运动、单包/周期控制、超时及命令行遥测。 |
 | `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
@@ -470,19 +470,37 @@ flowchart TB
 
 ## 6. 网络分层与控制信封
 
-### 6.1 图5：各层实际用了什么
+### 6.1 分层职责、封装与消息边界
+
+#### 6.1.1 图5：各层实际用了什么
 
 OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信结构。
 本项目在应用代码中承担消息语义、数据表示和会话管理功能；不能把写了`session_id`直接当作独立实现了OSI的L5。[分层与应用内会话功能的说明](https://docs.oracle.com/cd/E19504-01/802-5886/intro-45828/index.html)。
-下图对照2026-11-13源码，区分已使用、开发中、系统提供及跨机待验；功能变化时同步修订。
+下图对照2026-11-15源码，区分已使用、开发中、系统提供及跨机待验；功能变化时同步修订。
 
 [![本项目网络协议分层与实现状态](reference_image/diagrams/05-network-layers.svg)](reference_image/diagrams/05-network-layers.svg)
 
 [可缩放SVG](reference_image/diagrams/05-network-layers.svg) · [高清PNG](reference_image/diagrams/05-network-layers.png)
 
-当前载荷是**自定义消息 → JSON文本 → UTF-8字节**，再由UDP/IPv4承载。
-`sendto(packet, address)`中的IP与端口交给操作系统处理，不是编码器写进JSON的字段。
-UDP不保证送达、顺序或去重；`127.0.0.1`只在本机流转，不作为已完成局域网实验的证据。[UDP标准](https://www.rfc-editor.org/rfc/rfc768.html)、[主机回环规定](https://www.rfc-editor.org/rfc/rfc1122.html#section-3.2.1.3)。
+<a id="encapsulation-and-framing"></a>
+
+#### 6.1.2 图6：上层定义消息，下层负责承载
+
+老师课堂中的HTTP → TCP → IPv4 → Ethernet示意，展示了逐层封装：下层将来自上层的字节放入自己的Data/Payload，再添加本层需要的信息。图6用本项目的管理JSON替代HTTP；各层有自己的头部，应用消息、TCP段、IP包和链路帧之间没有固定的一一对应关系。
+
+[![应用消息边界与网络逐层封装](reference_image/diagrams/06-encapsulation.svg)](reference_image/diagrams/06-encapsulation.svg)
+
+[可缩放SVG](reference_image/diagrams/06-encapsulation.svg) · [高清PNG](reference_image/diagrams/06-encapsulation.png) · [文字与布局生成源](reference_image/diagrams/render_encapsulation.py)
+
+TCP与UDP都自带传输层协议头，由系统协议栈处理。当前实际载荷是**自定义消息 → JSON文本 → UTF-8字节 → UDP/IPv4**；`sendto(packet, address)`中的IP与端口交给操作系统处理，不是编码器写进JSON的字段。本项目一条JSON对应一份UDP数据报，接收容量足够时`recvfrom()`保留该数据报的边界，因此不额外添加应用消息长度前缀。UDP不保证送达、顺序或去重。[UDP标准](https://www.rfc-editor.org/rfc/rfc768.html)
+
+TCP向应用提供有序字节流，一次读取可能只有半条消息，也可能包含多条消息。管理通道计划采用**4字节无符号大端正文长度N + N字节正文**；`N = len(payload)`只计算JSON正文的UTF-8字节，不含前缀自身4字节，正文上限沿用4096字节。接收方须先累计满4字节读出N，再累计正文；长度头本身也可能分次到达。
+
+`encode_open_session_request(request)`生成`payload`正文，`encode_record(payload)`添加四字节长度头`header`，返回应用记录`record`，长度常量为`RECORD_HEADER_BYTES`。后续Socket把这些字节交给系统TCP，取出完整正文后再调用`decode_open_session_request(payload)`。这里用record称呼应用记录，Ethernet frame保留给L2以太网帧；`transport`目录用于组织收发工具，不表示在Python里重写系统TCP协议。单条记录编解码已有9项测试通过，覆盖多字节长度、1/4096字节合法边界，以及短头部、零长度或超限声明、正文长度不符。`TcpRecordBuffer.feed(chunk)`已支持半个头部、半条正文和一次收到多条记录。头部齐全即可检查声明长度，收到EOF后由接收方显式调用`finish()`检查剩余字节。TCP应用记录共15项测试通过，真实TCP Socket收发和读取期限留待本机传输阶段。对应源码：[TCP应用记录](src/rover/transport/tcp_records.py)、[TCP应用记录测试](tests/test_tcp_records.py)。
+
+图中的以太网头和FCS由系统、驱动与网卡处理；`127.0.0.1`回环不经过真实以太网，不作为已完成局域网实验的证据。[主机回环规定](https://www.rfc-editor.org/rfc/rfc1122.html#section-3.2.1.3)
+
+课程衔接：CS370/SE370第一讲第15、17、20页（PDU与封装），第二讲第56—57页（以太网framing），第五讲第9页及第33页（TCP/UDP首部；UDP所在PDF页序为32）。TCP字节流不保留应用消息边界的例子见课程教材第6.5.2节、印刷第560页、图6-35。
 
 ### 6.2 已完成的工作怎样归类
 
@@ -666,15 +684,16 @@ TLS只保护对应的TCP管理连接，不自动保护UDP；HMAC校验真实性/
 
 #### 7.3.2 SVG导图与生成源
 
-图4的[运动与坐标生成源](reference_image/diagrams/render_vehicle_motion.py)、图5的[网络分层生成源](reference_image/diagrams/render_network_layers.py)包含可修改的文字、变量名及布局。
+图4的[运动与坐标生成源](reference_image/diagrams/render_vehicle_motion.py)、图5的[网络分层生成源](reference_image/diagrams/render_network_layers.py)、图6的[封装与边界生成源](reference_image/diagrams/render_encapsulation.py)包含可修改的文字、变量名及布局。图6的`LABELS`、`FIELDS`和布局常量集中保存函数名、字段文字、位置与尺寸。
 使用项目已有PySide6，在仓库根目录运行：
 
 ```powershell
 .\.venv\Scripts\python.exe reference_image/diagrams/render_vehicle_motion.py
 .\.venv\Scripts\python.exe reference_image/diagrams/render_network_layers.py
+.\.venv\Scripts\python.exe reference_image/diagrams/render_encapsulation.py
 ```
 
-两个命令各自更新对应的SVG与高清PNG，输出到生成源所在目录。图5复用同目录图4生成源的绘图工具，须一并保留；运行图5命令不会重绘图4。README使用相对链接，图的位置和资源目录均可调整。
+三个命令各自更新对应的SVG与高清PNG，输出到生成源所在目录。图5和图6复用同目录图4生成源的绘图工具，须一并保留；运行图5或图6命令不会重绘图4。README使用相对链接，图的位置和资源目录均可调整。
 
 新增协议能力时，同步修订图5的核对日期、各层状态、报文类型和通道说明；以实际接入与验证结果标记进展。安全机制不硬塞到单个OSI层，未做的跨机实验也不写成已完成。
 
