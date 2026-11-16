@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parent
 STEM = "05-network-layers"
 WIDTH, HEIGHT = 1000, 1830
 PNG_SCALE = 3
-AS_OF = "2026-11-15"
+AS_OF = "2026-11-16"
 ROW_TOP, ROW_HEIGHT, ROW_GAP = 186, 148, 16
 
 # These are functional comparisons, not seven separately implemented protocols.
@@ -27,7 +27,7 @@ ROW_TOP, ROW_HEIGHT, ROW_GAP = 186, 148, 16
 LAYERS = [
     ("L7", "应用层", "Application", "自定义控制、遥测与管理消息", "已使用",
      "control_target / vehicle_state；version / type",
-     "管理新增 open_session / session_opened 编解码。",
+     "open_session / session_opened 已做本机收发。",
      "控制保护由应用决定；目前还没有认证管理通道。"),
     ("L6", "表示层", "Presentation", "数据表示：JSON ＋ UTF-8", "已使用",
      "encode_target() / decode_target()；管理也有编解码",
@@ -37,10 +37,10 @@ LAYERS = [
      "open_control_session() / enable_control_session()",
      "close_control_session()；指令准入、首包等待与锁存已单测。",
      "面向后续管理调用；认证、新格式收发与有效窗口待接入。"),
-    ("L4", "传输层", "Transport", "UDP：控制与遥测各用一个通道", "已使用",
-     "SOCK_DGRAM；sendto() / recvfrom()",
-     "控制 → 9999；遥测 → 10000；系统处理UDP头部。",
-     "UDP不保证送达、顺序或去重；TCP管理通道待接入。"),
+    ("L4", "传输层", "Transport", "UDP控制与遥测，TCP用于本机管理演示", "已使用",
+     "SOCK_DGRAM；sendto() / recvfrom()；SOCK_STREAM",
+     "UDP控制 → 9999；遥测 → 10000；系统处理UDP头部。",
+     "UDP不保证送达、顺序或去重；本机TCP管理收发已验证。"),
     ("L3", "网络层", "Network", "IPv4：当前使用本机回环", "系统提供",
      "AF_INET；127.0.0.1",
      "操作系统负责IP处理；当前报文只在本机流转。",
@@ -77,7 +77,7 @@ def build_svg():
              f'viewBox="0 0 {WIDTH} {HEIGHT}" role="img" aria-labelledby="title description">')
     draw.raw('<title id="title">本项目的网络协议分层与实现状态</title>')
     draw.raw('<desc id="description">OSI七层用于功能对照；本项目的表示与会话功能放在TCP/IP应用代码中。'
-             '当前使用自定义JSON、UTF-8、UDP、IPv4回环；控制信封、管理申请／回复编解码、准入与会话登记／使能／关闭已独立单测，首包等待及接受后超时由车端状态保护；尚未接入真实管理及新格式收发，TCP、TLS、HMAC、有效窗口和真实局域网验证待接入。'
+             '当前使用自定义JSON、UTF-8、UDP、IPv4回环；控制信封、管理申请／回复编解码、准入与会话登记／使能／关闭已独立单测，首包等待及接受后超时由车端状态保护；本机TCP管理消息收发和断开已验证；正式TLS管理通道、新格式收发、HMAC、有效窗口和局域网验证待接入。'
              '底层由操作系统和硬件提供，高级验收后复用基础扩展专家控制权机制。</desc>')
     draw.rect(0, 0, WIDTH, HEIGHT, '#ffffff', '#ffffff', 0)
     label(30, 40, '我们用到了哪些网络层？哪些还在开发？', bold=True, size=25, width=940)

@@ -1,0 +1,93 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1272" viewBox="0 0 1400 1272" role="img" aria-labelledby="title description">
+<title id="title">TCP 接收端怎样拼出一条记录</title>
+<desc id="description">用分三次到达的 hello 应用记录，展示 iter_records、_recv_chunk、feed、decode_record、逐条交付，以及装配期限与 EOF 的处理。TCP 每次读取的实际分块可以不同。</desc>
+<rect x="0" y="0" width="1400" height="1272" rx="0" fill="#ffffff" stroke="#ffffff" stroke-width="0"/>
+<text x="32" y="57" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="38" font-weight="700" fill="#172b4d" text-anchor="start">TCP 接收端怎样拼出一条记录？</text>
+<text x="32" y="98" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="400" fill="#4b6078" text-anchor="start">同一连接复用 records。沿着实参、返回值和截止时刻看接收循环。</text>
+<rect x="32" y="125" width="1336" height="99" rx="14" fill="#f5f8fc" stroke="#c8d6e5" stroke-width="1.6"/>
+<text x="54" y="173" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#172b4d" text-anchor="start">应用调用者</text>
+<text x="240" y="163" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">records = iter_records(sock, record_timeout_s=0.20)</text>
+<text x="240" y="198" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#65469b" text-anchor="start">payload = next(records)</text>
+<text x="628" y="198" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="start">首次 next() 在迭代器内创建 TcpRecordBuffer()</text>
+<polyline points="66,227 66,258" fill="none" stroke="#2563b8" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="66.00,258.00 62.00,249.00 70.00,249.00" fill="#2563b8"/>
+<rect x="32" y="266" width="824" height="120" rx="14" fill="#f1f6ff" stroke="#2563b8" stroke-width="1.6"/>
+<text x="54" y="300" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#2563b8" text-anchor="start">iter_records() 中读取字节</text>
+<text x="54" y="335" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">chunk = _recv_chunk(sock, deadline_s)</text>
+<text x="54" y="366" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b6078" text-anchor="start">sock.recv(TCP_RECEIVE_CHUNK_BYTES) → chunk: bytes</text>
+<polyline points="66,390 66,429" fill="none" stroke="#2563b8" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="66.00,429.00 62.00,420.00 70.00,420.00" fill="#2563b8"/>
+<text x="88" y="416" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#2563b8" text-anchor="start">非空 chunk → 检查 received_at_s 是否已到 deadline_s</text>
+<rect x="32" y="437" width="824" height="241" rx="14" fill="#eef8f5" stroke="#08796a" stroke-width="1.6"/>
+<text x="54" y="472" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#08796a" text-anchor="start">payloads = buffer.feed(chunk)</text>
+<text x="54" y="511" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">chunk 追加到 self._buffer。收齐前 4 字节作为 header。</text>
+<text x="54" y="548" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#172b4d" text-anchor="start">header → length → _validate_payload_length(length) 校验 1–4096</text>
+<text x="54" y="583" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">凑齐 record_size = 4 + length 个字节后切出 record</text>
+<text x="54" y="618" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">decode_record(record) → 一个 payload: bytes → 加入 payloads</text>
+<text x="54" y="653" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#172b4d" text-anchor="start">移除已取出的记录并接着检查下一条。未收齐的字节留在缓冲区。</text>
+<polyline points="66,682 66,721" fill="none" stroke="#08796a" stroke-width="2.2" stroke-linejoin="round"/>
+<polygon points="66.00,721.00 62.00,712.00 70.00,712.00" fill="#08796a"/>
+<text x="88" y="709" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#08796a" text-anchor="start">返回 payloads: list[bytes]。另查 buffer.has_partial_record。</text>
+<rect x="32" y="729" width="824" height="145" rx="14" fill="#f5f2fb" stroke="#65469b" stroke-width="1.6"/>
+<text x="54" y="766" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#65469b" text-anchor="start">更新 deadline_s，再执行 yield from payloads</text>
+<text x="54" y="800" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#172b4d" text-anchor="start">缓冲区空 → None　同一条未齐 → 保留原期限　新记录未齐 → 起算</text>
+<text x="54" y="833" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#172b4d" text-anchor="start">列表为空时，本次 next() 继续读。列表有值时，交付一个 payload: bytes。</text>
+<text x="54" y="858" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">同批有多条正文时，后续 next() 接着从列表里取。</text>
+<polyline points="29,832 11,832 11,198 27,198" fill="none" stroke="#65469b" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="27.00,198.00 18.00,202.00 18.00,194.00" fill="#65469b"/>
+<text x="30" y="674" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#65469b" text-anchor="start" transform="rotate(-90 30 674)">payload: bytes</text>
+<polyline points="862,769 889,769 889,338 861,338" fill="none" stroke="#98631c" stroke-width="2" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="861.00,338.00 870.00,334.00 870.00,342.00" fill="#98631c"/>
+<text x="910" y="663" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="400" fill="#98631c" text-anchor="start" transform="rotate(-90 910 663)">更新后的 deadline_s</text>
+<text x="32" y="925" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#172b4d" text-anchor="start">用同一次 next(records) 走一遍三次读取</text>
+<rect x="32" y="948" width="1336" height="48" rx="0" fill="#e8eff9" stroke="#c8d6e5" stroke-width="1.4"/>
+<text x="50" y="979" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#172b4d" text-anchor="start">读取时刻</text>
+<text x="240" y="979" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#172b4d" text-anchor="start">recv() 返回的 chunk</text>
+<text x="496" y="979" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#172b4d" text-anchor="start">feed() 后的缓冲区</text>
+<text x="876" y="979" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#172b4d" text-anchor="start">返回的 payloads</text>
+<text x="1131" y="979" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#172b4d" text-anchor="start">更新后的 deadline_s</text>
+<rect x="32" y="996" width="1336" height="60" rx="0" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<text x="50" y="1035" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">10.00 s</text>
+<text x="240" y="1035" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">00 00 00</text>
+<text x="496" y="1035" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">00 00 00</text>
+<text x="876" y="1035" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#172b4d" text-anchor="start">[]</text>
+<text x="1131" y="1035" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">10.20 s</text>
+<rect x="32" y="1056" width="1336" height="60" rx="0" fill="#f7faff" stroke="#c8d6e5" stroke-width="1.4"/>
+<text x="50" y="1095" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">10.08 s</text>
+<text x="240" y="1095" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">05 + b'he'</text>
+<text x="496" y="1095" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">00 00 00 05 | b'he'</text>
+<text x="876" y="1095" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#172b4d" text-anchor="start">[]</text>
+<text x="1131" y="1095" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">10.20 s</text>
+<rect x="32" y="1116" width="1336" height="60" rx="0" fill="#eef8f5" stroke="#c8d6e5" stroke-width="1.4"/>
+<text x="50" y="1155" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">10.16 s</text>
+<text x="240" y="1155" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">b'llo'</text>
+<text x="496" y="1155" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">空</text>
+<text x="876" y="1155" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#08796a" text-anchor="start">[b'hello']</text>
+<text x="1131" y="1155" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">None</text>
+<polyline points="222,948 222,1176" fill="none" stroke="#c8d6e5" stroke-width="1" stroke-linejoin="round"/>
+<polyline points="478,948 478,1176" fill="none" stroke="#c8d6e5" stroke-width="1" stroke-linejoin="round"/>
+<polyline points="858,948 858,1176" fill="none" stroke="#c8d6e5" stroke-width="1" stroke-linejoin="round"/>
+<polyline points="1113,948 1113,1176" fill="none" stroke="#c8d6e5" stroke-width="1" stroke-linejoin="round"/>
+<text x="32" y="1210" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#08796a" text-anchor="start">第三次收齐时，next(records) 返回 b'hello'。缓冲区已空，deadline_s 设为 None。</text>
+<polyline points="862,310 923,310" fill="none" stroke="#2563b8" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="923.00,310.00 914.00,314.00 914.00,306.00" fill="#2563b8"/>
+<rect x="930" y="266" width="438" height="151" rx="14" fill="#f5f8ff" stroke="#aebdd6" stroke-width="1.6"/>
+<text x="952" y="303" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#2563b8" text-anchor="start">chunk == b"" → EOF</text>
+<text x="952" y="340" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#172b4d" text-anchor="start">buffer.finish()</text>
+<text x="952" y="373" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#172b4d" text-anchor="start">缓冲区空 → 迭代正常结束</text>
+<text x="952" y="400" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#172b4d" text-anchor="start">缓冲区有残留 → ValueError</text>
+<rect x="930" y="437" width="438" height="437" rx="14" fill="#fffbf3" stroke="#dcc392" stroke-width="1.6"/>
+<text x="952" y="474" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#98631c" text-anchor="start">装配期限怎样参与读取</text>
+<text x="952" y="510" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#172b4d" text-anchor="start">received_at_s = monotonic()</text>
+<text x="952" y="546" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#172b4d" text-anchor="start">deadline_s = received_at_s</text>
+<text x="952" y="578" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#172b4d" text-anchor="start">    + record_timeout_s</text>
+<text x="952" y="616" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#98631c" text-anchor="start">10.00 s + 0.20 s = 10.20 s</text>
+<text x="952" y="657" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#172b4d" text-anchor="start">remaining_s = deadline_s</text>
+<text x="952" y="686" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#172b4d" text-anchor="start">    - monotonic()</text>
+<text x="952" y="720" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#98631c" text-anchor="start">10.20 s − 10.08 s = 0.12 s</text>
+<text x="952" y="752" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#172b4d" text-anchor="start">原超时 1.0 s，本次最多等 0.12 s。</text>
+<text x="952" y="781" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#172b4d" text-anchor="start">读完恢复原 Socket 超时设置。</text>
+<text x="952" y="809" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#172b4d" text-anchor="start">读前已到期限，或读到的字节晚到</text>
+<text x="952" y="836" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#98631c" text-anchor="start">→ TimeoutError</text>
+<text x="32" y="1247" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6078" text-anchor="start">hello 用来演示分块。完整的管理正文可继续交给 decode_open_session_request(payload) 解码。</text>
+</svg>
