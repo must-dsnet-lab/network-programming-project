@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1570" viewBox="0 0 1400 1570" role="img" aria-labelledby="title description">
 <title id="title">应用记录边界与网络逐层封装</title>
-<desc id="description">参考课堂HTTP、TCP、IPv4和以太网的封装示意，以本项目管理JSON代替HTTP。应用长度前缀位于TCP的Data内，不是TCP首部或L2帧头。图示一条短消息装入一段的逻辑例子，实际可跨段或合并；本机回环不走真实以太网。UDP保留数据报边界，本项目不额外加应用长度前缀。TCP应用记录编解码与增量解析均已验证，实际收发待接入。</desc>
+<desc id="description">参考课堂HTTP、TCP、IPv4和以太网的封装示意，以本项目管理JSON代替HTTP。应用长度前缀位于TCP的Data内，不是TCP首部或L2帧头。图示一条短消息装入一段的逻辑例子，实际可跨段或合并；本机回环不走真实以太网。UDP保留数据报边界，本项目不额外加应用长度前缀。TCP应用记录编解码、增量解析和本机收发均已验证；正式TLS管理通道待接入。</desc>
 <rect x="0" y="0" width="1400" height="1570" rx="0" fill="#ffffff" stroke="#ffffff" stroke-width="0"/>
 <text x="28" y="48" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="34" font-weight="700" fill="#172b4d" text-anchor="start">上层定义消息，下层负责承载：我们的数据怎样逐层封装？</text>
-<text x="28" y="88" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#4b6078" text-anchor="start">管理JSON编解码、TCP记录编解码与增量解析已通过测试，实际TCP收发待接入。</text>
+<text x="28" y="88" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#4b6078" text-anchor="start">管理JSON与TCP记录编解码、增量解析及本机TCP收发均已验证。</text>
 <rect x="24" y="112" width="1352" height="100" rx="12" fill="#f5f8ff" stroke="#9cb2d2" stroke-width="1.4"/>
 <text x="44" y="151" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="400" fill="#172b4d" text-anchor="start">管理对象 → encode_open_session_request(request) → payload（JSON UTF-8字节）</text>
 <text x="44" y="190" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#2563b8" text-anchor="start">长度小例：正文b'hello'为5字节 → 前缀为00 00 00 05 → 应用记录共9字节</text>

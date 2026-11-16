@@ -26,7 +26,7 @@ ARROW_X = 920
 # Displayed code names and text are kept together for later renaming.
 LABELS = {
     "title": "上层定义消息，下层负责承载：我们的数据怎样逐层封装？",
-    "subtitle": "管理JSON编解码、TCP记录编解码与增量解析已通过测试，实际TCP收发待接入。",
+    "subtitle": "管理JSON与TCP记录编解码、增量解析及本机TCP收发均已验证。",
     "encoder": "encode_open_session_request(request)",
     "decoder": "decode_open_session_request(payload)",
     "record_encoder": "encode_record(payload)",
@@ -80,7 +80,7 @@ def build_svg():
     draw.raw('<desc id="description">参考课堂HTTP、TCP、IPv4和以太网的封装示意，'
              '以本项目管理JSON代替HTTP。应用长度前缀位于TCP的Data内，不是TCP首部或L2帧头。'
              '图示一条短消息装入一段的逻辑例子，实际可跨段或合并；本机回环不走真实以太网。'
-             'UDP保留数据报边界，本项目不额外加应用长度前缀。TCP应用记录编解码与增量解析均已验证，实际收发待接入。</desc>')
+             'UDP保留数据报边界，本项目不额外加应用长度前缀。TCP应用记录编解码、增量解析和本机收发均已验证；正式TLS管理通道待接入。</desc>')
     draw.rect(0, 0, WIDTH, HEIGHT, "#ffffff", "#ffffff", radius=0, width=0)
     label(28, 48, LABELS["title"], size=32, bold=True, width=1344)
     label(28, 88, LABELS["subtitle"], size=22, color=draw.MUTED, width=1344)

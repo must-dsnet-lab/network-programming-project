@@ -1,9 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1000" height="1830" viewBox="0 0 1000 1830" role="img" aria-labelledby="title description">
 <title id="title">本项目的网络协议分层与实现状态</title>
-<desc id="description">OSI七层用于功能对照；本项目的表示与会话功能放在TCP/IP应用代码中。当前使用自定义JSON、UTF-8、UDP、IPv4回环；控制信封、管理申请／回复编解码、准入与会话登记／使能／关闭已独立单测，首包等待及接受后超时由车端状态保护；尚未接入真实管理及新格式收发，TCP、TLS、HMAC、有效窗口和真实局域网验证待接入。底层由操作系统和硬件提供，高级验收后复用基础扩展专家控制权机制。</desc>
+<desc id="description">OSI七层用于功能对照；本项目的表示与会话功能放在TCP/IP应用代码中。当前使用自定义JSON、UTF-8、UDP、IPv4回环；控制信封、管理申请／回复编解码、准入与会话登记／使能／关闭已独立单测，首包等待及接受后超时由车端状态保护；本机TCP管理消息收发和断开已验证；正式TLS管理通道、新格式收发、HMAC、有效窗口和局域网验证待接入。底层由操作系统和硬件提供，高级验收后复用基础扩展专家控制权机制。</desc>
 <rect x="0" y="0" width="1000" height="1830" rx="0" fill="#ffffff" stroke="#ffffff" stroke-width="1.4"/>
 <text x="30" y="40" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#172b4d" text-anchor="start">我们用到了哪些网络层？哪些还在开发？</text>
-<text x="30" y="72" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">按源码核对：2026-11-15；OSI是功能参照，不是开发进度条。</text>
+<text x="30" y="72" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#4b6078" text-anchor="start">按源码核对：2026-11-16；OSI是功能参照，不是开发进度条。</text>
 <rect x="30" y="92" width="115" height="32" rx="7" fill="#e5f4f0" stroke="#087f70" stroke-width="1.4"/>
 <text x="87.5" y="114" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="700" fill="#087f70" text-anchor="middle">已使用</text>
 <rect x="240" y="92" width="115" height="32" rx="7" fill="#fff0d5" stroke="#946000" stroke-width="1.4"/>
@@ -25,7 +25,7 @@
 <rect x="679" y="196" width="99" height="28" rx="6" fill="#e5f4f0" stroke="none" stroke-width="1.4"/>
 <text x="728.5" y="216" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="16" font-weight="700" fill="#087f70" text-anchor="middle">已使用</text>
 <text x="185" y="250" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#2563b8" text-anchor="start">control_target / vehicle_state；version / type</text>
-<text x="185" y="283" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#172b4d" text-anchor="start">管理新增 open_session / session_opened 编解码。</text>
+<text x="185" y="283" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#172b4d" text-anchor="start">open_session / session_opened 已做本机收发。</text>
 <text x="185" y="315" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">控制保护由应用决定；目前还没有认证管理通道。</text>
 </g>
 <g class="layer-row" data-level="L6" data-status="已使用">
@@ -60,12 +60,12 @@
 <text x="85" y="757" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="middle">传输层</text>
 <text x="85" y="791" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="16" font-weight="400" fill="#4b6078" text-anchor="middle">Transport</text>
 <rect x="170" y="678" width="620" height="148" rx="10" fill="#ffffff" stroke="#087f8c" stroke-width="1.4"/>
-<text x="185" y="708" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">UDP：控制与遥测各用一个通道</text>
+<text x="185" y="708" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#172b4d" text-anchor="start">UDP控制与遥测，TCP用于本机管理演示</text>
 <rect x="679" y="688" width="99" height="28" rx="6" fill="#e5f4f0" stroke="none" stroke-width="1.4"/>
 <text x="728.5" y="708" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="16" font-weight="700" fill="#087f70" text-anchor="middle">已使用</text>
-<text x="185" y="742" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#2563b8" text-anchor="start">SOCK_DGRAM；sendto() / recvfrom()</text>
-<text x="185" y="775" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#172b4d" text-anchor="start">控制 → 9999；遥测 → 10000；系统处理UDP头部。</text>
-<text x="185" y="807" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">UDP不保证送达、顺序或去重；TCP管理通道待接入。</text>
+<text x="185" y="742" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#2563b8" text-anchor="start">SOCK_DGRAM；sendto() / recvfrom()；SOCK_STREAM</text>
+<text x="185" y="775" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#172b4d" text-anchor="start">UDP控制 → 9999；遥测 → 10000；系统处理UDP头部。</text>
+<text x="185" y="807" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">UDP不保证送达、顺序或去重；本机TCP管理收发已验证。</text>
 </g>
 <g class="layer-row" data-level="L3" data-status="系统提供">
 <rect x="20" y="842" width="130" height="148" rx="10" fill="#f0f9f8" stroke="#087f8c" stroke-width="1.4"/>
