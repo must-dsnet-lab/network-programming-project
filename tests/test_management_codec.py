@@ -9,8 +9,20 @@ from rover.protocol.management_codec import (
     decode_open_session_request,
     encode_session_opened,
     decode_session_opened,
+    AuthenticateRequest,
+    decode_authenticate_request,
+    encode_authenticate_request,
+    AuthenticationResult,
+    encode_authentication_result,
+    decode_authentication_result,
+    EnableSessionRequest,
+    encode_enable_session_request,
+    decode_enable_session_request,
+    SessionEnableResult,
+    encode_session_enable_result,
+    decode_session_enable_result,
+    decode_session_request,
 )
-
 
 class TestManagementCodec(unittest.TestCase):
     def test_encode_open_session_request_contains_protocol_fields(self):
@@ -433,6 +445,155 @@ class TestManagementCodec(unittest.TestCase):
                         decoder(packet)
 
                     self.assertEqual(decoder(valid_packet), expected)
+
+
+class TestAuthenticateRequestCodec(unittest.TestCase):
+    def test_authenticate_request_uses_expected_message(self):
+        message = {
+            "version": 1,
+            "type": "authenticate",
+            "request_id": 6,
+            "client_id": "desktop-a",
+            "credential": " test-secret-a ",
+        }
+        request = AuthenticateRequest(6, "desktop-a", " test-secret-a ")
+
+        self.assertEqual(json.loads(encode_authenticate_request(request)), message)
+        self.assertEqual(
+            decode_authenticate_request(json.dumps(message).encode("utf-8")),
+            request,
+        )
+        self.assertNotIn("test-secret-a", repr(request))
+
+    def test_authenticate_request_rejects_invalid_credential(self):
+        # "\ud800" 可作为转义出现在 JSON 中，解析后的字符串无法编码成 UTF-8
+        for credential in (123, "   ", "\ud800"):
+            with self.subTest(credential=credential):
+                request = AuthenticateRequest(6, "desktop-a", credential)
+                with self.assertRaisesRegex(ValueError, "credential"):
+                    encode_authenticate_request(request)
+
+                packet = json.dumps(
+                    {
+                        "version": 1,
+                        "type": "authenticate",
+                        "request_id": 6,
+                        "client_id": "desktop-a",
+                        "credential": credential,
+                    }
+                ).encode("utf-8")
+                with self.assertRaisesRegex(ValueError, "credential"):
+                    decode_authenticate_request(packet)
+
+
+class TestAuthenticationResultCodec(unittest.TestCase):
+    def test_authentication_result_preserves_both_outcomes(self):
+        for accepted in (True, False):
+            with self.subTest(accepted=accepted):
+                message = {
+                    "version": 1,
+                    "type": "authentication_result",
+                    "request_id": 6,
+                    "accepted": accepted,
+                }
+                reply = AuthenticationResult(request_id=6, accepted=accepted)
+
+                self.assertEqual(
+                    json.loads(encode_authentication_result(reply)), message
+                )
+                decoded = decode_authentication_result(
+                    json.dumps(message).encode("utf-8"),
+                )
+                self.assertEqual(decoded.request_id, 6)
+                self.assertIs(decoded.accepted, accepted)
+
+    def test_authentication_result_rejects_non_boolean(self):
+        for invalid in (0, 1, "false", None):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(ValueError, "accepted"):
+                    encode_authentication_result(AuthenticationResult(6, invalid))
+
+                packet = json.dumps(
+                    {
+                        "version": 1,
+                        "type": "authentication_result",
+                        "request_id": 6,
+                        "accepted": invalid,
+                    }
+                ).encode("utf-8")
+                with self.assertRaisesRegex(ValueError, "accepted"):
+                    decode_authentication_result(packet)
+
+
+class TestEnableSessionRequestCodec(unittest.TestCase):
+    def test_enable_session_request_matches_wire_format(self):
+        message = {
+            "version": 1,
+            "type": "enable_session",
+            "request_id": 8,
+            "session_id": "session-a",
+        }
+        request = EnableSessionRequest(8, "session-a")
+
+        self.assertEqual(json.loads(encode_enable_session_request(request)), message)
+        self.assertEqual(
+            decode_enable_session_request(json.dumps(message).encode("utf-8")),
+            request,
+        )
+
+
+class TestSessionEnableResultCodec(unittest.TestCase):
+    def test_session_enable_result_preserves_both_outcomes(self):
+        for enabled in (True, False):
+            message = {
+                "version": 1,
+                "type": "session_enable_result",
+                "request_id": 8,
+                "enabled": enabled,
+            }
+            reply = SessionEnableResult(8, enabled)
+            encoded = json.loads(encode_session_enable_result(reply))
+            self.assertEqual(encoded, message)
+            self.assertIs(encoded["enabled"], enabled)
+
+            decoded = decode_session_enable_result(json.dumps(message).encode("utf-8"))
+            self.assertEqual(decoded.request_id, 8)
+            self.assertIs(decoded.enabled, enabled)
+
+    def test_session_enable_result_rejects_non_boolean(self):
+        for value in (0, 1, "false", None):
+            with self.assertRaisesRegex(ValueError, "enabled"):
+                encode_session_enable_result(SessionEnableResult(8, value))
+
+            message = {
+                "version": 1,
+                "type": "session_enable_result",
+                "request_id": 8,
+                "enabled": value,
+            }
+            with self.assertRaisesRegex(ValueError, "enabled"):
+                decode_session_enable_result(json.dumps(message).encode("utf-8"))
+
+
+class TestSessionRequestDispatch(unittest.TestCase):
+    def test_routes_open_and_enable_requests(self):
+        opened = OpenSessionRequest(7)
+        enabled = EnableSessionRequest(8, "session-a")
+        self.assertEqual(
+            decode_session_request(encode_open_session_request(opened)), opened
+        )
+        self.assertEqual(
+            decode_session_request(encode_enable_session_request(enabled)), enabled
+        )
+
+    def test_rejects_wrong_type_and_missing_session_id(self):
+        auth = AuthenticateRequest(6, "desktop-a", "test-secret-a")
+        with self.assertRaisesRegex(ValueError, "unexpected message type"):
+            decode_session_request(encode_authenticate_request(auth))
+
+        missing_id = b'{"version":1,"type":"enable_session","request_id":8}'
+        with self.assertRaisesRegex(ValueError, "missing required field: session_id"):
+            decode_session_request(missing_id)
 
 
 if __name__ == "__main__":

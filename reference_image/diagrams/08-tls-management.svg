@@ -1,0 +1,131 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1096" viewBox="0 0 1400 1096" role="img" aria-labelledby="title description">
+<title id="title">TLS 管理连接怎样绑定控制会话</title>
+<desc id="description">本机回环实验。桌面校验证书后通过 TLS 发起认证与会话申请。车端 TLS 工作线程将操作和 Future 放入队列，仿真主线程每轮至多执行一项、更新 guard，并交还连接上下文与回复。请求 7、8 复用同一会话 ID；连接关闭时按绑定 ID 撤销。</desc>
+<rect x="0" y="0" width="1400" height="1096" rx="0" fill="#ffffff" stroke="#ffffff" stroke-width="0"/>
+<text x="32" y="55" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="38" font-weight="700" fill="#172b4d" text-anchor="start">TLS 管理连接怎样绑定控制会话？</text>
+<text x="32" y="92" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="400" fill="#4b6078" text-anchor="start">本机回环实验 · 从证书校验、认证到登记和撤销</text>
+<rect x="32" y="114" width="1336" height="74" rx="12" fill="#f5f8fc" stroke="#c8d6e5" stroke-width="1.4"/>
+<text x="53" y="156" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#172b4d" text-anchor="start">启动</text>
+<polyline points="136,129 136,173" fill="none" stroke="#c8d6e5" stroke-width="1.4" stroke-linejoin="round"/>
+<text x="156" y="144" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#08796a" text-anchor="start">worker.start() → run_worker()</text>
+<text x="156" y="171" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b6078" text-anchor="start">TLS 工作线程开始等待连接</text>
+<polyline points="622,129 622,173" fill="none" stroke="#c8d6e5" stroke-width="1.4" stroke-linejoin="round"/>
+<text x="643" y="144" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#65469b" text-anchor="start">yield process_one</text>
+<text x="643" y="171" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b6078" text-anchor="start">app.py 的 with 将它绑定为 process_management</text>
+<rect x="32" y="209" width="434" height="841" rx="14" fill="#f8fbff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="32" y="209" width="434" height="70" rx="14" fill="#eef5ff" stroke="#c8d6e5" stroke-width="1.4"/>
+<text x="54" y="239" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#2563b8" text-anchor="start">桌面端</text>
+<text x="54" y="264" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b6078" text-anchor="start">发送请求、核对回复</text>
+<rect x="483" y="209" width="434" height="841" rx="14" fill="#f7fbfa" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="483" y="209" width="434" height="70" rx="14" fill="#e9f7f3" stroke="#c8d6e5" stroke-width="1.4"/>
+<text x="505" y="239" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#08796a" text-anchor="start">车端 TLS 工作线程</text>
+<text x="505" y="264" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b6078" text-anchor="start">读取连接、提交管理操作</text>
+<rect x="934" y="209" width="434" height="841" rx="14" fill="#fcfaff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="934" y="209" width="434" height="70" rx="14" fill="#f2edfa" stroke="#c8d6e5" stroke-width="1.4"/>
+<text x="956" y="239" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#65469b" text-anchor="start">车端仿真主线程</text>
+<text x="956" y="264" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b6078" text-anchor="start">app.py 持有并更新 guard</text>
+<rect x="56" y="300" width="386" height="80" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="57" y="310" width="4" height="60" rx="2" fill="#eef5ff" stroke="#2563b8" stroke-width="1"/>
+<text x="76" y="332" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#2563b8" text-anchor="start">TLS 握手</text>
+<text x="76" y="362" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">信任实验 CA，校验 localhost</text>
+<rect x="507" y="300" width="386" height="80" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="508" y="310" width="4" height="60" rx="2" fill="#e9f7f3" stroke="#08796a" stroke-width="1"/>
+<text x="527" y="332" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#08796a" text-anchor="start">接受连接并握手</text>
+<text x="527" y="362" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">使用已载入的证书与私钥</text>
+<rect x="958" y="300" width="386" height="80" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="959" y="310" width="4" height="60" rx="2" fill="#f2edfa" stroke="#65469b" stroke-width="1"/>
+<text x="978" y="332" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#65469b" text-anchor="start">车端状态由仿真持有</text>
+<text x="978" y="362" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">guard</text>
+<polyline points="442,340 507,340" fill="none" stroke="#2563b8" stroke-width="2.7" stroke-linejoin="round"/>
+<polygon points="507.00,340.00 498.00,344.00 498.00,336.00" fill="#2563b8"/>
+<polyline points="249.0,380 249.0,408" fill="none" stroke="#2563b8" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="249.00,408.00 245.00,399.00 253.00,399.00" fill="#2563b8"/>
+<polyline points="700.0,380 700.0,408" fill="none" stroke="#08796a" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="700.00,408.00 696.00,399.00 704.00,399.00" fill="#08796a"/>
+<rect x="56" y="408" width="386" height="130" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="57" y="418" width="4" height="110" rx="2" fill="#eef5ff" stroke="#2563b8" stroke-width="1"/>
+<text x="76" y="440" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#2563b8" text-anchor="start">认证请求 6</text>
+<text x="76" y="470" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">AuthenticateRequest</text>
+<text x="76" y="497" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">核对回复编号 6 和 accepted</text>
+<text x="76" y="524" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">通过后继续申请会话</text>
+<rect x="507" y="408" width="386" height="130" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="508" y="418" width="4" height="110" rx="2" fill="#e9f7f3" stroke="#08796a" stroke-width="1"/>
+<text x="527" y="440" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#08796a" text-anchor="start">检查客户端凭据</text>
+<text x="527" y="470" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">verify_client_credential()</text>
+<text x="527" y="497" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">AuthenticationResult</text>
+<text x="527" y="524" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">通过后保存已验证的客户端身份</text>
+<polyline points="442,451 507,451" fill="none" stroke="#2563b8" stroke-width="2.7" stroke-linejoin="round"/>
+<polygon points="507.00,451.00 498.00,455.00 498.00,447.00" fill="#2563b8"/>
+<polyline points="507,508 442,508" fill="none" stroke="#08796a" stroke-width="2.7" stroke-linejoin="round"/>
+<polygon points="442.00,508.00 451.00,504.00 451.00,512.00" fill="#08796a"/>
+<polyline points="249.0,538 249.0,571" fill="none" stroke="#2563b8" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="249.00,571.00 245.00,562.00 253.00,562.00" fill="#2563b8"/>
+<polyline points="700.0,538 700.0,571" fill="none" stroke="#08796a" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="700.00,571.00 696.00,562.00 704.00,562.00" fill="#08796a"/>
+<rect x="56" y="571" width="386" height="137" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="57" y="581" width="4" height="117" rx="2" fill="#eef5ff" stroke="#2563b8" stroke-width="1"/>
+<text x="76" y="603" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#2563b8" text-anchor="start">依次发送申请 7 和 8</text>
+<text x="76" y="633" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">OpenSessionRequest</text>
+<text x="76" y="660" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">收到 7 的回复，再发 8</text>
+<rect x="507" y="571" width="386" height="137" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="508" y="581" width="4" height="117" rx="2" fill="#e9f7f3" stroke="#08796a" stroke-width="1"/>
+<text x="527" y="603" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#08796a" text-anchor="start">submit(operation)</text>
+<text x="527" y="633" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">pending.put_nowait(...)</text>
+<text x="527" y="660" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">入队 (operation, Future)</text>
+<text x="527" y="687" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">工作线程等待 Future 结果</text>
+<rect x="958" y="571" width="386" height="137" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="959" y="581" width="4" height="117" rx="2" fill="#f2edfa" stroke="#65469b" stroke-width="1"/>
+<text x="978" y="603" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#65469b" text-anchor="start">process_one(guard)</text>
+<text x="978" y="633" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">pending.get_nowait()</text>
+<text x="978" y="660" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">每轮最多取一项，空队列立即返回</text>
+<polyline points="442,617 507,617" fill="none" stroke="#2563b8" stroke-width="2.7" stroke-linejoin="round"/>
+<polygon points="507.00,617.00 498.00,621.00 498.00,613.00" fill="#2563b8"/>
+<polyline points="893,654 958,654" fill="none" stroke="#65469b" stroke-width="2.7" stroke-linejoin="round"/>
+<polygon points="958.00,654.00 949.00,658.00 949.00,650.00" fill="#65469b"/>
+<polyline points="1151.0,708 1151.0,735" fill="none" stroke="#65469b" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="1151.00,735.00 1147.00,726.00 1155.00,726.00" fill="#65469b"/>
+<rect x="56" y="735" width="386" height="154" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="57" y="745" width="4" height="134" rx="2" fill="#eef5ff" stroke="#2563b8" stroke-width="1"/>
+<text x="76" y="767" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#2563b8" text-anchor="start">两次回复对应同一会话</text>
+<text x="76" y="797" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">request_id 分别为 7 和 8</text>
+<text x="76" y="824" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">session_id 相同</text>
+<rect x="507" y="735" width="386" height="154" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="508" y="745" width="4" height="134" rx="2" fill="#e9f7f3" stroke="#08796a" stroke-width="1"/>
+<text x="527" y="767" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#08796a" text-anchor="start">取得连接上下文与回复</text>
+<text x="527" y="797" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">保存本连接的 session_id</text>
+<text x="527" y="824" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">发送 SessionOpened</text>
+<rect x="958" y="735" width="386" height="154" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="959" y="745" width="4" height="134" rx="2" fill="#f2edfa" stroke="#65469b" stroke-width="1"/>
+<text x="978" y="767" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#65469b" text-anchor="start">operation(guard)</text>
+<text x="978" y="797" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">handle_open_session()</text>
+<text x="978" y="824" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">登记或沿用原 ID，保持未使能</text>
+<text x="978" y="851" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">future.set_result(reply)</text>
+<text x="978" y="878" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">app.py 保存返回的 next_guard</text>
+<polyline points="958,816 893,816" fill="none" stroke="#65469b" stroke-width="2.7" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="893.00,816.00 902.00,812.00 902.00,820.00" fill="#65469b"/>
+<polyline points="507,816 442,816" fill="none" stroke="#08796a" stroke-width="2.7" stroke-linejoin="round"/>
+<polygon points="442.00,816.00 451.00,812.00 451.00,820.00" fill="#08796a"/>
+<polyline points="249.0,889 249.0,921" fill="none" stroke="#2563b8" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="249.00,921.00 245.00,912.00 253.00,912.00" fill="#2563b8"/>
+<polyline points="700.0,889 700.0,921" fill="none" stroke="#08796a" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="700.00,921.00 696.00,912.00 704.00,912.00" fill="#08796a"/>
+<polyline points="1151.0,889 1151.0,921" fill="none" stroke="#65469b" stroke-width="2" stroke-linejoin="round"/>
+<polygon points="1151.00,921.00 1147.00,912.00 1155.00,912.00" fill="#65469b"/>
+<rect x="56" y="921" width="386" height="103" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="57" y="931" width="4" height="83" rx="2" fill="#eef5ff" stroke="#2563b8" stroke-width="1"/>
+<text x="76" y="953" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#2563b8" text-anchor="start">结束这条 TLS 连接</text>
+<rect x="507" y="921" width="386" height="103" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="508" y="931" width="4" height="83" rx="2" fill="#e9f7f3" stroke="#08796a" stroke-width="1"/>
+<text x="527" y="953" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#08796a" text-anchor="start">EOF 触发关闭回调</text>
+<text x="527" y="983" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">on_close_connection()</text>
+<text x="527" y="1010" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">通过同一队列提交关闭操作</text>
+<rect x="958" y="921" width="386" height="103" rx="11" fill="#ffffff" stroke="#c8d6e5" stroke-width="1.4"/>
+<rect x="959" y="931" width="4" height="83" rx="2" fill="#f2edfa" stroke="#65469b" stroke-width="1"/>
+<text x="978" y="953" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#65469b" text-anchor="start">handle_connection_closed()</text>
+<text x="978" y="983" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#4b6078" text-anchor="start">匹配连接绑定 ID，撤销车端登记</text>
+<polyline points="442,975 507,975" fill="none" stroke="#2563b8" stroke-width="2.7" stroke-linejoin="round"/>
+<polygon points="507.00,975.00 498.00,979.00 498.00,971.00" fill="#2563b8"/>
+<polyline points="893,975 958,975" fill="none" stroke="#65469b" stroke-width="2.7" stroke-linejoin="round"/>
+<polygon points="958.00,975.00 949.00,979.00 949.00,971.00" fill="#65469b"/>
+<text x="32" y="1080" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b6078" text-anchor="start">虚线表示 Future 将执行结果通知工作线程。</text>
+</svg>
