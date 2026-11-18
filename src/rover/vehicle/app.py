@@ -2,15 +2,19 @@
 
 import socket
 from time import monotonic, sleep
-
-from rover.vehicle.control_guard import ControlGuardState, update_control_guard
+from contextlib import nullcontext
+from rover.vehicle.control_guard import (
+    ControlGuardState,
+    update_control_guard,
+    close_control_session,
+)
 from rover.protocol.telemetry_codec import TelemetrySnapshot
 from rover.transport.udp_transport import send_telemetry, try_receive_target
 from rover.core.vehicle_model import VehicleState
 from rover.vehicle.vehicle_runtime import step_vehicle
 
 
-def main() -> None:
+def main(*, management=None) -> None:
     address = ("127.0.0.1", 9999)
     dt_s = 0.02
     telemetry_address = ("127.0.0.1", 10000)
@@ -25,9 +29,10 @@ def main() -> None:
     previous_fault = None
 
     with (
-    socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock,
-    socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as telemetry_sock,
-):
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock,
+        socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as telemetry_sock,
+        management if management is not None else nullcontext() as process_management,
+    ):
         sock.bind(address)
         sock.setblocking(False)
 
@@ -40,15 +45,26 @@ def main() -> None:
             while True:
                 # 1. 记录本轮起点，先检查保护状态
                 tick_started_s = monotonic()
+                if process_management is not None: # 如果没有后台管理，就继续沿用物理引擎
+                    # process_management(guard)调用之前备份原来的guard.sesion_id
+                    previous_session_id = guard.session_id
+                    # process_management(guard) 每轮最多处理一个管理请求，队列空就直接返回。
+                    # 仿真循环保存 guard，TLS 线程等待结果
+                    guard = process_management(guard)
+                    if guard.session_id != previous_session_id:
+
+                        print(f"Management session: {guard.session_id}", flush=True)
                 guard = update_control_guard(guard, tick_started_s)
 
                 # 2. 每轮最多尝试接收一个控制报文
                 received = None
                 rejected_message = None
-                try:
-                    received = try_receive_target(sock)
-                except ValueError as exc:
-                    rejected_message = str(exc)
+
+                if process_management is None:
+                    try:
+                        received = try_receive_target(sock)
+                    except ValueError as exc:
+                        rejected_message = str(exc)
 
                 # 3. 收包后重新取时，再判定保护状态
                 now_s = monotonic()
@@ -115,6 +131,10 @@ def main() -> None:
 
         except KeyboardInterrupt:
             print("\nreceiver stopped")
+        finally:
+            if process_management is not None and guard.session_id is not None:
+                guard = close_control_session(guard, guard.session_id)
+                print(f"Management session: {guard.session_id}", flush=True)
 
 
 if __name__ == "__main__":

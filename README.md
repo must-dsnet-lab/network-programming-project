@@ -2,40 +2,65 @@
 
 虚拟小车网络遥控 · 网络编程小组项目（MUST）。
 
-## 1. 项目概况
+## 项目总览
 
-### 1.1 当前功能与范围
+### 功能与交付
 
 - **运动模型**：车辆状态、单步推进、固定步长轨迹及分阶段控制。
 - **网络与保护**：UDP控制与遥测、报文校验、控制超时停车和故障锁存。
 - **桌面控制**：数值输入、正常停车/停发、地图与轨迹、遥测可用/过期提示。
 
-当前是无需硬件的本机原型；控制信封、准入及会话登记/使能/关闭的纯状态操作已完成独立单元验证，尚未接入真实管理与收发；跨机、认证会话和专家机制仍待实现与接入。
-最终交付目标为Windows EXE；当前仍按下文的源码方式运行，发布包尚未制作。
-本页按开发顺序保留各阶段示例，当前完整桌面操作可直接看[5.1启动](#quick-start)和[5.3数值控制](#desktop-control-acceptance)。
-旧示例中的A/B/C是该例自己的终端标签。
+当前原型可在本机以源码方式运行，无需实体小车。最终交付目标为Windows EXE，发布包待制作。
 
-### 1.2 阅读导航
+### 模块职责速查
+
+| 模块与能力 | 在系统中的作用与关键入口 |
+| --- | --- |
+| 车辆状态、目标与步进 | `VehicleState`、`apply_target()`、`advance()`提供运动计算，本身不是网络协议。 |
+| 控制与遥测编解码 | `encode_target()/decode_target()`、`encode_telemetry()/decode_telemetry()`定义应用消息并转换数据表示。 |
+| UDP收发与非阻塞接收 | `send_target()`、`try_receive_target()`及遥测对应函数使用系统Socket；无包、坏包与系统错误分别处理。 |
+| 超时停车与故障锁存 | `AcceptedTarget`、`update_control_guard()`、`step_vehicle()`执行本地保护，不代表已完成认证会话。 |
+| 内部会话状态操作 | `open_control_session()`、`enable_control_session()`、`close_control_session()`维护登记、使能和关闭后的状态，属于应用内状态规则，尚未连接真实管理通道。 |
+| 桌面显示与周期控制 | `start_control()`、`send_control()`、`poll_telemetry()`组合两条UDP方向；`world_to_screen()`是GUI坐标换算。 |
+
+### 开发路线与验收范围
+
+开发顺序为 **完整会话流程与ID约定 → 内存串联 → 管理消息与TCP分帧 → 本机TCP传输 → TLS、身份与会话绑定 → 新UDP控制及HMAC、有效窗口、急停与恢复 → 桌面整合 → 双机高级验收**。内存串联阶段复用现有会话状态逻辑。
+
+跨机、认证会话和专家机制仍待实现与接入。
+
+- 项目范围包括观察端、故障注入、重复实验与原始数据，以及专家阶段的控制权交接、授权代次、租约和机制对照。
+- 第二台机器预检及最小EXE打包提前安排。配置、资源、证书、日志、跨机验证、报告、PPT与录像随版本更新。
+- 高级阶段验证TLS握手、证书校验、跨机闭环与保护。专家阶段在此基础上扩展控制权交接、授权代次与租约。
+
+图中按实现和验证状态标记进展。A01—A10用于拆解组内实现与验证，最终评定依据教师评分标准。
+
+### 章节导航
+
+本页按开发顺序保留各阶段示例，当前完整桌面操作可直接看[4.1启动](#quick-start)和[4.3数值控制](#desktop-control-acceptance)。
+旧示例中的A/B/C是该例自己的终端标签。
 
 | 板块 | 内容 |
 | --- | --- |
-| [2. 环境准备与项目结构](#environment) | 安装、测试、目录职责与应用入口 |
-| [3. 车辆运动与UDP控制](#motion-control) | 离线运动 → 单包UDP控制 → 持续运行与本地保护 |
-| [4. 遥测回传](#telemetry) | 三终端运行、状态观察与图2 |
-| [5. 桌面控制台](#desktop-console) | 启动与状态 → 地图/轨迹/坐标 → 数值控制与验收 → 实现要点 |
-| [6. 网络分层与控制信封](#network-layers) | 各层职责、控制信封与车端准入 |
-| [7. 项目配置与文档维护](#project-maintenance) | 包配置、Git协作、目录迁移与导图维护 |
+| [1. 环境准备与项目结构](#environment) | 安装、测试、目录职责与应用入口 |
+| [2. 车辆运动与UDP控制](#motion-control) | 离线运动 → 单包UDP控制 → 持续运行与本地保护 |
+| [3. 遥测回传](#telemetry) | 三终端运行、状态观察与图2 |
+| [4. 桌面控制台](#desktop-console) | 启动与状态 → 地图/轨迹/坐标 → 数值控制与验收 → 实现要点 |
+| [5. 网络分层、控制信封与管理传输](#network-layers) | 分层职责、车端准入、会话状态、管理JSON与TCP |
+| [6. 项目配置与文档维护](#project-maintenance) | 包配置、Git协作、目录迁移与导图维护 |
 
 <a id="environment"></a>
 
-## 2. 环境准备与项目结构
+## 1. 环境准备与项目结构
 
-### 2.1 运行环境
+### 1.1 运行环境
 
 Windows PowerShell、Python 3.12；运行依赖及版本见[pyproject.toml](pyproject.toml)。
 以下命令均在仓库根目录执行，使用虚拟环境中的Python，无需先激活环境。
 
-### 2.2 创建环境与安装依赖
+<a id="environment-setup"></a>
+
+### 1.2 创建环境与安装依赖
 
 ```powershell
 py -3.12 -m venv .venv
@@ -44,7 +69,7 @@ py -3.12 -m venv .venv
 
 这是可编辑安装：首次配置后，日常修改源码会直接生效，无需每次重新安装。
 
-### 2.3 运行测试
+### 1.3 运行测试
 
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
@@ -52,7 +77,7 @@ py -3.12 -m venv .venv
 
 最近本机完整验证为163项测试通过，其中控制编解码40项、管理消息编解码17项、TCP应用记录15项、TCP传输7项、控制保护28项、桌面控制8项；下文八步人工验收另行记录，不增加单元测试计数。
 
-### 2.4 项目结构与职责
+### 1.4 项目结构与职责
 
 代码按职责归类；应用入口组合公共模块，测试与教学示例分别存放。
 
@@ -88,7 +113,7 @@ LICENSE          项目许可证
 `core`负责运动规则，车端`vehicle`决定何时应用什么目标；同一模型可用于离线示例和联网运行。
 `protocol`负责消息怎样解释，`transport`负责消息怎样收发。目录本身不规定执行顺序，运行顺序由函数调用决定。
 
-#### 2.4.1 两个应用入口
+#### 1.4.1 两个应用入口
 
 | 模块 | 原文件 | 作用 |
 | --- | --- | --- |
@@ -96,15 +121,15 @@ LICENSE          项目许可证
 | `rover.vehicle.app` | `demo_udp_vehicle_loop.py` | 维护车辆/保护状态，循环收包、步进并回传遥测。 |
 
 两个`app.py`用完整模块名区分。它们保留原程序逻辑，不是另写一套程序。
-当前双终端完整命令见[5.1](#quick-start)；示例按本页命令使用`-m examples.示例名`。
+当前双终端完整命令见[4.1](#quick-start)；示例按本页命令使用`-m examples.示例名`。
 单独运行测试时，例如`.\.venv\Scripts\python.exe -m unittest -v tests.test_vehicle_model`。
 不要直接运行`src/`内的文件。
 
 <a id="motion-control"></a>
 
-## 3. 车辆运动与UDP控制
+## 2. 车辆运动与UDP控制
 
-### 3.1 离线运动与分阶段控制
+### 2.1 离线运动与分阶段控制
 
 ```powershell
 .\.venv\Scripts\python.exe -m examples.demo_simulation
@@ -113,11 +138,13 @@ LICENSE          项目许可证
 
 `apply_target()`更新速度与绝对朝向，`advance()`根据步长计算新位置；
 `run_steps()`重复推进并保存初始状态及每步结果。
-运动公式与世界/画布坐标关系见[5.2.2运动原理图](#vehicle-motion-coordinates)。
+运动公式与世界/画布坐标关系见[4.2.2运动原理图](#vehicle-motion-coordinates)。
 
-### 3.2 单包UDP控制
+### 2.2 单包UDP控制
 
-#### 3.2.1 同机单包UDP收发
+<a id="single-udp-demo"></a>
+
+#### 2.2.1 同机单包UDP收发
 
 本例终端A是接收端，终端B是发送端。先在A运行：
 
@@ -139,7 +166,7 @@ LICENSE          项目许可证
 
 <a id="single-udp-flow"></a>
 
-#### 3.2.2 图1：一条控制消息怎样到达接收端
+#### 2.2.2 图1：一条控制消息怎样到达接收端
 
 `packet`由`recvfrom()`从Socket接收队列取得，`peer`是来源地址；再由`decode_target()`校验和还原。
 
@@ -170,7 +197,7 @@ flowchart TB
 
 对应源码：[发送](examples/demo_udp_sender.py)、[接收](examples/demo_udp_receiver.py)、[UDP收发](src/rover/transport/udp_transport.py)、[控制编解码](src/rover/protocol/control_codec.py)。
 
-#### 3.2.3 UDP目标驱动车辆模型
+#### 2.2.3 UDP目标驱动车辆模型
 
 先在终端A运行：
 
@@ -178,7 +205,7 @@ flowchart TB
 .\.venv\Scripts\python.exe -m examples.demo_udp_vehicle
 ```
 
-再在终端B运行`-m examples.demo_udp_sender`，完整命令见3.2.1。初始位置由接收端的`VehicleState()`创建；
+再在终端B运行`-m examples.demo_udp_sender`，完整命令见[2.2.1 同机单包UDP收发](#single-udp-demo)。初始位置由接收端的`VehicleState()`创建；
 发送端只提供目标速度和朝向。
 
 接收目标后以`0.02 s`推进50步，即1秒模拟时间，轨迹含初始帧共51个状态：
@@ -191,9 +218,9 @@ end: sim_t=1.00s x=1.7552m y=0.9589m
 
 这是收到一条消息后的离线计算，1秒模拟时间可以很快算完。
 
-### 3.3 持续控制与车端保护
+### 2.3 持续控制与车端保护
 
-#### 3.3.1 控制超时与定时运行
+#### 2.3.1 控制超时与定时运行
 
 ```powershell
 .\.venv\Scripts\python.exe -m examples.demo_watchdog_loop
@@ -208,7 +235,7 @@ end: sim_t=1.00s x=1.7552m y=0.9589m
 | `started_at_s` | 程序启动时刻，用于计算总运行时长 |
 | `wall_t` / `sim_t` | 实际经过时间 / 累计模拟时间；两者可能因调度不同 |
 
-#### 3.3.2 持续接收、周期控制与故障锁存
+#### 2.3.2 持续接收、周期控制与故障锁存
 
 先在终端A启动持续车端：
 
@@ -240,9 +267,9 @@ end: sim_t=1.00s x=1.7552m y=0.9589m
 
 <a id="telemetry"></a>
 
-## 4. 遥测回传
+## 3. 遥测回传
 
-### 4.1 三终端启动
+### 3.1 三终端启动
 
 三个终端按以下顺序启动，先结束旧车端和旧接收器：
 
@@ -254,7 +281,7 @@ end: sim_t=1.00s x=1.7552m y=0.9589m
 
 C向B的`127.0.0.1:9999`发控制；B使用另一个Socket向A的`127.0.0.1:10000`回传实际位置、朝向、速度和故障标志。
 
-### 4.2 观察与核对
+### 3.2 观察与核对
 
 - 首次控制前为原点、零速、未锁定；从未接受控制时，等待本身不触发当前锁存。
 - C发送期间位置变化；C结束后B超时停车，A继续收到零速、已锁定状态。再次发送仍应被忽略。
@@ -267,7 +294,7 @@ C向B的`127.0.0.1:9999`发控制；B使用另一个Socket向A的`127.0.0.1:1000
 
 <a id="three-terminal-flow"></a>
 
-### 4.3 图2：三个终端怎样控制并回传状态
+### 3.3 图2：三个终端怎样控制并回传状态
 
 按C → B → A阅读；加粗为函数名，参数与变量分行，跨端箭头标明通道和端口。
 
@@ -306,11 +333,11 @@ A看到的`peer`属于车端遥测Socket，与C的控制来源端口不同。
 
 <a id="desktop-console"></a>
 
-## 5. 桌面控制台
+## 4. 桌面控制台
 
 <a id="quick-start"></a>
 
-### 5.1 启动与状态显示
+### 4.1 启动与状态显示
 
 桌面A接替上一节的遥测A和发送C，当前完整操作只需A＋B。
 先退出旧程序，避免端口冲突及多个控制源覆盖目标。
@@ -333,9 +360,9 @@ A看到的`peer`属于车端遥测Socket，与C的控制来源端口不同。
 `status`表示遥测情况，`fault_latched`来自车端保护，`control_status`表示本地发送情况，三者独立。
 当前地址固定为本机回环，跨机配置尚未接入。
 
-### 5.2 地图、轨迹与坐标
+### 4.2 地图、轨迹与坐标
 
-#### 5.2.1 地图与运行轨迹
+#### 4.2.1 地图与运行轨迹
 
 `TrajectoryHistory`保存最多1000个世界坐标位置，只跳过相邻重复；A→B→A仍保留。
 每个合法遥测包都保存位置，重绘只读历史；窗口变尺寸后重新换算像素，原始位置不变。
@@ -345,7 +372,7 @@ A看到的`peer`属于车端遥测Socket，与C的控制来源端口不同。
 
 <a id="vehicle-motion-coordinates"></a>
 
-#### 5.2.2 车辆运动与画布坐标
+#### 4.2.2 车辆运动与画布坐标
 
 沿图阅读：车端推进世界状态 → 按期限采样并回传遥测 → 桌面逐包保存 → Qt读取缓存并绘制。
 `poll_telemetry()`对每个合法包调用`map.set_state(latest.state)`；后者依次保存最新状态、按规则维护世界轨迹、请求重绘。
@@ -364,7 +391,7 @@ A看到的`peer`属于车端遥测Socket，与C的控制来源端口不同。
 
 <a id="desktop-control-acceptance"></a>
 
-### 5.3 数值控制与八步验收
+### 4.3 数值控制与八步验收
 
 输入朝向使用度，发送前转为弧度；只编辑输入不会改变已应用目标。
 
@@ -394,7 +421,7 @@ A看到的`peer`属于车端遥测Socket，与C的控制来源端口不同。
 
 <a id="desktop-ui-flow"></a>
 
-#### 5.3.1 图3：桌面数值控制与遥测关系
+#### 4.3.1 图3：桌面数值控制与遥测关系
 
 按A发送 → B计算并回传 → A显示阅读；上下两个A属于同一个桌面进程。
 
@@ -433,9 +460,9 @@ flowchart TB
     class car_receive,car_step,car_send vehicle;
 ```
 
-### 5.4 关键实现要点
+### 4.4 关键实现要点
 
-#### 5.4.1 三种数据
+#### 4.4.1 三种数据
 
 | 数据 | 变量 | 改变时机 |
 | --- | --- | --- |
@@ -445,7 +472,7 @@ flowchart TB
 
 `sent`只是本机发送字节数，不是车端接收或执行确认。
 
-#### 5.4.2 两个定时器与两个Socket
+#### 4.4.2 两个定时器与两个Socket
 
 | 对象 | 配置与职责 |
 | --- | --- |
@@ -457,7 +484,7 @@ flowchart TB
 `start_control()`先保存目标、启动控制定时器，再立即首发，因为`send_control()`会检查定时器是否活动。
 收到合法遥测才刷新`last_received_s`；无包或坏包都不延长有效显示时间。
 
-#### 5.4.3 FakeSocket测试
+#### 4.4.3 FakeSocket测试
 
 - 替换发生在创建窗口前，因此窗口的网络对象变为`FakeSocket`；Qt控件、信号、目标构造与JSON编码仍真实执行。
 - `control("speed_input")`通过`getattr(window, ...)`读取窗口属性；它不在按钮内部寻找或创建输入框。
@@ -468,13 +495,14 @@ flowchart TB
 
 <a id="network-layers"></a>
 
-## 6. 网络分层与控制信封
+## 5. 网络分层、控制信封与管理传输
 
-### 6.1 分层职责、封装与消息边界
+### 5.1 分层职责
 
-#### 6.1.1 图5：各层实际用了什么
+#### 5.1.1 图5：各层实际用了什么
 
 OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信结构。
+高级与专家属于项目验收阶段，分层图用于对照不同网络功能的职责。
 本项目在应用代码中承担消息语义、数据表示和会话管理功能；不能把写了`session_id`直接当作独立实现了OSI的L5。[分层与应用内会话功能的说明](https://docs.oracle.com/cd/E19504-01/802-5886/intro-45828/index.html)。
 下图对照2026-11-16源码，区分已使用、开发中、系统提供及跨机待验；功能变化时同步修订。
 
@@ -482,56 +510,11 @@ OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信�
 
 [可缩放SVG](reference_image/diagrams/05-network-layers.svg) · [高清PNG](reference_image/diagrams/05-network-layers.png)
 
-<a id="encapsulation-and-framing"></a>
-
-#### 6.1.2 图6：上层定义消息，下层负责承载
-
-老师课堂中的HTTP → TCP → IPv4 → Ethernet示意，展示了逐层封装：下层将来自上层的字节放入自己的Data/Payload，再添加本层需要的信息。图6用本项目的管理JSON替代HTTP；各层有自己的头部，应用消息、TCP段、IP包和链路帧之间没有固定的一一对应关系。
-
-[![应用消息边界与网络逐层封装](reference_image/diagrams/06-encapsulation.svg)](reference_image/diagrams/06-encapsulation.svg)
-
-[可缩放SVG](reference_image/diagrams/06-encapsulation.svg) · [高清PNG](reference_image/diagrams/06-encapsulation.png) · [文字与布局生成源](reference_image/diagrams/render_encapsulation.py)
-
-TCP与UDP都自带传输层协议头，由系统协议栈处理。现有控制与遥测的载荷路径是**自定义消息 → JSON文本 → UTF-8字节 → UDP/IPv4**；`sendto(packet, address)`中的IP与端口交给操作系统处理，不是编码器写进JSON的字段。本项目一条JSON对应一份UDP数据报，接收容量足够时`recvfrom()`保留该数据报的边界，因此不额外添加应用消息长度前缀。UDP不保证送达、顺序或去重。[UDP标准](https://www.rfc-editor.org/rfc/rfc768.html)
-
-TCP向应用提供有序字节流，一次读取可能只有半条消息，也可能包含多条消息。本机TCP管理演示采用**4字节无符号大端正文长度N + N字节正文**；`N = len(payload)`只计算JSON正文的UTF-8字节，不含前缀自身4字节，正文上限沿用4096字节。接收方须先累计满4字节读出N，再累计正文；长度头本身也可能分次到达。
-
-`encode_open_session_request(request)`生成JSON正文`payload`。`encode_record(payload)`添加4字节长度头`header`，返回应用记录`record`，头部字节数由`RECORD_HEADER_BYTES`给出。`send_record()`调用`sendall()`写入已连接的TCP Socket。应用记录由Python代码组织，TCP协议由操作系统处理。链路层继续使用Ethernet frame这个名称。接收端逐条还原正文的过程见[图7](#tcp-record-receive)。
-
-图中的以太网头和FCS由系统、驱动与网卡处理；`127.0.0.1`回环不经过真实以太网，不作为已完成局域网实验的证据。[主机回环规定](https://www.rfc-editor.org/rfc/rfc1122.html#section-3.2.1.3)
-
-课程衔接：CS370/SE370第一讲第15、17、20页（PDU与封装），第二讲第56—57页（以太网framing），第五讲第9页及第33页（TCP/UDP首部；UDP所在PDF页序为32）。TCP字节流不保留应用消息边界的例子见课程教材第6.5.2节、印刷第560页、图6-35。
-
-<a id="tcp-record-receive"></a>
-
-#### 6.1.3 图7：TCP接收端怎样拼出一条记录
-
-[![TCP读取、应用记录组装、装配期限与EOF](reference_image/diagrams/07-tcp-record-receive.svg)](reference_image/diagrams/07-tcp-record-receive.svg)
-
-[可缩放SVG](reference_image/diagrams/07-tcp-record-receive.svg) · [高清PNG](reference_image/diagrams/07-tcp-record-receive.png) · [生成源](reference_image/diagrams/render_tcp_record_receive.py)
-
-图7沿用图6里的`hello`字节示例。从调用方传入的`sock`和`record_timeout_s`读起，沿箭头查看每个返回值。`_recv_chunk(sock, deadline_s)`返回`chunk`，同一个`TcpRecordBuffer`再用`feed(chunk)`切出完整的`record`。`decode_record(record)`返回一条`payload`，`feed()`返回本批的`payloads`列表。`yield from payloads`把正文逐条交给连续的`next()`调用。实际管理正文由调用方交给相应的JSON解码器，例如`decode_open_session_request(payload)`。
-
-设置`record_timeout_s`后，装配期限从读到当前记录的首批字节时起算。每次继续读，`_recv_chunk()`取剩余期限与原Socket超时中较短的值，读取结束后恢复原设置。收到Socket EOF后，`iter_records()`调用`finish()`检查头部或正文是否截断。
-
-单条记录编解码的9项测试覆盖多字节长度、1/4096字节合法边界、短头部、零长度或超限声明以及正文长度不符。加上缓冲行为后，TCP应用记录15项通过，TCP传输7项通过。双终端已在`127.0.0.1:19176`实测管理请求与回复共用一条TCP连接，回显`request_id=7`、返回固定演示ID `demo-session`，然后正常到达EOF。[TCP应用记录](src/rover/transport/tcp_records.py) · [TCP传输](src/rover/transport/tcp_transport.py) · [记录测试](tests/test_tcp_records.py) · [传输测试](tests/test_tcp_transport.py)
-
-### 6.2 已完成的工作怎样归类
-
-| 前面完成的内容 | 在系统中的作用与关键入口 |
-| --- | --- |
-| 车辆状态、目标与步进 | `VehicleState`、`apply_target()`、`advance()`提供运动计算，本身不是网络协议。 |
-| 控制与遥测编解码 | `encode_target()/decode_target()`、`encode_telemetry()/decode_telemetry()`定义应用消息并转换数据表示。 |
-| UDP收发与非阻塞接收 | `send_target()`、`try_receive_target()`及遥测对应函数使用系统Socket；无包、坏包与系统错误分别处理。 |
-| 超时停车与故障锁存 | `AcceptedTarget`、`update_control_guard()`、`step_vehicle()`执行本地保护，不代表已完成认证会话。 |
-| 内部会话状态操作 | `open_control_session()`、`enable_control_session()`、`close_control_session()`维护登记、使能和关闭后的状态，属于应用内状态规则，尚未连接真实管理通道。 |
-| 桌面显示与周期控制 | `start_control()`、`send_control()`、`poll_telemetry()`组合两条UDP方向；`world_to_screen()`是GUI坐标换算。 |
-
-### 6.3 控制信封与车端准入
+### 5.2 控制信封与车端准入
 
 `ControlCommand(session_id, seq, target)`复用现有`control_codec.py`，把会话标识、报文序号与运动目标组合起来。
 
-#### 6.3.1 报文格式与编解码
+#### 5.2.1 报文格式与编解码
 
 最近通过的控制编解码基线为40项（旧格式19项、新格式21项），涵盖合法编解码、倒车往返、两端元数据/运动值校验、两端1200字节边界、解析前拒绝超限、严格版本类型及新旧格式互拒；完整项目回归已通过。
 
@@ -552,12 +535,12 @@ TCP向应用提供有序字节流，一次读取可能只有半条消息，也�
 
 格式要求：版本为整数1，类型为`control_command`；会话标识为非空且非纯空白字符串；序号为非负整数，布尔值不作为整数接受；运动值须为可表示成有限float的int/float。整条UTF-8载荷最多1200字节。
 
-- `session_id`区分哪次控制会话，不是密码或源端口；内部登记、使能和关闭操作见6.3.3。
+- `session_id`区分哪次控制会话，不是密码或源端口；内部登记、使能和关闭操作见[会话登记、使能与关闭](#control-session-lifecycle)。
 - `seq`对同一会话中的新报文递增，即使目标值相同。它为后续重复/乱序判断提供依据，不要求保存或执行每一条；序号较大也不等于报文足够新鲜；比较须结合已确认有效的所属会话，不能把不同会话的序号混用。
 
 <a id="control-admission"></a>
 
-#### 6.3.2 车端准入与超时保护
+#### 5.2.2 车端准入与超时保护
 
 `control_guard.py`新增`update_command_guard()`，对解码后的`ControlCommand`判断是否接受；它不收包，也不推进车辆位置。
 
@@ -581,7 +564,9 @@ TCP向应用提供有序字节流，一次读取可能只有半条消息，也�
 
 `incoming=None`只表示本轮没有新命令，未超时时旧目标仍有效；`last_accepted=None`表示当前没有可执行记录，可能仍在等待首包。车辆执行层的`target_for_tick()`此时选择零速目标。若已使能、没有接受记录且`enabled_at_s=None`，则属于上面的缺失起点情况。
 
-#### 6.3.3 会话登记、使能与关闭
+<a id="control-session-lifecycle"></a>
+
+#### 5.2.3 会话登记、使能与关闭
 
 以下是供可信管理上下文调用的内部纯状态接口，不收发报文，也不完成认证；`session_id`匹配只表示与当前登记一致。
 `open_control_session()`只登记调用方提供的ID，不负责生成或传输。当前测试使用`session-a/b`等固定样例；自动生成、管理回复及桌面保存仍待正式管理链路接入。
@@ -600,11 +585,11 @@ TCP向应用提供有序字节流，一次读取可能只有半条消息，也�
 控制保护模块28项测试按职责独立组织：旧目标入口3项、控制信封准入8项、内部会话状态17项。覆盖序号0及跳号、未使能/错会话/重复乱序拒绝、无包未到期、故障优先、登记/使能/关闭的拒绝与幂等、首包到期、接受后切换计时起点、缺失起点，以及关闭A后重新使能B的完整状态链路。
 对应源码：[准入与保护](src/rover/vehicle/control_guard.py)、[保护测试](tests/test_control_guard.py)、[有效目标选择](src/rover/vehicle/control_watchdog.py)。
 
-#### 6.3.4 当前接入范围与后续升级
+### 5.3 管理消息与本机TCP
 
-新格式、严格准入及内部会话状态操作尚未接入真实管理与UDP收发链路。实际运行仍使用原`control_target`和`vehicle_state`消息；车端`app.py`仍调用`try_receive_target()`与旧入口`update_control_guard()`。两个接受入口是迁移过渡，后续切换正式收发时统一严格准入入口，继续复用公共保护逻辑。
+<a id="management-message-codec"></a>
 
-会话控制方面已完成内部会话生命周期与首包/后续超时的纯状态逻辑；真实管理侧的会话建立/撤销、显式使能流程、身份认证、车端有效窗口、HMAC及正式TLS管理通道仍待实现与接入，正式故障复位也尚未实现。
+#### 5.3.1 管理请求与回复编解码
 
 `management_codec.py`已完成`open_session`请求和`session_opened`成功回复的JSON编解码，17项模块测试通过，覆盖消息头、必填字段、ID格式、编解码两端4096字节正文上限，以及畸形输入拒绝和后续独立调用。大小限制按完整JSON正文的UTF-8字节计算，不含应用记录的4字节长度头；解码时先检查长度，再解析正文。这些函数已用于本机TCP管理演示，负责数据格式。正式会话生成、登记及认证由后续管理逻辑完成。
 
@@ -617,24 +602,161 @@ TCP向应用提供有序字节流，一次读取可能只有半条消息，也�
 
 `request_id`必须为非负整数，允许`0`，拒绝布尔值；`session_id`必须为非空白字符串，编解码保留原值。`_encode_management_message()`、`_decode_management_message()`共用JSON与大小处理，两个ID校验函数共用字段规则。对应源码：[管理消息](src/rover/protocol/management_codec.py)、[管理消息测试](tests/test_management_codec.py)。
 
-开发按依赖推进：完整会话流程与ID约定 → 复用现有状态做内存串联 → 管理消息与TCP分帧 → 本机TCP传输 → TLS/身份与会话绑定 → 新UDP控制及HMAC/有效窗口/急停与恢复 → 桌面整合 → 双机高级验收。普通TCP教学仅验证传输；新链路的正式会话控制须完成对应身份、权限与会话校验。管理I/O不得阻塞车端更新和超时检查。
+<a id="encapsulation-and-framing"></a>
 
-本次只重排教学顺序，原功能和验收范围保留：观察端、故障注入、重复实验及原始数据、专家交接/授权代次/租约和机制对照均继续推进。第二台机器预检及最小EXE打包提前穿插；最终配置/资源/证书/日志、跨机验证、报告/PPT与录像随版本持续更新。
+#### 5.3.2 图6：上层定义消息，下层负责承载
 
+老师课堂中的HTTP → TCP → IPv4 → Ethernet示意，展示了逐层封装：下层将来自上层的字节放入自己的Data/Payload，再添加本层需要的信息。图6用本项目的管理JSON替代HTTP；各层有自己的头部，应用消息、TCP段、IP包和链路帧之间没有固定的一一对应关系。
 
-- 先按教师高级标准完成基础版本：以TLS握手/证书校验等对应高级参考的技术能力为依据，结合跨机闭环、保护及实验验证。专家阶段复用基础，扩展控制权交接、授权代次与租约；不是从OSI某层升级到另一层。
+[![应用消息边界与网络逐层封装](reference_image/diagrams/06-encapsulation.svg)](reference_image/diagrams/06-encapsulation.svg)
+
+[可缩放SVG](reference_image/diagrams/06-encapsulation.svg) · [高清PNG](reference_image/diagrams/06-encapsulation.png) · [文字与布局生成源](reference_image/diagrams/render_encapsulation.py)
+
+TCP与UDP都自带传输层协议头，由系统协议栈处理。现有控制与遥测的载荷路径是**自定义消息 → JSON文本 → UTF-8字节 → UDP/IPv4**；`sendto(packet, address)`中的IP与端口交给操作系统处理，不是编码器写进JSON的字段。本项目一条JSON对应一份UDP数据报，接收容量足够时`recvfrom()`保留该数据报的边界，因此不额外添加应用消息长度前缀。UDP不保证送达、顺序或去重。[UDP标准](https://www.rfc-editor.org/rfc/rfc768.html)
+
+TCP向应用提供有序字节流，一次读取可能只有半条消息，也可能包含多条消息。本机TCP管理演示采用**4字节无符号大端正文长度N + N字节正文**；`N = len(payload)`只计算JSON正文的UTF-8字节，不含前缀自身4字节，正文上限沿用4096字节。接收方须先累计满4字节读出N，再累计正文；长度头本身也可能分次到达。
+
+`encode_open_session_request(request)`生成JSON正文`payload`。`encode_record(payload)`添加4字节长度头`header`，返回应用记录`record`，头部字节数由`RECORD_HEADER_BYTES`给出。`send_record()`调用`sendall()`写入已连接的TCP Socket。应用记录由Python代码组织，TCP协议由操作系统处理。链路层继续使用Ethernet frame这个名称。接收端逐条还原正文的过程见[图7](#tcp-record-receive)。
+
+图中的以太网头和FCS由系统、驱动与网卡处理；`127.0.0.1`回环不经过真实以太网，不作为已完成局域网实验的证据。[主机回环规定](https://www.rfc-editor.org/rfc/rfc1122.html#section-3.2.1.3)
+
+课程衔接：CS370/SE370第一讲第15、17、20页（PDU与封装），第二讲第56—57页（以太网framing），第五讲第9页及第33页（TCP/UDP首部；UDP所在PDF页序为32）。TCP字节流不保留应用消息边界的例子见课程教材第6.5.2节、印刷第560页、图6-35。
+
+<a id="tcp-record-receive"></a>
+
+#### 5.3.3 图7：TCP接收端怎样拼出一条记录
+
+[![TCP读取、应用记录组装、装配期限与EOF](reference_image/diagrams/07-tcp-record-receive.svg)](reference_image/diagrams/07-tcp-record-receive.svg)
+
+[可缩放SVG](reference_image/diagrams/07-tcp-record-receive.svg) · [高清PNG](reference_image/diagrams/07-tcp-record-receive.png) · [生成源](reference_image/diagrams/render_tcp_record_receive.py)
+
+图7沿用图6里的`hello`字节示例。从调用方传入的`sock`和`record_timeout_s`读起，沿箭头查看每个返回值。`_recv_chunk(sock, deadline_s)`返回`chunk`，同一个`TcpRecordBuffer`再用`feed(chunk)`切出完整的`record`。`decode_record(record)`返回一条`payload`，`feed()`返回本批的`payloads`列表。`yield from payloads`把正文逐条交给连续的`next()`调用。实际管理正文由调用方交给相应的JSON解码器，例如`decode_open_session_request(payload)`。
+
+设置`record_timeout_s`后，装配期限从读到当前记录的首批字节时起算。每次继续读，`_recv_chunk()`取剩余期限与原Socket超时中较短的值，读取结束后恢复原设置。收到Socket EOF后，`iter_records()`调用`finish()`检查头部或正文是否截断。
+
+单条记录编解码的9项测试覆盖多字节长度、1/4096字节合法边界、短头部、零长度或超限声明以及正文长度不符。加上缓冲行为后，TCP应用记录15项通过，TCP传输7项通过。双终端已在`127.0.0.1:19176`实测管理请求与回复共用一条TCP连接，回显`request_id=7`、返回固定演示ID `demo-session`，然后正常到达EOF。[TCP应用记录](src/rover/transport/tcp_records.py) · [TCP传输](src/rover/transport/tcp_transport.py) · [记录测试](tests/test_tcp_records.py) · [传输测试](tests/test_tcp_transport.py)
+
+<a id="tls-certificates"></a>
+
+### 5.4 TLS握手与证书校验
+
+#### 5.4.1 证书文件与常见缩写
+
+车端使用`server.pem`（服务器证书）和`server.key`（服务器私钥）参与握手。桌面端用`ca.pem`验证车端证书的签发链，并核对证书中的服务名称`localhost`。
+
+| 术语 | 全称与在本章的用途 |
+| --- | --- |
+| TLS / SSL | TLS 是 **Transport Layer Security**（传输层安全协议）。SSL 是 **Secure Sockets Layer**（安全套接字层），是 TLS 的前身。本机演示协商到了 TLS 1.3。 |
+| PEM | **Privacy-Enhanced Mail**（隐私增强邮件）。名称源自早期邮件标准。在本实验中，`ca.pem`和`server.pem`采用文本编码，以`BEGIN CERTIFICATE`和`END CERTIFICATE`标记 Base64 证书内容的边界。 |
+| CA / `ca.pem` | **Certificate Authority**（证书颁发机构，RFC 5280 写作 **Certification Authority**）。`ca.pem`保存实验根 CA 的公共证书，作为桌面端校验证书链的信任起点。 |
+| OpenSSL | 广泛使用的开源密码学工具包，提供 SSL/TLS 库和命令行工具。本章用它生成、签发、查看和验证证书。 |
+| CSR | **Certificate Signing Request**（证书签名请求）。`server.csr`携带服务器的公钥和名称等信息，用于向 CA 申请签发服务器证书。 |
+| CN / SAN | CN 是 **Common Name**（通用名称），如输出里的`subject=CN=localhost`。SAN 是 **Subject Alternative Name**（主题备用名称），本机校验所用的`DNS:localhost`列在这里。DNS 是 **Domain Name System**（域名系统），这里的`DNS:`表示名称类型。 |
+
+参考：[TLS 1.3](https://www.rfc-editor.org/rfc/rfc8446.html) · [OpenSSL 工具包](https://openssl-library.org/) · [PEM 文本编码](https://www.rfc-editor.org/rfc/rfc7468.html#section-1) · [X.509 证书与 SAN](https://www.rfc-editor.org/rfc/rfc5280.html#section-4.2.1.6) · [证书签名请求](https://www.rfc-editor.org/rfc/rfc2986.html#section-1)
+
+#### 5.4.2 本机证书校验
+
+X.509 是这里使用的证书标准。用`openssl x509`查看证书时，`subject`表示证书属于谁，`issuer`表示谁签发了证书。`ca.pem`的主题和签发者都是`Local TLS Lab CA`，并带有`CA:TRUE`。`server.pem`的签发者是该 CA，证书的 SAN 包含`DNS:localhost`。
+
+| `openssl verify`校验条件 | 实测结果 |
+| --- | --- |
+| 加载`ca.pem`，核对`localhost` | `server.pem: OK` |
+| 加载同一张`ca.pem`，核对`wrong.localhost` | `hostname mismatch` |
+| 信任集合为空，核对`localhost` | `unable to get local issuer certificate` |
+
+这三次使用同一张服务器证书，分别检验证书校验成功、名称不匹配和找不到可信签发链的结果。[OpenSSL 证书验证命令](https://docs.openssl.org/3.5/man1/openssl-verify/)
+
+#### 5.4.3 本机TCP连接与TLS握手
+
+两端先用`accept()`和`create_connection()`得到普通的TCP Socket。随后`SSLContext.wrap_socket()`按各自的配置把该连接交给TLS处理。默认在握手成功后返回`SSLSocket`，随后通过它读写的应用数据由TLS加密传输。[Python `SSLContext.wrap_socket()` 文档](https://docs.python.org/3.12/library/ssl.html#ssl.SSLContext.wrap_socket)
+
+双终端在`127.0.0.1:19177`实测，同一张服务器证书和同一个`ca.pem`下，预期名称为`localhost`时协商到`TLSv1.3`。改成`wrong.localhost`后，桌面端仍打印`TCP connected`，随后在握手中报`Hostname mismatch`，车端也收到握手错误。
+
+#### 5.4.4 通过TLS收发管理消息
+
+握手成功后，双终端把`SSLSocket`交给已有的`send_record()`和`iter_records()`。实测桌面发出`OpenSessionRequest(request_id=7)`，车端解码后在同一连接回复`SessionOpened(request_id=7, session_id='demo-session')`。`demo-session`是固定演示值。客户端凭据、授权和真实会话绑定由后续管理逻辑处理。
+
+#### 5.4.5 在TLS连接上核对客户端凭据
+
+车端根据桌面端提交的`client_id`查询本地配置，再通过`verify_client_credential()`比较提交的凭据与该客户端的配置值。函数调用`hmac.compare_digest()`进行比较。HMAC 是 **Hash-based Message Authentication Code**（基于哈希的消息认证码），这里使用的是该模块的比较函数，真正的 HMAC 报文校验留到 UDP 控制章节。
+
+本机回环练习使用同一张服务器证书、同一个`localhost`和客户端 ID。两次均协商到 TLS 1.3，车端对正确凭据回复`authenticated`，对错误凭据回复`rejected`。练习用一条临时 JSON 记录传递凭据，回送验证结果后结束连接。控制会话的分配与连接绑定属于后续接入步骤。
+
+#### 5.4.6 认证通过后在同一连接申请会话
+
+车端验证凭据后，在当前连接的处理代码里保留通过验证的`client_id`。桌面端收到`authenticated`后才发送`open_session`。双方沿用同一个`SSLSocket`以及各自已有的`iter_records()`迭代器，继续收发后续记录。车端也独立检查认证结果，只有通过验证才读取会话申请。
+
+本机回环验证中，正确凭据使车端收到来自`desktop-a`的`OpenSessionRequest(request_id=7)`，桌面端收到对应的`SessionOpened(request_id=7, session_id='demo-session')`。错误凭据仍完成 TLS 握手，收到`rejected`后结束操作。`demo-session`是固定演示值，实际会话分配与状态登记属于后续接入步骤。
+
+#### 5.4.7 生成、登记与关闭控制会话
+
+UUID 全称为 **Universally Unique Identifier**（通用唯一标识符）。实验中，车端在认证通过且读到会话申请后调用`uuid4().hex`，生成由 32 个小写十六进制字符组成的会话 ID。[Python 3.12 UUID 文档](https://docs.python.org/3.12/library/uuid.html#uuid.uuid4)
+
+车端先用`open_control_session()`把 ID 登记到实验的`ControlGuardState`，再把同一个 ID 放进`SessionOpened`回复。登记时保持`enabled=False`，桌面收到的`request_id`用于匹配回复。车端在该连接的处理流程中保留登记的 ID，读取到连接结束或处理异常时通过`finally`调用`close_control_session()`撤销登记。
+
+本机回环验证中，两次独立的成功申请各自生成了不同的 ID，每次的车端登记和桌面回复一致。错误凭据被拒绝后没有创建会话。实验使用脚本自己的内存状态，接入正式车端循环及多连接管理仍待完成。
+
+#### 5.4.8 连接上下文与重复申请
+
+车端认证通过后创建`AuthenticatedConnection`，其中`client_id`是已验证的身份，`session_id`初始为`None`。每次读取到`open_session`，车端用`handle_open_session()`返回的`guard`和`connection`继续处理下一条记录。首次申请把新 ID 同时写入两份状态。同一条连接再次申请时，原会话与控制状态继续有效，回复回显本次的`request_id`。
+
+连接结束时，`finally`用`handle_connection_closed()`撤销当前连接仍持有的会话，处理完就丢弃该连接上下文。本机回环实验中，同一条 TLS 连接上的请求 7 和 8 得到相同的会话 ID，车端全程未使能，连接结束后登记清空。错误凭据在进入这段连接处理前被拒绝。
+
+#### 5.4.9 认证请求与回复的对应关系
+
+双终端实验改用管理消息编解码器传递认证。桌面端发送`AuthenticateRequest`，其中包含`request_id`、`client_id`和凭据。车端解码后核对凭据，并用`AuthenticationResult`回显请求编号和布尔型`accepted`。桌面端先核对回复编号，再根据认证结果决定是否在同一条 TLS 连接上发送`open_session`。
+
+本机回环验证中，正确凭据收到编号 6 的`accepted=True`，随后请求 7 和 8 拿到同一个会话 ID。错误凭据收到编号 6 的`accepted=False`。回复编号不匹配时，桌面端在发起会话申请前终止流程。
+
+#### 5.4.10 连接处理函数与状态回调
+
+双终端实验把已完成握手的`SSLSocket`和两个回调交给`serve_management_connection()`。连接处理函数读取认证与会话申请，发送回复，并在认证通过后的连接处理结束时调用关闭回调。
+
+实验车端的`main()`持有`guard`。申请回调用`handle_open_session()`得到新的车端状态、连接上下文和回复，保存车端状态后，把连接上下文和回复交还给连接处理函数。关闭回调用`handle_connection_closed()`撤销仍属于该连接的会话，并保存返回的车端状态。两个回调都用`nonlocal guard`更新`main()`中的绑定。
+
+本机回环验证中，正确凭据通过回调为请求 7 和 8 返回同一个会话 ID，连接结束后登记清空。错误凭据收到`accepted=False`，此时未调用会话申请或关闭回调。
+
+#### 5.4.11 管理线程与仿真循环之间传递请求
+
+独立实验用`Queue`（线程安全队列）传递连接上下文、申请和一个`Future`（待完成的结果）。模拟网络线程把三者放入队列后等待结果。仿真每轮最多调用一次`get_nowait()`取请求。队列为空时立即继续；有请求时由仿真更新`guard`，再用`Future.set_result()`把连接上下文和回复交回网络线程。
+
+实验先运行一次空队列的仿真，再提交请求 7。下一轮由仿真登记会话，网络线程得到同一个会话 ID，登记时保持未使能。实验调度用的`Event.wait()`放在仿真单轮函数外。
+
+#### 5.4.12 图8：TLS 管理会话如何进入车端仿真
+
+本机联调通过实验启动脚本进入`app.py`，由 TLS 工作线程收发管理消息，由仿真主线程更新`guard`。同一车端进程已实测顺序处理两条 TLS 连接。每条连接的请求 7 和 8 共用会话 ID，桌面端退出后登记清空，后一次连接取得新 ID。
+
+![图8 TLS 管理会话与仿真主循环](reference_image/diagrams/08-tls-management.svg)
+
+[PNG 大图](reference_image/diagrams/08-tls-management.png) · [图源](reference_image/diagrams/render_tls_management.py)
+
+#### 5.4.13 会话使能与首包超时验收
+
+桌面端通过认证并取得会话 ID 后，在同一条 TLS 连接发送`enable_session`。车端仿真线程核对会话归属及故障状态，回复`session_enable_result`。同一会话重复使能会沿用首次使能时间。
+
+本机实测错误会话 ID 的请求 8 被拒绝，合法请求 9 与重复请求 10 均成功。实验没有发送首条控制报文，随后遥测报告`speed=0.0m/s fault_latched=True`，再次使能的请求 11 被拒绝，连接结束后车端撤销登记。车端启动脚本与验收客户端默认使用实验脚本同级的`certs`目录，联调已验证可省略证书路径参数。
+
+### 5.5 当前接入范围与协议升级
+
+控制信封、准入及会话登记、使能和关闭的内部状态操作已完成独立单元验证。
+
+TLS 认证、会话申请和撤销已通过实验入口在本机接入车端仿真。默认 UDP 模式已复验收包、达到 2.0 m/s 和超时停车锁存。TLS 实验模式已复验同连接两次申请复用会话，以及断开后撤销。旧 UDP 目标只由默认模式处理。原桌面端使用`control_target`和`vehicle_state`消息，新`ControlCommand`与严格准入的端到端接入属于后续步骤。
+
+会话使能已通过本机 TLS 实验验收。后续需接入新 UDP 控制链路，包括车端有效窗口、HMAC、急停和故障复位，并完成桌面整合及跨机验收。
+
+普通TCP教学仅验证传输；新链路的正式会话控制须完成对应身份、权限与会话校验。管理I/O不得阻塞车端更新和超时检查。
 
 新增不兼容的必填字段或授权语义时，应明确调整消息类型或协议版本，并让校验与HMAC覆盖新内容。
 TLS只保护对应的TCP管理连接，不自动保护UDP；HMAC校验真实性/完整性，不提供加密保密性。
-具体实现按已约定计划推进，图中的后续项不作为已实现功能；目标是达到教师认可的高级/专家标准；A01—A10仅是实现与验证的拆解，不能代替评分标准或保证定档。
 
 <a id="project-maintenance"></a>
 
-## 7. 项目配置与文档维护
+## 6. 项目配置与文档维护
 
-### 7.1 项目安装配置
+### 6.1 项目安装配置
 
-#### 7.1.1 为什么现在增加pyproject.toml
+#### 6.1.1 为什么现在增加pyproject.toml
 
 早期所有脚本在根目录，直接运行脚本时Python可以找到同目录的其他模块，因此当时没有项目安装配置。
 本次采用`src/rover`包布局，通过[pyproject.toml](pyproject.toml)声明源码位置、依赖和构建方式，统一两端的导入与启动。
@@ -652,9 +774,9 @@ TLS只保护对应的TCP管理连接，不自动保护UDP；HMAC校验真实性/
 `dsnet-rover`是安装名称，`rover`是代码导入名称，`src`是源码存放区。
 例如`from rover.core.vehicle_model import VehicleState`，导入名称不包含`src`。
 
-#### 7.1.2 可编辑安装与依赖清单
+#### 6.1.2 可编辑安装与依赖清单
 
-2.2中的`pip install -e .`表示将当前项目以可编辑方式安装到所用Python环境，同时处理项目声明的依赖。
+[1.2 创建环境与安装依赖](#environment-setup)中的`pip install -e .`表示将当前项目以可编辑方式安装到所用Python环境，同时处理项目声明的依赖。
 修改现有源码后，下次运行直接使用修改；调整依赖或安装配置后，应重新执行安装命令。
 `-m rover.desktop.app`会按包路径找到模块，以主程序方式执行并进入其`main()`。[pip本地安装说明](https://pip.pypa.io/en/stable/topics/local-project-installs/)
 
@@ -662,13 +784,13 @@ TLS只保护对应的TCP管理连接，不自动保护UDP；HMAC校验真实性/
 只执行`pip install -r requirements.txt`会安装第三方库，不能替代本项目的包安装。
 当前可编辑安装及wheel构建均依赖Python环境，最终独立Windows EXE仍需单独制作。
 
-#### 7.1.3 空的__init__.py为什么也要提交
+#### 6.1.3 空的__init__.py为什么也要提交
 
 `rover`及五个子包、`tests`、`examples`各有一个空`__init__.py`，共8个。
 它们明确本项目采用的普通Python包边界，支持完整包导入、测试定位和示例模块启动。
 这些是源码文件，应提交；不需要往里面填`main()`，窗口和Socket仍由应用入口创建。
 
-### 7.2 Git协作与目录迁移
+### 6.2 Git协作与目录迁移
 
 | 提交到仓库 | 用途 |
 | --- | --- |
@@ -683,22 +805,22 @@ TLS只保护对应的TCP管理连接，不自动保护UDP；HMAC校验真实性/
 
 迁移作为原仓库的新提交处理：先核对文件移动、修改、图片改名/删除，再在功能分支暂存并审查、提交、推送，按PR流程合入`main`。
 旧路径会退出新版本，新路径进入新版本；仓库地址和历史提交保留，不用重新创建仓库。
-队友拉取迁移后的版本后，先按2.2在自己的虚拟环境执行可编辑安装，再使用新的模块入口启动。
+队友拉取迁移后的版本后，先按[1.2 创建环境与安装依赖](#environment-setup)在自己的虚拟环境执行可编辑安装，再使用新的模块入口启动。
 暂存时需要同时覆盖新路径与旧路径删除记录；`git add -A -- <已核对的路径>`可记录对应新增、修改和删除。[Git暂存说明](https://git-scm.com/docs/git-add)
 
 <a id="diagram-maintenance"></a>
 
-### 7.3 导图维护
+### 6.3 导图维护
 
-#### 7.3.1 Mermaid图
+#### 6.3.1 Mermaid图
 
 图1—图3保留为正文中的可编辑Mermaid代码块。
 函数名加粗，参数/变量分行；节点ID只负责连线，不必与Python变量同名。
 改名或移动图时同步检查正文引用，避免箭头标签挤到边框。
 
-#### 7.3.2 SVG导图与生成源
+#### 6.3.2 SVG导图与生成源
 
-图4的[运动与坐标生成源](reference_image/diagrams/render_vehicle_motion.py)、图5的[网络分层生成源](reference_image/diagrams/render_network_layers.py)、图6的[封装与边界生成源](reference_image/diagrams/render_encapsulation.py)、图7的[TCP接收生成源](reference_image/diagrams/render_tcp_record_receive.py)包含可修改的文字、变量名及布局。图6的`LABELS`、`FIELDS`和布局常量集中保存函数名、字段文字、位置与尺寸。
+图4的[运动与坐标生成源](reference_image/diagrams/render_vehicle_motion.py)、图5的[网络分层生成源](reference_image/diagrams/render_network_layers.py)、图6的[封装与边界生成源](reference_image/diagrams/render_encapsulation.py)、图7的[TCP接收生成源](reference_image/diagrams/render_tcp_record_receive.py)和图8的[TLS 管理会话生成源](reference_image/diagrams/render_tls_management.py)包含可修改的文字、变量名及布局。图6的`LABELS`、`FIELDS`和布局常量集中保存函数名、字段文字、位置与尺寸。
 使用项目已有PySide6，在仓库根目录运行：
 
 ```powershell
@@ -706,10 +828,13 @@ TLS只保护对应的TCP管理连接，不自动保护UDP；HMAC校验真实性/
 .\.venv\Scripts\python.exe reference_image/diagrams/render_network_layers.py
 .\.venv\Scripts\python.exe reference_image/diagrams/render_encapsulation.py
 .\.venv\Scripts\python.exe reference_image/diagrams/render_tcp_record_receive.py
+.\.venv\Scripts\python.exe reference_image/diagrams/render_tls_management.py
 ```
 
 每个命令各自更新对应的SVG与高清PNG，输出到生成源所在目录。图5、图6和图7复用同目录图4生成源的绘图工具，须一并保留。README使用相对链接，图的位置和资源目录均可调整。
 
 新增协议能力时，同步修订图5的核对日期、各层状态、报文类型和通道说明；以实际接入与验证结果标记进展。安全机制不硬塞到单个OSI层，未做的跨机实验也不写成已完成。
+
+技术变更记在对应章节。项目总览随功能范围、开发路线或验收目标的变化独立修订。
 
 功能或文件职责变化时，先更新可复用的已有模块与说明，职责确实不同时再新增。同步修订受影响的函数/变量名、调用关系、README运行命令和图源，必要时重新导出SVG/PNG；过时内容合并或删改，保留已验证的历史示例时明确其适用阶段。
