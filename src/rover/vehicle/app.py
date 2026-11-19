@@ -7,12 +7,12 @@ from rover.vehicle.control_guard import (
     ControlGuardState,
     update_control_guard,
     close_control_session,
-    update_command_guard,
+    update_windowed_command_guard,
 )
 from rover.protocol.telemetry_codec import TelemetrySnapshot
 from rover.transport.udp_transport import (
     send_telemetry,
-    try_receive_authenticated_control_command,
+    try_receive_windowed_control_command,
     try_receive_target,
 )
 from rover.core.vehicle_model import VehicleState
@@ -68,7 +68,7 @@ def main(*, management=None) -> None:
                     if process_management is None:
                         received = try_receive_target(sock)
                     else:
-                        received = try_receive_authenticated_control_command(
+                        received = try_receive_windowed_control_command(
                             sock, key=guard.control_key
                         )
                 except ValueError as exc:
@@ -81,7 +81,7 @@ def main(*, management=None) -> None:
                 if process_management is None:
                     guard = update_control_guard(guard, now_s, incoming)
                 else:
-                    guard = update_command_guard(guard, now_s, incoming)
+                    guard = update_windowed_command_guard(guard, now_s, incoming)
 
                 # 4. 每轮只推进车辆一次
                 state = step_vehicle(state, guard.last_accepted, now_s, dt_s)

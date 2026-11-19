@@ -1,5 +1,6 @@
 import json
 from dataclasses import dataclass, field
+from math import isfinite
 
 MAX_MANAGEMENT_MESSAGE_BYTES = 4096
 
@@ -38,6 +39,20 @@ class EnableSessionRequest:
 class SessionEnableResult:
     request_id: int
     enabled: bool
+
+
+@dataclass(frozen=True)
+class IssueControlWindowRequest:
+    request_id: int
+    session_id: str
+
+
+@dataclass(frozen=True)
+class ControlWindowResult:
+    request_id: int
+    granted: bool  # 	是否获准签发
+    window_id: str | None = None
+    lifetime_s: float | None = None
 
 
 def encode_session_enable_result(reply: SessionEnableResult) -> bytes:
@@ -280,17 +295,27 @@ def _validate_auth_accepted(value: object) -> None:
         raise ValueError("accepted must be a boolean")
 
 
-def decode_session_request(data: bytes) -> OpenSessionRequest | EnableSessionRequest:
+def decode_session_request(
+    data: bytes,
+) -> OpenSessionRequest | EnableSessionRequest | IssueControlWindowRequest:
     message = _decode_management_message(
         data,
-        ("open_session", "enable_session"),
+        ("open_session", "enable_session", "issue_control_window"),
         ("request_id",),
     )
     if message["type"] == "open_session":
         return _open_session_request_from_message(message)
     if "session_id" not in message:
         raise ValueError("missing required field: session_id")
-    return _enable_session_request_from_message(message)
+    if message["type"] == "enable_session":
+        return _enable_session_request_from_message(message)
+
+    _validate_request_id(message["request_id"])
+    _validate_session_id(message["session_id"])
+    return IssueControlWindowRequest(
+        request_id=message["request_id"],
+        session_id=message["session_id"],
+    )
 
 
 def _validate_control_key(value: object) -> None:
@@ -300,3 +325,77 @@ def _validate_control_key(value: object) -> None:
         or any(char not in "0123456789abcdef" for char in value)
     ):
         raise ValueError("control_key must be 64 lowercase hexadecimal characters")
+
+
+def encode_issue_control_window_request(request: IssueControlWindowRequest) -> bytes:
+    _validate_request_id(request.request_id)
+    _validate_session_id(request.session_id)
+    return _encode_management_message(
+        {
+            "version": 1,
+            "type": "issue_control_window",
+            "request_id": request.request_id,
+            "session_id": request.session_id,
+        }
+    )
+
+
+def decode_issue_control_window_request(data: bytes) -> IssueControlWindowRequest:
+    message = _decode_management_message(
+        data, "issue_control_window", ("request_id", "session_id")
+    )
+    _validate_request_id(message["request_id"])
+    _validate_session_id(message["session_id"])
+    return IssueControlWindowRequest(message["request_id"], message["session_id"])
+
+
+def _validate_control_window_result(reply: ControlWindowResult) -> None:
+    _validate_request_id(reply.request_id)
+    if type(reply.granted) is not bool:
+        raise ValueError("granted must be a boolean")
+
+    if not reply.granted:
+        if reply.window_id is not None or reply.lifetime_s is not None:
+            raise ValueError("denied window must not contain window data")
+        return
+
+    if not isinstance(reply.window_id, str) or not reply.window_id.strip():
+        raise ValueError("window_id must be a non-blank string")
+    if type(reply.lifetime_s) not in (int, float):
+        raise ValueError("lifetime_s must be a positive finite number")
+    try:
+        lifetime_s = float(reply.lifetime_s)
+    except OverflowError as exc:
+        raise ValueError("lifetime_s is outside float range") from exc
+    if not isfinite(lifetime_s) or lifetime_s <= 0:
+        raise ValueError("lifetime_s must be a positive finite number")
+
+
+def encode_control_window_result(reply: ControlWindowResult) -> bytes:
+    _validate_control_window_result(reply)
+    return _encode_management_message(
+        {
+            "version": 1,
+            "type": "control_window_result",
+            "request_id": reply.request_id,
+            "granted": reply.granted,
+            "window_id": reply.window_id,
+            "lifetime_s": reply.lifetime_s,
+        }
+    )
+
+
+def decode_control_window_result(data: bytes) -> ControlWindowResult:
+    message = _decode_management_message(
+        data,
+        "control_window_result",
+        ("request_id", "granted", "window_id", "lifetime_s"),
+    )
+    reply = ControlWindowResult(
+        message["request_id"],
+        message["granted"],
+        message["window_id"],
+        message["lifetime_s"],
+    )
+    _validate_control_window_result(reply)
+    return reply

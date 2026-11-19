@@ -5,9 +5,11 @@ from rover.protocol.control_codec import (
     decode_authenticated_command,
     decode_command,
     decode_target,
+    decode_windowed_command,
     encode_authenticated_command,
     encode_command,
     encode_target,
+    encode_windowed_command,
 )
 from rover.core.control_target import ControlTarget
 from rover.protocol.telemetry_codec import (
@@ -118,3 +120,29 @@ def try_receive_authenticated_control_command(
         raise ValueError("no active control session key")
 
     return decode_authenticated_command(packet, key), peer
+
+
+def send_windowed_control_command(
+    sock: socket.socket,
+    command: ControlCommand,
+    address: tuple[str, int],
+    *,
+    key: bytes,
+) -> int:
+    return sock.sendto(encode_windowed_command(command, key), address)
+
+
+def try_receive_windowed_control_command(
+    sock: socket.socket,
+    *,
+    key: bytes | None,
+) -> tuple[ControlCommand, tuple[str, int]] | None:
+    try:
+        packet, peer = sock.recvfrom(UDP_RECEIVE_BUFFER_BYTES)
+    except BlockingIOError:
+        return None
+
+    if not key:
+        raise ValueError("no active control session key")
+
+    return decode_windowed_command(packet, key), peer

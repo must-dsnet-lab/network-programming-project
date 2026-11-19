@@ -2,14 +2,20 @@ from hmac import compare_digest
 from dataclasses import dataclass, replace
 from uuid import uuid4
 from secrets import token_bytes
-from rover.protocol.management_codec import OpenSessionRequest, SessionOpened
+from rover.protocol.management_codec import (
+    ControlWindowResult,
+    IssueControlWindowRequest,
+    OpenSessionRequest,
+    SessionOpened,
+)
 from rover.vehicle.control_guard import (
     ControlGuardState,
     open_control_session,
     close_control_session,
     enable_control_session,
+    update_control_guard,
 )
-
+from rover.vehicle.control_window import issue_control_window
 
 def verify_client_credential(
     trusted_credentials: dict[str, bytes],  # 正确答案
@@ -39,7 +45,11 @@ def handle_open_session(
     if session_id is None:
         session_id = uuid4().hex
         guard = open_control_session(guard, session_id)
-        guard = replace(guard, control_key=token_bytes(32))
+        guard = replace(
+            guard,
+            control_key=token_bytes(32),
+            control_window=None,
+        )
         connection = replace(connection, session_id=session_id)
     elif session_id != connection.session_id:
         raise ValueError("another control session is already open")
@@ -84,3 +94,30 @@ def handle_enable_session(
         raise ValueError("connection does not own this control session")
 
     return enable_control_session(guard, now_s)
+
+
+def handle_issue_control_window(
+    guard: ControlGuardState,
+    connection: AuthenticatedConnection,
+    request: IssueControlWindowRequest,
+    *,
+    now_s: float,
+) -> tuple[ControlGuardState, ControlWindowResult]:
+    guard = update_control_guard(guard, now_s=now_s)
+    if (
+        guard.fault_latched
+        or not guard.control_key
+        or guard.session_id is None
+        or connection.session_id != guard.session_id
+        or request.session_id != guard.session_id
+    ):
+        return guard, ControlWindowResult(request.request_id, False)
+
+    window = issue_control_window(uuid4().hex, now_s=now_s)
+    guard = replace(guard, control_window=window)
+    return guard, ControlWindowResult(
+        request_id=request.request_id,
+        granted=True,
+        window_id=window.window_id,
+        lifetime_s=window.expires_at_s - window.issued_at_s,
+    )

@@ -3,13 +3,16 @@ from socket import socket
 
 from rover.protocol.management_codec import (
     AuthenticationResult,
+    ControlWindowResult,
     EnableSessionRequest,
+    IssueControlWindowRequest,
     OpenSessionRequest,
     SessionEnableResult,
     SessionOpened,
     decode_authenticate_request,
     decode_session_request,
     encode_authentication_result,
+    encode_control_window_result,
     encode_session_enable_result,
     encode_session_opened,
 )
@@ -34,6 +37,13 @@ def serve_management_connection(
     *,
     enable_session: (
         Callable[[AuthenticatedConnection, EnableSessionRequest], bool] | None
+    ) = None,
+    issue_control_window: (
+        Callable[
+            [AuthenticatedConnection, IssueControlWindowRequest],
+            ControlWindowResult,
+        ]
+        | None
     ) = None,
 ) -> None:
     records = iter_records(sock, record_timeout_s=1.0)
@@ -65,6 +75,16 @@ def serve_management_connection(
                     request_id=session_request.request_id, enabled=enabled,
                 )
                 send_record(sock, encode_session_enable_result(enable_result))
+                continue
+
+            if isinstance(session_request, IssueControlWindowRequest):
+                window_result = ControlWindowResult(
+                    request_id=session_request.request_id,
+                    granted=False,
+                )
+                if issue_control_window is not None:
+                    window_result = issue_control_window(connection, session_request)
+                send_record(sock, encode_control_window_result(window_result))
                 continue
 
             connection, reply = open_session(connection, session_request)
