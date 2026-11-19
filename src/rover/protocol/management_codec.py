@@ -13,6 +13,7 @@ class OpenSessionRequest:
 class SessionOpened:
     request_id: int
     session_id: str
+    control_key: str | None = field(default=None, repr=False)
 
 @dataclass(frozen=True)
 class AuthenticateRequest:
@@ -133,6 +134,10 @@ def encode_session_opened(reply: SessionOpened) -> bytes:
         "session_id": reply.session_id,
     }
 
+    if reply.control_key is not None:
+        _validate_control_key(reply.control_key)
+        message["control_key"] = reply.control_key
+
     return _encode_management_message(message)
 
 
@@ -144,9 +149,14 @@ def decode_session_opened(data: bytes) -> SessionOpened:
     )
     _validate_request_id(message["request_id"])
     _validate_session_id(message["session_id"])
+
+    if "control_key" in message:
+        _validate_control_key(message["control_key"])
+
     return SessionOpened(
         request_id=message["request_id"],
         session_id=message["session_id"],
+        control_key=message.get("control_key"),
     )
 
 
@@ -281,3 +291,12 @@ def decode_session_request(data: bytes) -> OpenSessionRequest | EnableSessionReq
     if "session_id" not in message:
         raise ValueError("missing required field: session_id")
     return _enable_session_request_from_message(message)
+
+
+def _validate_control_key(value: object) -> None:
+    if (
+        not isinstance(value, str)
+        or len(value) != 64
+        or any(char not in "0123456789abcdef" for char in value)
+    ):
+        raise ValueError("control_key must be 64 lowercase hexadecimal characters")

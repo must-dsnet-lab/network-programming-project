@@ -1,7 +1,7 @@
 from hmac import compare_digest
 from dataclasses import dataclass, replace
 from uuid import uuid4
-
+from secrets import token_bytes
 from rover.protocol.management_codec import OpenSessionRequest, SessionOpened
 from rover.vehicle.control_guard import (
     ControlGuardState,
@@ -34,17 +34,24 @@ def handle_open_session(
     connection: AuthenticatedConnection,
     request: OpenSessionRequest,
 ) -> tuple[ControlGuardState, AuthenticatedConnection, SessionOpened]:
-    session_id = guard.session_id  # guard.session_id 表示车端当前登记的会话
+    session_id = guard.session_id
+
     if session_id is None:
         session_id = uuid4().hex
         guard = open_control_session(guard, session_id)
+        guard = replace(guard, control_key=token_bytes(32))
         connection = replace(connection, session_id=session_id)
-    elif (
-        session_id != connection.session_id
-    ):  # `connection.session_id` 表示这条连接获分配的会话
+    elif session_id != connection.session_id:
         raise ValueError("another control session is already open")
 
-    reply = SessionOpened(request_id=request.request_id, session_id=session_id)
+    if guard.control_key is None:
+        raise ValueError("control session has no HMAC key")
+
+    reply = SessionOpened(
+        request_id=request.request_id,
+        session_id=session_id,
+        control_key=guard.control_key.hex(),
+    )
     return guard, connection, reply
 
 

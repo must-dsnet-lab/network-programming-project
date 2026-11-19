@@ -1,4 +1,4 @@
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from rover.core.control_target import ControlTarget
 from rover.vehicle.control_watchdog import CONTROL_TIMEOUT_S, AcceptedTarget
@@ -14,6 +14,7 @@ class ControlGuardState:
     last_seq: int | None = None  # 最后接受的序号；None表示尚未接受
     # enabled_at_s：本次使能的时间，用于限制等待首条有效指令的时长
     enabled_at_s: float | None = None  # 本次使能时间，作为首包等待起点
+    control_key: bytes | None = field(default=None, repr=False)
 
 # update_control_guard 是“法官”，负责判定系统是否违规（超时），
 # 一旦违规直接判死刑（锁死），并清空有效控制记录（last_accepted）
@@ -139,4 +140,5 @@ def close_control_session(
         enabled_at_s=None,
         last_accepted=None,
         last_seq=None,
+        control_key=None,
     )

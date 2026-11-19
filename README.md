@@ -20,14 +20,14 @@
 | 控制与遥测编解码 | `encode_target()/decode_target()`、`encode_telemetry()/decode_telemetry()`定义应用消息并转换数据表示。 |
 | UDP收发与非阻塞接收 | `send_target()`、`try_receive_target()`及遥测对应函数使用系统Socket；无包、坏包与系统错误分别处理。 |
 | 超时停车与故障锁存 | `AcceptedTarget`、`update_control_guard()`、`step_vehicle()`执行本地保护，不代表已完成认证会话。 |
-| 内部会话状态操作 | `open_control_session()`、`enable_control_session()`、`close_control_session()`维护登记、使能和关闭后的状态，属于应用内状态规则，尚未连接真实管理通道。 |
+| 会话状态与管理接入 | `open_control_session()`、`enable_control_session()`、`close_control_session()`维护登记、使能与关闭状态；TLS 实验入口已连接仿真主循环，UDP 控制通过 HMAC 和会话准入检查。 |
 | 桌面显示与周期控制 | `start_control()`、`send_control()`、`poll_telemetry()`组合两条UDP方向；`world_to_screen()`是GUI坐标换算。 |
 
 ### 开发路线与验收范围
 
 开发顺序为 **完整会话流程与ID约定 → 内存串联 → 管理消息与TCP分帧 → 本机TCP传输 → TLS、身份与会话绑定 → 新UDP控制及HMAC、有效窗口、急停与恢复 → 桌面整合 → 双机高级验收**。内存串联阶段复用现有会话状态逻辑。
 
-跨机、认证会话和专家机制仍待实现与接入。
+认证会话与 HMAC 控制已完成本机实验闭环；有效窗口、急停/复位、安全链路桌面整合、跨机与专家机制继续推进。
 
 - 项目范围包括观察端、故障注入、重复实验与原始数据，以及专家阶段的控制权交接、授权代次、租约和机制对照。
 - 第二台机器预检及最小EXE打包提前安排。配置、资源、证书、日志、跨机验证、报告、PPT与录像随版本更新。
@@ -75,7 +75,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-最近本机完整验证为163项测试通过，其中控制编解码40项、管理消息编解码17项、TCP应用记录15项、TCP传输7项、控制保护28项、桌面控制8项；下文八步人工验收另行记录，不增加单元测试计数。
+2026-11-19 助手在当前保存源码上完整回归 21 个测试模块、214 项通过，其中控制编解码40项、认证控制编解码9项、HMAC计算与核对6项、管理消息编解码26项、会话密钥8项、UDP控制收发15项、TCP应用记录15项、TCP传输7项、控制保护28项、桌面控制8项。Qt 使用离屏模式，Socket 使用本机回环。用户已回传相关38项、72项通过及真实TLS/HMAC双终端日志；人工验收不增加单元测试计数。
 
 ### 1.4 项目结构与职责
 
@@ -102,11 +102,11 @@ LICENSE          项目许可证
 | 模块 | 文件与职责 |
 | --- | --- |
 | `core` | `vehicle_model.py`保存状态并计算单步运动；`control_target.py`定义/应用运动目标；`simulation.py`用于离线多步轨迹。 |
-| `protocol` | `control_codec.py`、`telemetry_codec.py`与`management_codec.py`定义控制、遥测和会话建立消息的JSON编解码与字段校验。 |
+| `protocol` | `control_codec.py`、`telemetry_codec.py`与`management_codec.py`定义控制、遥测和管理消息的JSON编解码与字段校验；`control_auth.py`计算和核对HMAC认证码。 |
 | `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误；`tcp_records.py`编解码TCP应用记录并从分次到达的字节中提取完整正文；`tcp_transport.py`负责本机TCP收发、EOF及读取期限。 |
-| `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理会话状态、接受记录、首包/后续超时与控制信封准入（新入口和状态操作尚未接入运行）；`vehicle_runtime.py`组合一次受保护步进；`app.py`运行车端循环。 |
+| `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理会话、密钥、使能、接受记录及超时；`management_session.py`处理身份和会话归属，`management_connection.py`处理管理消息流；`vehicle_runtime.py`组合受保护步进，`app.py`运行车端循环。 |
 | `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹。 |
-| `tests` | 最近完整回归覆盖16个测试模块、163项测试，涵盖模型、控制/遥测/管理消息、真实UDP、本机TCP、TCP应用记录、保护、内部会话状态与界面行为。 |
+| `tests` | 最近完整回归覆盖21个测试模块、214项测试，涵盖模型、控制/遥测/管理消息、HMAC、会话密钥、真实UDP、本机TCP、TCP应用记录、保护、会话状态与界面行为。 |
 | `examples` | 8个教学示例，可单独观察离线运动、单包/周期控制、超时及命令行遥测。 |
 | `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
@@ -585,6 +585,19 @@ OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信�
 控制保护模块28项测试按职责独立组织：旧目标入口3项、控制信封准入8项、内部会话状态17项。覆盖序号0及跳号、未使能/错会话/重复乱序拒绝、无包未到期、故障优先、登记/使能/关闭的拒绝与幂等、首包到期、接受后切换计时起点、缺失起点，以及关闭A后重新使能B的完整状态链路。
 对应源码：[准入与保护](src/rover/vehicle/control_guard.py)、[保护测试](tests/test_control_guard.py)、[有效目标选择](src/rover/vehicle/control_watchdog.py)。
 
+#### 5.2.4 运行模式与报文准入
+
+车端根据运行模式选择相应的报文接收与处理入口。
+
+| 运行模式 | `incoming` 的内容 | 处理函数 |
+| --- | --- | --- |
+| 默认 UDP | `ControlTarget`，速度和朝向 | `update_control_guard()`接受目标，并处理超时锁存。 |
+| TLS 管理模式 | `ControlCommand`，会话 ID、序号和目标 | `update_command_guard()`检查使能、会话归属及序号，再接受目标。 |
+
+`update_command_guard()`内部先调用`update_control_guard()`做公共超时检查，随后做会话和序号审查。只有通过的报文才更新接受时间与`last_seq`。
+
+本机双终端已实测 TLS 认证、申请会话、使能后发送 UDP 的`seq=0～9`，遥测确认速度达到 1.0 m/s。最后一条指令在 4.125 s 被接受，4.625 s 停车并锁存故障，间隔 0.500 s。再次使能被拒绝，连接断开后会话登记清空。
+
 ### 5.3 管理消息与本机TCP
 
 <a id="management-message-codec"></a>
@@ -741,14 +754,82 @@ UUID 全称为 **Universally Unique Identifier**（通用唯一标识符）。�
 
 控制信封、准入及会话登记、使能和关闭的内部状态操作已完成独立单元验证。
 
-TLS 认证、会话申请和撤销已通过实验入口在本机接入车端仿真。默认 UDP 模式已复验收包、达到 2.0 m/s 和超时停车锁存。TLS 实验模式已复验同连接两次申请复用会话，以及断开后撤销。旧 UDP 目标只由默认模式处理。原桌面端使用`control_target`和`vehicle_state`消息，新`ControlCommand`与严格准入的端到端接入属于后续步骤。
+TLS 认证、会话申请、使能和撤销已通过实验入口在本机接入车端仿真。默认 UDP 模式已复验收包、达到 2.0 m/s 和超时停车锁存。TLS 管理模式已接入会话密钥分发、HMAC UDP `ControlCommand`与严格准入，完成坏包拒绝、运动、停发超时锁存及断开撤销的本机闭环。TLS 实验启动和客户端脚本当前位于仓库外的`项目准备/TLS实验`，正式入口整合仍待完成。原桌面控制台使用`control_target`和`vehicle_state`消息，安全控制链路的界面接入属于后续步骤。
 
-会话使能已通过本机 TLS 实验验收。后续需接入新 UDP 控制链路，包括车端有效窗口、HMAC、急停和故障复位，并完成桌面整合及跨机验收。
+后续需为新 UDP 控制链路接入车端有效窗口、急停和故障复位，并完成桌面整合及跨机验收。
 
 普通TCP教学仅验证传输；新链路的正式会话控制须完成对应身份、权限与会话校验。管理I/O不得阻塞车端更新和超时检查。
 
 新增不兼容的必填字段或授权语义时，应明确调整消息类型或协议版本，并让校验与HMAC覆盖新内容。
 TLS只保护对应的TCP管理连接，不自动保护UDP；HMAC校验真实性/完整性，不提供加密保密性。
+
+### 5.6 HMAC 校验
+
+HMAC 全称为 **Hash-based Message Authentication Code**（基于哈希的消息认证码）。本阶段采用 HMAC-SHA256，其中 SHA-256 是 **Secure Hash Algorithm**（安全散列算法）的 256 位版本。收发双方用共享密钥和相同的报文字节计算认证码，接收方核对认证码后再做控制准入。[Python HMAC 文档](https://docs.python.org/3.12/library/hmac.html)
+
+认证码计算与核对已通过 6 项单元测试，覆盖 RFC 4231 标准样本、正文或密钥改动、错误认证码、格式错误和空密钥。空密钥属于本地配置错误，抛出 `ValueError`；收到的认证码格式错误或不匹配时，核对函数返回 `False`。[RFC 4231 测试样本 1](https://www.rfc-editor.org/rfc/rfc4231.html#section-4.2)
+
+认证版控制报文使用 `type=authenticated_control_command`，在完整控制字段之外增加 `mac`。计算时先去掉 `mac`，按固定字段排序和紧凑 JSON 格式生成字节；接收方按相同规则重新计算。因此 JSON 的空格和字段顺序可以不同，版本、消息类型、会话、序号及运动目标的内容必须通过认证。这是本项目的编码约定。新增 9 项认证版编解码测试，与已有控制编解码相关回归合计 55 项通过，包含字段篡改、错误密钥、缺失或无效 MAC 以及完整报文大小检查。
+
+| 名称 | 作用 |
+| --- | --- |
+| `session_id` | 标识控制会话，供车端核对归属。 |
+| `control_key` | 会话共享密钥，作为 HMAC 的计算输入，通过 TLS 管理连接分发。 |
+| `mac` | 随 UDP 控制报文携带的认证码，由报文字段和共享密钥计算得到。 |
+
+会话密钥的生成、回复编解码、重复申请复用与关闭清除已通过 8 项新测试，与管理编解码、会话、保护和连接相关回归合计 72 项通过。认证UDP收发新增6项测试，相关回归38项通过。
+
+2026-11-19 用户真实双终端验收通过：客户端在 TLS 内取得32字节会话密钥；车端拒绝3份坏MAC报文后，接受合法`seq=0～9`。最后一次接受在6.593 s，7.093 s停车并锁存故障，显示间隔0.500 s；请求11再次使能为False，连接关闭后会话清空。UDP目前没有逐条指令的确认回执，拒绝原因记录在车端日志，遥测反馈实际车辆状态。
+
+**证书、登录凭据与密钥的分工**
+
+当前实验中，车端加载 `server.pem/server.key`，桌面端通过 `ca.pem` 和预期主机名验证车端证书。车端随后用应用层的 `client_id/credential` 验证桌面身份。桌面端当前没有配置客户端证书。[Python TLS 配置](https://docs.python.org/3.12/library/ssl.html#ssl.create_default_context)
+
+| 对象 | 谁持有、用于什么 |
+| --- | --- |
+| CA 证书 `ca.pem` 与 CA 私钥 `ca.key` | 桌面端信任 CA 证书来校验签发链；CA 私钥用于签发证书，不参与日常应用连接。 |
+| 车端证书 `server.pem` 与私钥 `server.key` | 证书包含车端公钥和身份信息；车端保管私钥，在握手中证明自己持有对应私钥。 |
+| TLS 内部流量密钥 | TLS 握手协商并派生，由 `ssl` 库管理，用于保护当前 TLS 管理连接中的数据。 |
+| 应用登录凭据 `credential` | 桌面端提交，车端与本地配置比较，判断客户端身份。 |
+| 会话共享密钥 `control_key` | 车端为新会话生成，两端保存相同值，用于 UDP 控制报文的 HMAC 计算和核对。 |
+
+证书认证使用公钥与私钥这对非对称密钥；TLS 业务数据使用协商出的对称流量密钥保护。应用生成的 `control_key` 则服务于独立的 UDP 通道。[TLS 1.3 协议](https://www.rfc-editor.org/rfc/rfc8446.html#section-2)
+
+**共享密钥与通道之间的关系**
+
+“共享”表示授权的桌面端与车端各自保存同一份秘密值。新会话中，车端生成 32 字节的 `control_key` 并保存在 `guard`，通过已建立的 TLS 连接在会话回复中发送其十六进制表示。桌面端用 `bytes.fromhex()`恢复成相同的 32 字节值。32 字节表示为 64 个十六进制字符，转换前后密钥值不变。
+
+接线后的发送方用 `HMAC(control_key, 控制字段)`得到 `mac`，随 UDP 发送控制字段和 `mac`；接收方用本地保存的同一密钥重新计算并核对。HMAC 提供报文认证与完整性校验，UDP 的控制字段仍可读取；会话、序号和后续有效窗口分别承担归属、重复/倒退拒绝和过期检查。[HMAC 定义](https://www.rfc-editor.org/rfc/rfc2104.html#section-1)
+
+TLS 只保护经过该 TLS Socket 的字节流。同一对设备之间另建的 UDP Socket 不会自动继承它的保护。TLS 管理连接在这里承担安全分发会话密钥的职责，HMAC 再把这份会话授权延伸到逐条 UDP 控制报文。`session_id` 是会话标识，`request_id` 是请求与回复的关联号，`seq` 是指令序号，三者都不承担密钥的作用。
+
+按通道看，保护关系分为两步：
+
+```text
+TLS 管理通道：安全地把 K 分发给桌面端
+                         ↓
+UDP 控制通道：使用 K 和 payload 计算、核对 HMAC
+```
+
+UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话、使能、序号和有效窗口负责控制准入。
+
+### 5.7 车端短期有效窗口（下一教学单元）
+
+有效窗口用于限制已认证指令的可接受期限。HMAC 正确、序号较新，只能分别证明持钥方与相对顺序；一份在网络中滞留的高序号报文仍需要期限检查。
+
+沿原计划由车端签发窗口、桌面在控制报文中回传 `window_id`，车端用自己的单调时钟判断。两台机器不相减各自的单调时钟值。当前细化先取0.25秒为可调整的默认窗口长度，原0.5秒控制看门狗继续独立运行。
+
+第一步只验证 `control_window.py` 的单窗口规则：`ControlWindow` 保存窗口ID、签发时刻与截止时刻；`issue_control_window()`计算固定截止时刻，`is_control_window_valid()`核对ID及 `issued_at_s <= now_s < expires_at_s`。恰好到期即拒绝，检查不会延长期限。签发参数错误抛出 `ValueError`，缺窗口、错ID或无效检查时间返回 `False`。本单元的固定测试ID随后由车端管理逻辑自动生成并通过TLS分发。
+
+| 机制 | 判断的问题 |
+| --- | --- |
+| HMAC | 报文是否由持钥方产生，认证字段是否被改动。 |
+| 会话与使能 | 当前连接/会话是否拥有控制资格，是否明确允许控制。 |
+| `seq` | 是否比本会话最后接受的序号更新。 |
+| 有效窗口 | 报文回传的窗口在车端检查时是否仍有效。 |
+| 0.5秒看门狗 | 距离使能或上次接受有效指令是否已经超时，需要停车锁存。 |
+
+窗口到期只阻止新到指令，已有目标仍由看门狗约束；被拒绝的指令不得刷新接受时间或序号。窗口ID后续会作为安全报文的必填认证字段，明确升级消息类型或版本后接入管理、收发和准入。此节是下一单元的接口与规则说明，尚不表示实际UDP链路已执行窗口校验。
 
 <a id="project-maintenance"></a>
 

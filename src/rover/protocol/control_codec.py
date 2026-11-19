@@ -2,7 +2,10 @@ from rover.core.control_target import ControlTarget
 import json
 from dataclasses import dataclass
 from math import isfinite
-
+from rover.protocol.control_auth import (
+    compute_control_mac,
+    verify_control_mac,
+)
 
 MAX_CONTROL_MESSAGE_BYTES = 1200
 
@@ -141,3 +144,49 @@ def decode_command(data: bytes) -> ControlCommand:
             heading_rad=message["heading_rad"],
         ),
     )
+
+
+def _encode_control_fields(message: dict) -> bytes:
+    return json.dumps(
+        message,
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+
+
+def encode_authenticated_command(command: ControlCommand, key: bytes) -> bytes:
+    message = json.loads(encode_command(command))
+    message["type"] = "authenticated_control_command"
+
+    # _encode_control_fields()固定字段排序和空格格式，让双方计算 HMAC 时使用一致的字节。
+    payload = _encode_control_fields(message)
+    message["mac"] = compute_control_mac(payload, key)
+    packet = _encode_control_fields(message)
+
+    if len(packet) > MAX_CONTROL_MESSAGE_BYTES:
+        raise ValueError("control message is too large")
+
+    return packet
+
+
+def decode_authenticated_command(data: bytes, key: bytes) -> ControlCommand:
+    if len(data) > MAX_CONTROL_MESSAGE_BYTES:
+        raise ValueError("control message is too large")
+
+    message = json.loads(data.decode("utf-8"))
+    if not isinstance(message, dict):
+        raise ValueError("message must be a JSON object")
+
+    # 接收时先取出 mac，用其余全部字段重新计算并核对
+    received_mac = message.pop("mac", None)
+    payload = _encode_control_fields(message)
+    if not verify_control_mac(payload, key, received_mac):
+        raise ValueError("control MAC verification failed")
+
+    if message.get("type") != "authenticated_control_command":
+        raise ValueError("unexpected message type")
+
+    # 核对成功后交给已有 decode_command()检查版本、会话、序号和运动参数。最后修改 type 是为了复用这个已有入口
+    message["type"] = "control_command"
+    return decode_command(_encode_control_fields(message))
