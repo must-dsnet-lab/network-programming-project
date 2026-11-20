@@ -7,3 +7,4 @@ __pycache__/
 build/
 dist/
 /本地环境与忽略内容说明.md
+/local/
