@@ -9,6 +9,8 @@ from rover.protocol.management_codec import (
     SessionOpened,
     EmergencyStopRequest,
     EmergencyStopResult,
+    ResetControlRequest,
+    ResetControlResult,
 )
 from rover.vehicle.control_guard import (
     ControlGuardState,
@@ -146,3 +148,24 @@ def handle_emergency_stop(
         fault_latched=True,
     )
     return guard, EmergencyStopResult(request.request_id, True)
+
+# 当前会话的拥有者，在故障锁存、已停用且没有有效控制目标时，才能复位
+def handle_reset_control(
+    guard: ControlGuardState,
+    connection: AuthenticatedConnection,
+    request: ResetControlRequest,
+) -> tuple[ControlGuardState, AuthenticatedConnection, ResetControlResult]:
+    if (
+        guard.session_id is None
+        or connection.session_id != guard.session_id
+        or request.session_id != guard.session_id
+        or not guard.fault_latched
+        or guard.enabled
+        or guard.last_accepted is not None
+    ):
+        return guard, connection, ResetControlResult(request.request_id, False)
+
+    guard = close_control_session(guard, guard.session_id)
+    guard = replace(guard, fault_latched=False)
+    connection = replace(connection, session_id=None)
+    return guard, connection, ResetControlResult(request.request_id, True)

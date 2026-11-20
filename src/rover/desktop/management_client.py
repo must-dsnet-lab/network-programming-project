@@ -21,6 +21,10 @@ from rover.protocol.management_codec import (
     EmergencyStopResult,
     encode_emergency_stop_request,
     decode_emergency_stop_result,
+    ResetControlRequest,
+    ResetControlResult,
+    encode_reset_control_request,
+    decode_reset_control_result,
 )
 from rover.transport.tcp_transport import iter_records, send_record
 
@@ -87,4 +91,10 @@ class ManagementClient:
         request = EmergencyStopRequest(self._next_request_id, session_id)
         return self._exchange(
             request, encode_emergency_stop_request, decode_emergency_stop_result
+        )
+
+    def reset_control(self, session_id: str) -> ResetControlResult:
+        request = ResetControlRequest(self._next_request_id, session_id)
+        return self._exchange(
+            request, encode_reset_control_request, decode_reset_control_result
         )

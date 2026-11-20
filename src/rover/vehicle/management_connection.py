@@ -18,6 +18,9 @@ from rover.protocol.management_codec import (
     EmergencyStopRequest,
     EmergencyStopResult,
     encode_emergency_stop_result,
+    ResetControlRequest,
+    ResetControlResult,
+    encode_reset_control_result,
 )
 from rover.transport.tcp_transport import iter_records, send_record
 from rover.vehicle.management_session import (
@@ -55,6 +58,13 @@ def serve_management_connection(
         ]
         | None
     ) = None,
+    reset_control: (
+        Callable[
+            [AuthenticatedConnection, ResetControlRequest],
+            tuple[AuthenticatedConnection, ResetControlResult],
+        ]
+        | None
+    ) = None,
 ) -> None:
     records = iter_records(sock, record_timeout_s=1.0)
     payload = next(records, None)
@@ -76,6 +86,13 @@ def serve_management_connection(
     try:
         for payload in records:
             session_request = decode_session_request(payload)
+
+            if isinstance(session_request, ResetControlRequest):
+                reply = ResetControlResult(session_request.request_id, False)
+                if reset_control is not None:
+                    connection, reply = reset_control(connection, session_request)
+                send_record(sock, encode_reset_control_result(reply))
+                continue
 
             if isinstance(session_request, EmergencyStopRequest):
                 reply = EmergencyStopResult(session_request.request_id, False)

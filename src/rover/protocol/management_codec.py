@@ -67,6 +67,18 @@ class EmergencyStopResult:
     accepted: bool  # accepted表示这次急停请求是否被允许执行
 
 
+@dataclass(frozen=True)
+class ResetControlRequest:
+    request_id: int
+    session_id: str
+
+
+@dataclass(frozen=True)
+class ResetControlResult:
+    request_id: int
+    accepted: bool
+
+
 def encode_session_enable_result(reply: SessionEnableResult) -> bytes:
     _validate_request_id(reply.request_id)
     _validate_enabled(reply.enabled)
@@ -314,23 +326,38 @@ def decode_session_request(
     | EnableSessionRequest
     | IssueControlWindowRequest
     | EmergencyStopRequest
+    | ResetControlRequest
 ):
     message = _decode_management_message(
         data,
-        ("open_session", "enable_session", "issue_control_window", "emergency_stop"),
+        (
+            "open_session",
+            "enable_session",
+            "issue_control_window",
+            "emergency_stop",
+            "reset_control",
+        ),
         ("request_id",),
     )
+
     if message["type"] == "open_session":
         return _open_session_request_from_message(message)
+
     if "session_id" not in message:
         raise ValueError("missing required field: session_id")
+
     if message["type"] == "enable_session":
         return _enable_session_request_from_message(message)
 
     _validate_request_id(message["request_id"])
     _validate_session_id(message["session_id"])
+
     if message["type"] == "emergency_stop":
         return EmergencyStopRequest(message["request_id"], message["session_id"])
+
+    if message["type"] == "reset_control":
+        return ResetControlRequest(message["request_id"], message["session_id"])
+
     return IssueControlWindowRequest(
         request_id=message["request_id"],
         session_id=message["session_id"],
@@ -466,4 +493,53 @@ def decode_emergency_stop_result(data: bytes) -> EmergencyStopResult:
     )
     reply = EmergencyStopResult(message["request_id"], message["accepted"])
     _validate_emergency_stop_result(reply)
+    return reply
+
+
+def encode_reset_control_request(request: ResetControlRequest) -> bytes:
+    _validate_request_id(request.request_id)
+    _validate_session_id(request.session_id)
+    return _encode_management_message(
+        {
+            "version": 1,
+            "type": "reset_control",
+            "request_id": request.request_id,
+            "session_id": request.session_id,
+        }
+    )
+
+
+def decode_reset_control_request(data: bytes) -> ResetControlRequest:
+    message = _decode_management_message(
+        data, "reset_control", ("request_id", "session_id")
+    )
+    _validate_request_id(message["request_id"])
+    _validate_session_id(message["session_id"])
+    return ResetControlRequest(message["request_id"], message["session_id"])
+
+
+def _validate_reset_control_result(reply: ResetControlResult) -> None:
+    _validate_request_id(reply.request_id)
+    if type(reply.accepted) is not bool:
+        raise ValueError("accepted must be a boolean")
+
+
+def encode_reset_control_result(reply: ResetControlResult) -> bytes:
+    _validate_reset_control_result(reply)
+    return _encode_management_message(
+        {
+            "version": 1,
+            "type": "reset_control_result",
+            "request_id": reply.request_id,
+            "accepted": reply.accepted,
+        }
+    )
+
+
+def decode_reset_control_result(data: bytes) -> ResetControlResult:
+    message = _decode_management_message(
+        data, "reset_control_result", ("request_id", "accepted")
+    )
+    reply = ResetControlResult(message["request_id"], message["accepted"])
+    _validate_reset_control_result(reply)
     return reply
