@@ -55,6 +55,18 @@ class ControlWindowResult:
     lifetime_s: float | None = None
 
 
+@dataclass(frozen=True)
+class EmergencyStopRequest:
+    request_id: int
+    session_id: str
+
+
+@dataclass(frozen=True)
+class EmergencyStopResult:
+    request_id: int
+    accepted: bool  # accepted表示这次急停请求是否被允许执行
+
+
 def encode_session_enable_result(reply: SessionEnableResult) -> bytes:
     _validate_request_id(reply.request_id)
     _validate_enabled(reply.enabled)
@@ -297,10 +309,15 @@ def _validate_auth_accepted(value: object) -> None:
 
 def decode_session_request(
     data: bytes,
-) -> OpenSessionRequest | EnableSessionRequest | IssueControlWindowRequest:
+) -> (
+    OpenSessionRequest
+    | EnableSessionRequest
+    | IssueControlWindowRequest
+    | EmergencyStopRequest
+):
     message = _decode_management_message(
         data,
-        ("open_session", "enable_session", "issue_control_window"),
+        ("open_session", "enable_session", "issue_control_window", "emergency_stop"),
         ("request_id",),
     )
     if message["type"] == "open_session":
@@ -312,6 +329,8 @@ def decode_session_request(
 
     _validate_request_id(message["request_id"])
     _validate_session_id(message["session_id"])
+    if message["type"] == "emergency_stop":
+        return EmergencyStopRequest(message["request_id"], message["session_id"])
     return IssueControlWindowRequest(
         request_id=message["request_id"],
         session_id=message["session_id"],
@@ -398,4 +417,53 @@ def decode_control_window_result(data: bytes) -> ControlWindowResult:
         message["lifetime_s"],
     )
     _validate_control_window_result(reply)
+    return reply
+
+
+def encode_emergency_stop_request(request: EmergencyStopRequest) -> bytes:
+    _validate_request_id(request.request_id)
+    _validate_session_id(request.session_id)
+    return _encode_management_message(
+        {
+            "version": 1,
+            "type": "emergency_stop",
+            "request_id": request.request_id,
+            "session_id": request.session_id,
+        }
+    )
+
+
+def decode_emergency_stop_request(data: bytes) -> EmergencyStopRequest:
+    message = _decode_management_message(
+        data, "emergency_stop", ("request_id", "session_id")
+    )
+    _validate_request_id(message["request_id"])
+    _validate_session_id(message["session_id"])
+    return EmergencyStopRequest(message["request_id"], message["session_id"])
+
+
+def _validate_emergency_stop_result(reply: EmergencyStopResult) -> None:
+    _validate_request_id(reply.request_id)
+    if type(reply.accepted) is not bool:
+        raise ValueError("accepted must be a boolean")
+
+
+def encode_emergency_stop_result(reply: EmergencyStopResult) -> bytes:
+    _validate_emergency_stop_result(reply)
+    return _encode_management_message(
+        {
+            "version": 1,
+            "type": "emergency_stop_result",
+            "request_id": reply.request_id,
+            "accepted": reply.accepted,
+        }
+    )
+
+
+def decode_emergency_stop_result(data: bytes) -> EmergencyStopResult:
+    message = _decode_management_message(
+        data, "emergency_stop_result", ("request_id", "accepted")
+    )
+    reply = EmergencyStopResult(message["request_id"], message["accepted"])
+    _validate_emergency_stop_result(reply)
     return reply

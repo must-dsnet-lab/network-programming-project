@@ -7,6 +7,8 @@ from rover.protocol.management_codec import (
     IssueControlWindowRequest,
     OpenSessionRequest,
     SessionOpened,
+    EmergencyStopRequest,
+    EmergencyStopResult,
 )
 from rover.vehicle.control_guard import (
     ControlGuardState,
@@ -121,3 +123,26 @@ def handle_issue_control_window(
         window_id=window.window_id,
         lifetime_s=window.expires_at_s - window.issued_at_s,
     )
+
+
+def handle_emergency_stop(
+    guard: ControlGuardState,
+    connection: AuthenticatedConnection,
+    request: EmergencyStopRequest,
+) -> tuple[ControlGuardState, EmergencyStopResult]:
+    if (
+        guard.session_id is None
+        or connection.session_id != guard.session_id
+        or request.session_id != guard.session_id
+    ):
+        return guard, EmergencyStopResult(request.request_id, False)
+
+    guard = replace(
+        guard,
+        last_accepted=None,
+        enabled=False,
+        enabled_at_s=None,
+        control_window=None,
+        fault_latched=True,
+    )
+    return guard, EmergencyStopResult(request.request_id, True)

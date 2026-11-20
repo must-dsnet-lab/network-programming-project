@@ -17,6 +17,10 @@ from rover.protocol.management_codec import (
     encode_enable_session_request,
     encode_issue_control_window_request,
     encode_open_session_request,
+    EmergencyStopRequest,
+    EmergencyStopResult,
+    encode_emergency_stop_request,
+    decode_emergency_stop_result,
 )
 from rover.transport.tcp_transport import iter_records, send_record
 
@@ -38,8 +42,8 @@ class ManagementClient:
         self._next_request_id += 1
         try:
             send_record(self._tls, packet)
-            payload = next(self._records, None) # 阻塞等待先于判断超时执行
-            if payload is None:
+            payload = next(self._records, None)
+            if payload is None:# `None`表示这里的迭代已经结束，不表示“目前暂时没有数据”
                 raise ConnectionError("management connection closed before reply")
             reply = decode(payload)
             if reply.request_id != request.request_id:
@@ -77,4 +81,10 @@ class ManagementClient:
             request,
             encode_issue_control_window_request,
             decode_control_window_result,
+        )
+
+    def emergency_stop(self, session_id: str) -> EmergencyStopResult:
+        request = EmergencyStopRequest(self._next_request_id, session_id)
+        return self._exchange(
+            request, encode_emergency_stop_request, decode_emergency_stop_result
         )
