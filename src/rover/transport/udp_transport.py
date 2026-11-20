@@ -1,6 +1,16 @@
 import socket
 
-from rover.protocol.control_codec import decode_target, encode_target
+from rover.protocol.control_codec import (
+    ControlCommand,
+    decode_authenticated_command,
+    decode_command,
+    decode_target,
+    decode_windowed_command,
+    encode_authenticated_command,
+    encode_command,
+    encode_target,
+    encode_windowed_command,
+)
 from rover.core.control_target import ControlTarget
 from rover.protocol.telemetry_codec import (
     TelemetrySnapshot,
@@ -8,8 +18,10 @@ from rover.protocol.telemetry_codec import (
     encode_telemetry,
 )
 
+
 # 65535 是接收缓冲上限；收到消息后，编解码模块仍执行 1200 字节的应用层限制
 UDP_RECEIVE_BUFFER_BYTES = 65535
+
 
 # 发送一份期望状态，返回发送字节数
 def send_target(
@@ -63,3 +75,74 @@ def try_receive_telemetry(
 
     snapshot = decode_telemetry(packet)
     return snapshot, peer
+
+
+def send_control_command(
+    sock: socket.socket,
+    command: ControlCommand,
+    address: tuple[str, int],
+) -> int:
+    return sock.sendto(encode_command(command), address)
+
+
+def try_receive_control_command(
+    sock: socket.socket,
+) -> tuple[ControlCommand, tuple[str, int]] | None:
+    try:
+        packet, peer = sock.recvfrom(UDP_RECEIVE_BUFFER_BYTES)
+    except BlockingIOError:
+        return None
+
+    return decode_command(packet), peer
+
+
+def send_authenticated_control_command(
+    sock: socket.socket,
+    command: ControlCommand,
+    address: tuple[str, int],
+    *,
+    key: bytes,
+) -> int:
+    return sock.sendto(encode_authenticated_command(command, key), address)
+
+
+def try_receive_authenticated_control_command(
+    sock: socket.socket,
+    *,
+    key: bytes | None,
+) -> tuple[ControlCommand, tuple[str, int]] | None:
+    try:
+        packet, peer = sock.recvfrom(UDP_RECEIVE_BUFFER_BYTES)
+    except BlockingIOError:
+        return None
+
+    if not key:
+        raise ValueError("no active control session key")
+
+    return decode_authenticated_command(packet, key), peer
+
+
+def send_windowed_control_command(
+    sock: socket.socket,
+    command: ControlCommand,
+    address: tuple[str, int],
+    *,
+    key: bytes,
+) -> int:
+    return sock.sendto(encode_windowed_command(command, key), address)
+
+
+def try_receive_windowed_control_command(
+    sock: socket.socket,
+    *,
+    key: bytes | None,
+) -> tuple[ControlCommand, tuple[str, int]] | None:
+    try:
+        packet, peer = sock.recvfrom(UDP_RECEIVE_BUFFER_BYTES)
+    except BlockingIOError:
+        return None
+
+    if not key:
+        raise ValueError("no active control session key")
+
+    return decode_windowed_command(packet, key), peer

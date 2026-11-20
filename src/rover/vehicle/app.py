@@ -7,9 +7,14 @@ from rover.vehicle.control_guard import (
     ControlGuardState,
     update_control_guard,
     close_control_session,
+    update_windowed_command_guard,
 )
 from rover.protocol.telemetry_codec import TelemetrySnapshot
-from rover.transport.udp_transport import send_telemetry, try_receive_target
+from rover.transport.udp_transport import (
+    send_telemetry,
+    try_receive_windowed_control_command,
+    try_receive_target,
+)
 from rover.core.vehicle_model import VehicleState
 from rover.vehicle.vehicle_runtime import step_vehicle
 
@@ -59,17 +64,24 @@ def main(*, management=None) -> None:
                 # 2. 每轮最多尝试接收一个控制报文
                 received = None
                 rejected_message = None
-
-                if process_management is None:
-                    try:
+                try:
+                    if process_management is None:
                         received = try_receive_target(sock)
-                    except ValueError as exc:
-                        rejected_message = str(exc)
+                    else:
+                        received = try_receive_windowed_control_command(
+                            sock, key=guard.control_key
+                        )
+                except ValueError as exc:
+                    rejected_message = str(exc)
 
                 # 3. 收包后重新取时，再判定保护状态
                 now_s = monotonic()
                 incoming = received[0] if received is not None else None
-                guard = update_control_guard(guard, now_s, incoming)
+                previous_seq = guard.last_seq
+                if process_management is None:
+                    guard = update_control_guard(guard, now_s, incoming)
+                else:
+                    guard = update_windowed_command_guard(guard, now_s, incoming)
 
                 # 4. 每轮只推进车辆一次
                 state = step_vehicle(state, guard.last_accepted, now_s, dt_s)
@@ -105,9 +117,12 @@ def main(*, management=None) -> None:
                     print(f"rejected: {rejected_message}", flush=True)
 
                 if received is not None:
-                    target, peer = received
-                    event = "ignored" if guard.fault_latched else "accepted"
-                    print(f"{event} from {peer}: {target}", flush=True)
+                    message, peer = received
+                    if process_management is None:
+                        event = "ignored" if guard.fault_latched else "accepted"
+                    else:
+                        event = "accepted" if guard.last_seq != previous_seq else "ignored"
+                    print(f"{event} from {peer}: {message}", flush=True)
 
                 if (
                     received is not None
