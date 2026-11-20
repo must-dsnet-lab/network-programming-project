@@ -1,4 +1,7 @@
 """初始文件名：demo_udp_vehicle_loop.py"""
+import argparse
+import json
+from pathlib import Path
 
 import socket
 from time import monotonic, sleep
@@ -9,6 +12,7 @@ from rover.vehicle.control_guard import (
     close_control_session,
     update_windowed_command_guard,
 )
+from rover.vehicle.management_runtime import management_listener
 from rover.protocol.telemetry_codec import TelemetrySnapshot
 from rover.transport.udp_transport import (
     send_telemetry,
@@ -19,10 +23,13 @@ from rover.core.vehicle_model import VehicleState
 from rover.vehicle.vehicle_runtime import step_vehicle
 
 
-def main(*, management=None) -> None:
-    address = ("127.0.0.1", 9999)
+def main(
+    *,
+    management=None,
+    address: tuple[str, int] = ("127.0.0.1", 9999),
+    telemetry_address: tuple[str, int] = ("127.0.0.1", 10000),
+) -> None:
     dt_s = 0.02
-    telemetry_address = ("127.0.0.1", 10000)
     telemetry_interval_s = 0.05
     started_at_s = monotonic()
     next_telemetry_at_s = started_at_s
@@ -41,7 +48,7 @@ def main(*, management=None) -> None:
         sock.bind(address)
         sock.setblocking(False)
 
-        telemetry_sock.bind(("127.0.0.1", 0))
+        telemetry_sock.bind((address[0], 0))
         telemetry_sock.setblocking(False)
 
         print(f"waiting for UDP on {address}; Ctrl+C to exit", flush=True)
@@ -152,5 +159,79 @@ def main(*, management=None) -> None:
                 print(f"Management session: {guard.session_id}", flush=True)
 
 
+def load_trusted_credentials(path: Path) -> dict[str, bytes]:
+    document = json.loads(path.read_text(encoding="utf-8-sig"))
+    if not isinstance(document, dict) or not document:
+        raise ValueError("credentials must be a non-empty JSON object")
+
+    trusted = {}
+    for client_id, credential in document.items():
+        if not isinstance(client_id, str) or not client_id.strip():
+            raise ValueError("client ID must be a non-blank string")
+        if not isinstance(credential, str) or not credential.strip():
+            raise ValueError("credential must be a non-blank string")
+        trusted[client_id] = credential.encode("utf-8")
+    return trusted
+
+
+def _port_argument(value: str) -> int:
+    try:
+        port = int(value)
+    except ValueError as error:
+        raise argparse.ArgumentTypeError("port must be an integer") from error
+    if not 1 <= port <= 65535:
+        raise argparse.ArgumentTypeError("port must be between 1 and 65535")
+    return port
+
+
+def _host_argument(value: str) -> str:
+    host = value.strip()
+    if not host:
+        raise argparse.ArgumentTypeError("host must be non-blank")
+    return host
+
+
+def cli(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Run the vehicle demo or TLS-managed vehicle."
+    )
+    parser.add_argument("--secure", action="store_true")
+    parser.add_argument("--cert-dir", type=Path)
+    parser.add_argument("--credentials-file", type=Path)
+    parser.add_argument("--bind-host", type=_host_argument, default="127.0.0.1")
+    parser.add_argument("--control-port", type=_port_argument, default=9999)
+    parser.add_argument("--management-port", type=_port_argument, default=19177)
+    parser.add_argument("--telemetry-host", type=_host_argument, default="127.0.0.1")
+    parser.add_argument("--telemetry-port", type=_port_argument, default=10000)
+    args = parser.parse_args(argv)
+
+    if args.secure: # 命令中带 --secure
+        if args.cert_dir is None or args.credentials_file is None:
+            parser.error("--secure requires --cert-dir and --credentials-file")
+    elif args.cert_dir is not None or args.credentials_file is not None:
+        parser.error("--cert-dir and --credentials-file require --secure")
+
+    management = None
+    try:
+        if args.secure:
+            for name in ("server.pem", "server.key"):
+                if not (args.cert_dir / name).is_file():
+                    parser.error(f"missing certificate file: {args.cert_dir / name}")
+            trusted = load_trusted_credentials(args.credentials_file)
+            management = management_listener(
+                args.cert_dir,
+                trusted,
+                address=(args.bind_host, args.management_port),
+            )
+
+        main(
+            address=(args.bind_host, args.control_port),
+            telemetry_address=(args.telemetry_host, args.telemetry_port),
+            management=management,
+        )
+    except (OSError, ValueError) as error:
+        parser.error(f"vehicle startup failed: {error}")
+
+
 if __name__ == "__main__":
-    main()
+    cli()
