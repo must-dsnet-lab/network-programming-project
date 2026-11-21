@@ -80,7 +80,10 @@ class TestVehicleStartup(unittest.TestCase):
             ):
                 app.cli(argv)
                 main.assert_called_once_with(
-                    address=address, telemetry_address=telemetry_address, management=None,
+                    address=address,
+                    telemetry_address=telemetry_address,
+                    management=None,
+                    observer_address=None,
                 )
                 listener.assert_not_called()
 
@@ -103,8 +106,11 @@ class TestVehicleStartup(unittest.TestCase):
                 )
                 main.assert_called_once_with(
                     address=("0.0.0.0", 20001) if custom else ("127.0.0.1", 9999),
-                    telemetry_address=("192.0.2.20", 20003) if custom else ("127.0.0.1", 10000),
+                    telemetry_address=(
+                        ("192.0.2.20", 20003) if custom else ("127.0.0.1", 10000)
+                    ),
                     management=sentinel.context,
+                    observer_address=None,
                 )
 
     def test_invalid_and_incomplete_arguments_do_not_start_runtime(self):
@@ -160,7 +166,9 @@ class TestVehicleStartup(unittest.TestCase):
                 else:
                     main.assert_called_once_with(
                         address=("127.0.0.1", 9999),
-                        telemetry_address=("127.0.0.1", 10000), management=sentinel.context,
+                        telemetry_address=("127.0.0.1", 10000),
+                        management=sentinel.context,
+                        observer_address=None,
                     )
 
     def test_main_binds_telemetry_to_selected_local_interface(self):
@@ -182,6 +190,57 @@ class TestVehicleStartup(unittest.TestCase):
 
         control.bind.assert_called_once_with(("0.0.0.0", 20001))
         telemetry.bind.assert_called_once_with(("0.0.0.0", 0))
+
+    def test_observer_options_route_an_extra_telemetry_address(self):
+        for options, expected_port in (
+            ([], 10001),
+            (["--observer-port", "20004"], 20004),
+        ):
+            with self.subTest(options=options), patch.object(app, "main") as main:
+                app.cli(["--observer-host", "192.0.2.30", *options])
+                self.assertEqual(
+                    main.call_args.kwargs["observer_address"],
+                    ("192.0.2.30", expected_port),
+                )
+
+    def test_observer_port_requires_an_ipv4_address(self):
+        for argv in (
+            ["--observer-port", "20004"],
+            ["--observer-host", "rover.example"],
+            ["--observer-host", "192.0.2.30", "--observer-port", "0"],
+        ):
+            with self.subTest(argv=argv):
+                self.assert_rejected_without_startup(argv)
+
+    def test_one_telemetry_tick_attempts_both_destinations(self):
+        primary = ("192.0.2.20", 20003)
+        observer = ("192.0.2.30", 20004)
+
+        for failing_address in (None, primary, observer):
+            with self.subTest(failing_address=failing_address):
+                control, telemetry = MagicMock(), MagicMock()
+                control.__enter__.return_value = control
+                telemetry.__enter__.return_value = telemetry
+                control.recvfrom.side_effect = BlockingIOError
+
+                def send_packet(packet, address):
+                    if address == failing_address:
+                        raise OSError("telemetry send failed")
+                    return len(packet)
+
+                telemetry.sendto.side_effect = send_packet
+                with (
+                    patch.object(
+                        app.socket, "socket", side_effect=[control, telemetry]
+                    ),
+                    patch.object(app, "sleep", side_effect=KeyboardInterrupt),
+                    patch("builtins.print"),
+                ):
+                    app.main(telemetry_address=primary, observer_address=observer)
+
+                sent = [call.args for call in telemetry.sendto.call_args_list]
+                self.assertEqual([address for _, address in sent], [primary, observer])
+                self.assertEqual(sent[0][0], sent[1][0])
 
 
 if __name__ == "__main__":

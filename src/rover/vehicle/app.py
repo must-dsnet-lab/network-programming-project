@@ -2,7 +2,7 @@
 import argparse
 import json
 from pathlib import Path
-
+from ipaddress import IPv4Address
 import socket
 from time import monotonic, sleep
 from contextlib import nullcontext
@@ -28,7 +28,11 @@ def main(
     management=None,
     address: tuple[str, int] = ("127.0.0.1", 9999),
     telemetry_address: tuple[str, int] = ("127.0.0.1", 10000),
+    observer_address: tuple[str, int] | None = None,
 ) -> None:
+    telemetry_destinations = (telemetry_address,)
+    if observer_address is not None and observer_address != telemetry_address:
+        telemetry_destinations += (observer_address,)
     dt_s = 0.02
     telemetry_interval_s = 0.05
     started_at_s = monotonic()
@@ -102,17 +106,13 @@ def main(
                         fault_latched=guard.fault_latched,
                     )
 
-                    try:
-                        send_telemetry(
-                            telemetry_sock,
-                            snapshot,
-                            telemetry_address,
-                        )
-                    except (OSError, ValueError) as exc:
-                        # 遥测发送失败只在此处处理，错误日志最多每秒一条
-                        if telemetry_now_s >= next_telemetry_error_log_s:
-                            print(f"telemetry unavailable: {exc}", flush=True)
-                            next_telemetry_error_log_s = telemetry_now_s + 1.0
+                    for destination in telemetry_destinations:
+                        try:
+                            send_telemetry(telemetry_sock, snapshot, destination)
+                        except (OSError, ValueError) as exc:
+                            if telemetry_now_s >= next_telemetry_error_log_s:
+                                print(f"telemetry unavailable: {destination}: {exc}", flush=True)
+                                next_telemetry_error_log_s = telemetry_now_s + 1.0
 
                     # 每轮最多发送一次；落后时跳过积压，不集中补发
                     next_telemetry_at_s += telemetry_interval_s
@@ -203,6 +203,8 @@ def cli(argv: list[str] | None = None) -> None:
     parser.add_argument("--management-port", type=_port_argument, default=19177)
     parser.add_argument("--telemetry-host", type=_host_argument, default="127.0.0.1")
     parser.add_argument("--telemetry-port", type=_port_argument, default=10000)
+    parser.add_argument("--observer-host", type=IPv4Address, help="optional observer IPv4")
+    parser.add_argument("--observer-port", type=_port_argument, help="observer UDP port (default: 10001)")
     args = parser.parse_args(argv)
 
     if args.secure: # 命令中带 --secure
@@ -210,7 +212,11 @@ def cli(argv: list[str] | None = None) -> None:
             parser.error("--secure requires --cert-dir and --credentials-file")
     elif args.cert_dir is not None or args.credentials_file is not None:
         parser.error("--cert-dir and --credentials-file require --secure")
-
+    observer_address = None
+    if args.observer_host is not None:
+        observer_address = (str(args.observer_host), args.observer_port or 10001)
+    elif args.observer_port is not None:
+        parser.error("--observer-port requires --observer-host")
     management = None
     try:
         if args.secure:
@@ -228,6 +234,7 @@ def cli(argv: list[str] | None = None) -> None:
             address=(args.bind_host, args.control_port),
             telemetry_address=(args.telemetry_host, args.telemetry_port),
             management=management,
+            observer_address=observer_address,
         )
     except (OSError, ValueError) as error:
         parser.error(f"vehicle startup failed: {error}")
