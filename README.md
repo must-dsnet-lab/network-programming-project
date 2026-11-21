@@ -27,7 +27,7 @@
 
 开发顺序为 **完整会话流程与ID约定 → 内存串联 → 管理消息与TCP分帧 → 本机TCP传输 → TLS、身份与会话绑定 → 新UDP控制及HMAC、有效窗口、急停与恢复 → 桌面整合 → 双机高级验收**。内存串联阶段复用现有会话状态逻辑。
 
-认证会话、HMAC、有效窗口控制、急停与正式复位已完成本机实验闭环；安全链路桌面整合、跨机与专家机制继续推进。
+安全桌面控制、急停与复位已完成本机验收。TLS 管理、UDP 控制和遥测已在 Windows 宿主机与 Ubuntu 虚拟机之间完成[虚拟局域网联调](#vmware-lan-acceptance)。两台物理电脑的局域网验收和专家机制待推进。
 
 - 项目范围包括观察端、故障注入、重复实验与原始数据，以及专家阶段的控制权交接、授权代次、租约和机制对照。
 - 第二台机器预检及最小EXE打包提前安排。配置、资源、证书、日志、跨机验证、报告、PPT与录像随版本更新。
@@ -75,7 +75,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-最近实际回归（2026-11-21）包含36个测试模块，用户终端339项通过（1.114秒）。桌面急停与复位接线经历21项中的4项预期失败，补全后专项21项通过（0.232秒），并完成本机联调。基础安全桌面提交2100a51的基线为335项，后台提交c784bb1为330项（1.115秒），桌面安全发包为324项（1.300秒），桌面安全连接入口为316项（1.243秒）。正式车端PR #21已合并为5314264，合并后310项通过（0.970秒）。此前管理运行时301项、正式复位298项、急停288项、管理客户端276项及窗口控制269项的实测记录分别保留。开发方式及RED/GREEN实例见[6.4 测试驱动开发与阶段验收](#development-method)。
+局域网配置版本 `ead59ba` 全量回归 342 项通过（1.184 秒），桌面接口专项 17 项通过（0.084 秒）。上一个安全桌面基线的 36 个测试模块共 339 项通过（1.114 秒）。桌面急停与复位接线经历21项中的4项预期失败，补全后专项21项通过（0.232秒），并完成本机联调。基础安全桌面提交2100a51的基线为335项，后台提交c784bb1为330项（1.115秒），桌面安全发包为324项（1.300秒），桌面安全连接入口为316项（1.243秒）。正式车端PR #21已合并为5314264，合并后310项通过（0.970秒）。此前管理运行时301项、正式复位298项、急停288项、管理客户端276项及窗口控制269项的实测记录分别保留。开发方式及RED/GREEN实例见[6.4 测试驱动开发与阶段验收](#development-method)。
 
 历史基线：2026-11-19助手完整回归21个测试模块、214项通过，包括控制编解码40项、认证控制编解码9项、HMAC计算与核对6项、管理消息编解码26项、会话密钥8项、UDP控制收发15项、TCP应用记录15项、TCP传输7项、控制保护28项、桌面控制8项。Qt使用离屏模式，Socket使用本机回环；原始记录保留供对照。
 
@@ -108,7 +108,7 @@ LICENSE          项目许可证
 | `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误；`tcp_records.py`编解码TCP应用记录并从分次到达的字节中提取完整正文；`tcp_transport.py`负责本机TCP收发、EOF及读取期限。 |
 | `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理会话、密钥、使能、接受记录及超时；`management_session.py`处理身份和会话归属，`management_connection.py`处理管理消息流，`management_runtime.py`负责TLS监听、网络线程与主线程队列交接；`vehicle_runtime.py`组合受保护步进，`app.py`运行车端循环。 |
 | `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹；`management_client.py`封装TLS管理请求、自动编号及回复配对；`secure_connection.py`统一证书校验、账号认证和连接清理；`secure_control.py`组织桌面会话、窗口与签名发包；`control_worker.py`负责后台连接、周期发送、保活和状态更新。 |
-| `tests` | 最近实际完整回归覆盖36个测试模块、339项测试，涵盖模型、控制/遥测/管理消息、管理客户端、安全连接入口、桌面安全发包与后台线程、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动配置、真实UDP、本机TCP、TCP应用记录、保护、会话状态与两种桌面启动路径和界面行为。 |
+| `tests` | 最近全量回归 342 项，覆盖模型、控制/遥测/管理消息、管理客户端、安全连接入口、桌面安全发包与后台线程、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动与网络地址配置、真实UDP、本机TCP、TCP应用记录、保护、会话状态与两种桌面启动路径和界面行为。 |
 | `examples` | 教学示例，可单独观察离线运动、单包与周期控制、超时、命令行遥测和安全管理连接。 |
 | `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
@@ -360,7 +360,7 @@ A看到的`peer`属于车端遥测Socket，与C的控制来源端口不同。
 约1秒无合法遥测后提示“遥测过期”，保留最后车辆、轨迹和读数；它们此时仅代表最后收到的状态。
 
 `status`表示遥测情况，`fault_latched`来自车端保护，`control_status`表示本地发送情况，三者独立。
-当前地址固定为本机回环，跨机配置尚未接入。
+本节的默认教学模式使用本机回环地址。安全模式的地址配置见[5.19 虚拟局域网联调](#vmware-lan-acceptance)。
 
 ### 4.2 地图、轨迹与坐标
 
@@ -756,9 +756,9 @@ UUID 全称为 **Universally Unique Identifier**（通用唯一标识符）。�
 
 控制信封、准入及会话登记、使能和关闭的内部状态操作已完成独立单元验证。
 
-TLS 认证、会话申请、使能和撤销已在本机接入车端仿真。默认 UDP 模式已复验收包、达到 2.0 m/s 和超时停车锁存。TLS 管理模式已接入会话密钥分发、HMAC UDP `ControlCommand`与严格准入，完成坏包拒绝、运动、停发超时锁存及断开撤销的本机闭环。车端现通过项目内`rover.vehicle.app --secure`正式入口读取本地配置并启动，桌面实验客户端仍位于仓库外的`项目准备/TLS实验`。原桌面控制台使用`control_target`和`vehicle_state`消息，安全控制链路的界面接入属于后续步骤。
+TLS 认证、会话申请、使能和撤销已在本机接入车端仿真。默认 UDP 模式已复验收包、达到 2.0 m/s 和超时停车锁存。TLS 管理模式已接入会话密钥分发、HMAC UDP `ControlCommand`与严格准入，完成坏包拒绝、运动、停发超时锁存及断开撤销的本机闭环。车端通过项目内 `rover.vehicle.app --secure` 正式入口读取本地配置并启动。本阶段的桌面实验客户端位于仓库外的 `项目准备/TLS实验`。普通模式的桌面控制台使用 `control_target` 和 `vehicle_state` 消息。
 
-车端有效窗口、急停和故障复位已接入并完成本机验收，管理运行时及正式启动参数已纳入项目包；桌面整合及跨机验收继续推进。
+车端有效窗口、急停和故障复位已接入并完成本机验收，管理运行时及正式启动参数已纳入项目包。后续的安全桌面整合见 [5.17 本机验收](#secure-desktop-local-acceptance)，宿主机与虚拟机的实测见 [5.19 虚拟局域网联调](#vmware-lan-acceptance)。
 
 普通TCP教学仅验证传输；新链路的正式会话控制须完成对应身份、权限与会话校验。管理I/O不得阻塞车端更新和超时检查。
 
@@ -1006,7 +1006,7 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 跨机部署按角色准备材料：车端保存`server.pem`、`server.key`和可信客户端配置；控制端读取项目CA的公开`ca.pem`，配置车端地址及自己的客户端ID/凭据。当前方案不要求每个控制端分别生成CA或申请客户端证书，也无需修改Windows全局信任库；CA私钥保留在签发材料的一处，不分发给控制端。
 
-跨机阶段将集中完善地址参数化的证书签发工具、每种角色的部署说明，以及可保存的桌面连接配置，目标为首次配置完成后日常直接启动。现有证书只列出`localhost`和`127.0.0.1`；正式跨机证书还需纳入车端实际局域网地址或名称，并由客户端核对对应身份。以上为后续部署目标，当前尚未完成跨机和GUI验收，不通过关闭证书校验简化接入。
+`new_local_tls.ps1 -ServerIp` 已支持将车端实际 IPv4 加入证书 SAN。桌面安全模式可分别配置车端地址和本机遥测监听地址，并按证书中的车端身份校验。签发、启动与虚拟局域网实测见 [5.19](#vmware-lan-acceptance)。后续部署继续完善连接配置保存和同 CA 续签流程。
 
 ### 5.14 桌面安全连接入口
 
@@ -1080,6 +1080,8 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 后台线程专项RED为4项预期失败。补全后，与安全发包模块合计14项通过，全量330项通过。专项使用真实线程、模拟管理回复与UDP socket，验证周期发包、停发后旧目标首包取消、空闲保活和异常清理。
 
+<a id="secure-desktop-local-acceptance"></a>
+
 ### 5.17 安全桌面界面的本机验收
 
 先在终端A启动车端，再在终端B启动桌面界面。两个终端均在仓库根目录运行。
@@ -1114,6 +1116,43 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 ![图9 管理请求怎样运行](reference_image/diagrams/09-management-request-flow.svg)
 
 [PNG 大图](reference_image/diagrams/09-management-request-flow.png) · [图源](reference_image/diagrams/render_management_request_flow.py)
+
+<a id="vmware-lan-acceptance"></a>
+
+### 5.19 Windows 宿主机与 Ubuntu 虚拟机联调
+
+2026-11-22 使用 `ead59ba` 实测。Windows 桌面进程与 Ubuntu 车端进程运行在同一台物理电脑的两个独立操作系统中，通过 VMware Workstation 的 VMnet8 私有网络通信。VMware 共享目录用于读取项目源码和本地证书配置，网络消息通过各自的虚拟网卡地址收发。本记录覆盖虚拟局域网闭环，两台物理电脑的局域网验收仍待进行。
+
+| 通道 | 实测方向 | 用途 |
+| --- | --- | --- |
+| TCP/TLS 管理 | Windows 宿主机 `192.168.174.1` → Ubuntu 虚拟机 `192.168.174.128:19177` | 车端证书校验、客户端认证与会话管理 |
+| UDP 控制 | Windows 宿主机 `192.168.174.1` → Ubuntu 虚拟机 `192.168.174.128:9999` | 发送带会话、序号、窗口和 HMAC 的控制指令 |
+| UDP 遥测 | Ubuntu 虚拟机 `192.168.174.128` → Windows 宿主机 `192.168.174.1:10000` | 回传实际位置、速度及车端保护状态 |
+
+先在 Windows 项目目录签发证书。脚本验证了 `localhost`、`127.0.0.1` 和车端 `192.168.174.128` 三个 SAN 条目。复现时使用两端当前虚拟网卡的 IPv4，证书 SAN 与桌面端连接的车端 IPv4 对应。
+
+```powershell
+.\scripts\new_local_tls.ps1 -OpenSsl 'D:\Tools\Git\mingw64\bin\openssl.exe' -OutputDirectory '.\local\certs-vm' -ServerIp '192.168.174.128'
+```
+
+在 Ubuntu 项目目录启动车端，读取 `local/certs-vm` 的车端证书和私钥以及现有的本地可信客户端配置：
+
+```bash
+PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./local/certs-vm --credentials-file ./local/trusted_clients.json --bind-host 192.168.174.128 --telemetry-host 192.168.174.1
+```
+
+车端开始监听后，在 Windows 项目目录启动桌面控制台，按提示输入测试凭据：
+
+```powershell
+.\.venv\Scripts\python.exe -m rover.desktop.app --secure --vehicle-host 192.168.174.128 --telemetry-bind-host 192.168.174.1 --ca-file '.\local\certs-vm\ca.pem'
+```
+
+| 验收项 | 实测观察 |
+| --- | --- |
+| 登录及反向遥测 | GUI 显示「安全连接就绪」和「遥测可用」，显示的遥测来源是 `192.168.174.128`。Ubuntu 车端登记了管理会话。 |
+| 应用 `1.0 m/s` 目标 | Ubuntu 从 `192.168.174.1` 接受 `seq=0–37` 的运动指令。车端实测速度达 `1.0 m/s`，首条零速指令到达前的位置记录为 `x=2.32 m`。 |
+| 正常停车 | Ubuntu 自 `seq=38` 起接受零速目标。车端位置停在 `x=2.36 m`，车端速度回到 `0.0 m/s`，`fault_latched=False`。 |
+| 关窗撤销 | 车端共接受 `seq=0–150` 的 151 条指令。关闭 GUI 后，Ubuntu 终端打印 `Management session: None`。 |
 
 <a id="project-maintenance"></a>
 
