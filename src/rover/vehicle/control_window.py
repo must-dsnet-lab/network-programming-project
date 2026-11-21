@@ -44,19 +44,36 @@ def issue_control_window(
 
     return ControlWindow(window_id, now_s, expires_at_s)
 
+def control_window_rejection_reason(
+    window: ControlWindow | None,
+    window_id: str,
+    now_s: float,
+) -> str | None:
+    if window is None:
+        return "window_missing"
+    if window.window_id != window_id:
+        return "window_mismatch"
+
+    try:
+        now_s = _finite_seconds(now_s, "now_s")
+    except ValueError:
+        return "window_time_invalid"
+
+    # 签发时刻 <= 检查时刻 < 截止时刻
+    if window.issued_at_s <= now_s:
+        if now_s < window.expires_at_s:
+            return None
+        if now_s >= window.expires_at_s:
+            return "window_expired"
+    elif now_s < window.issued_at_s:
+        return "window_not_started"
+    return "window_time_invalid"
+
+
 # 只检查 ID 和时间，返回 True/False，不会维护或延长期限。
 def is_control_window_valid(
     window: ControlWindow | None,
     window_id: str,
     now_s: float,
 ) -> bool:
-    if window is None or window.window_id != window_id:  # ID 匹配
-        return False
-
-    try:
-        now_s = _finite_seconds(now_s, "now_s")
-    except ValueError:
-        return False
-
-    # 签发时刻 <= 检查时刻 < 截止时刻
-    return window.issued_at_s <= now_s < window.expires_at_s
+    return control_window_rejection_reason(window, window_id, now_s) is None

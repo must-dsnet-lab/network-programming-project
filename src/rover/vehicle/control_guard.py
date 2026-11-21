@@ -5,7 +5,7 @@ from rover.vehicle.control_watchdog import CONTROL_TIMEOUT_S, AcceptedTarget
 from rover.protocol.control_codec import ControlCommand
 from rover.vehicle.control_window import (
     ControlWindow,
-    is_control_window_valid,
+    control_window_rejection_reason,
 )
 
 @dataclass(frozen=True)
@@ -75,19 +75,29 @@ def update_command_guard(
 ) -> ControlGuardState:
     # 使用update_control_guard()中的判断超时方法，同时对 会话、序号、目标 进行审查
     guard = update_control_guard(guard, now_s=now_s)  # 只复用保护检查，不会提前接受命令
-    if guard.fault_latched:
+    if incoming is None or guard.fault_latched:
         return guard
 
-    if incoming is None or not guard.enabled:
-        return guard
+    guard, _ = _apply_session_command(guard, now_s, incoming)
+    return guard
+
+
+def _apply_session_command(
+    guard: ControlGuardState,
+    now_s: float,
+    incoming: ControlCommand,
+) -> tuple[ControlGuardState, str | None]:
+    if not guard.enabled:
+        return guard, "session_disabled"
 
     if incoming.session_id != guard.session_id:
-        return guard
+        return guard, "session_mismatch"
 
     # 已经有接受历史，才比较序号；0 也属于有效历史
     # 拒绝重复或倒退的序号，保留原控制记录
     if guard.last_seq is not None and incoming.seq <= guard.last_seq:
-        return guard
+        reason = "sequence_duplicate" if incoming.seq == guard.last_seq else "sequence_out_of_order"
+        return guard, reason
 
     return replace(
         guard,
@@ -96,7 +106,7 @@ def update_command_guard(
             accepted_at_s=now_s,
         ),
         last_seq=incoming.seq,
-    )
+    ), None
 
 
 def open_control_session(
@@ -155,11 +165,24 @@ def update_windowed_command_guard(
     now_s: float,
     incoming: ControlCommand | None = None,
 ) -> ControlGuardState:
+    guard, _ = update_windowed_command_guard_with_reason(guard, now_s, incoming)
+    return guard
+
+
+def update_windowed_command_guard_with_reason(
+    guard: ControlGuardState,
+    now_s: float,
+    incoming: ControlCommand | None = None,
+) -> tuple[ControlGuardState, str | None]:
+    """Return the new guard and the first failed check for a received command."""
     guard = update_control_guard(guard, now_s=now_s)
-    if incoming is None or guard.fault_latched:
-        return guard
+    if incoming is None:
+        return guard, None
+    if guard.fault_latched:
+        return guard, "fault_latched"
 
-    if not is_control_window_valid(guard.control_window, incoming.window_id, now_s):
-        return guard
+    reason = control_window_rejection_reason(guard.control_window, incoming.window_id, now_s)
+    if reason is not None:
+        return guard, reason
 
-    return update_command_guard(guard, now_s=now_s, incoming=incoming)
+    return _apply_session_command(guard, now_s, incoming)

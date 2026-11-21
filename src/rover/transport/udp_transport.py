@@ -23,6 +23,10 @@ from rover.protocol.telemetry_codec import (
 UDP_RECEIVE_BUFFER_BYTES = 65535
 
 
+class NoActiveControlKeyError(ValueError):
+    """A control datagram arrived when the vehicle had no session key."""
+
+
 # 发送一份期望状态，返回发送字节数
 def send_target(
     sock: socket.socket,  # 网络电话机
@@ -143,6 +147,6 @@ def try_receive_windowed_control_command(
         return None
 
     if not key:
-        raise ValueError("no active control session key")
+        raise NoActiveControlKeyError("no active control session key")
 
     return decode_windowed_command(packet, key), peer

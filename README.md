@@ -33,7 +33,7 @@
 - 第二台机器预检及最小EXE打包提前安排。配置、资源、证书、日志、跨机验证、报告、PPT与录像随版本更新。
 - 高级阶段验证TLS握手、证书校验、跨机闭环与保护。专家阶段在此基础上扩展控制权交接、授权代次与租约。
 
-图中按实现和验证状态标记进展。A01—A10用于拆解组内实现与验证，最终评定依据教师评分标准。
+图中按实现和验证状态标记进展。A01—A10用于拆解组内实现与验证，最终评定依据教师评分标准。实验数据和待补项见[高级版验收记录](#advanced-acceptance-status)。
 
 ### 章节导航
 
@@ -108,7 +108,7 @@ LICENSE          项目许可证
 | `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误；`tcp_records.py`编解码TCP应用记录并从分次到达的字节中提取完整正文；`tcp_transport.py`负责本机TCP收发、EOF及读取期限。 |
 | `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理会话、密钥、使能、接受记录及超时；`management_session.py`处理身份和会话归属，`management_connection.py`处理管理消息流，`management_runtime.py`负责TLS监听、网络线程与主线程队列交接；`vehicle_runtime.py`组合受保护步进，`app.py`运行车端循环。 |
 | `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹；`management_client.py`封装TLS管理请求、自动编号及回复配对；`secure_connection.py`统一证书校验、账号认证和连接清理；`secure_control.py`组织桌面会话、窗口与签名发包；`control_worker.py`负责后台连接、周期发送、保活和状态更新。 |
-| `tests` | 最近全量回归 345 项，覆盖模型、控制/遥测/管理消息、管理客户端、安全连接入口、桌面安全发包与后台线程、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动与网络地址配置、遥测双发、真实UDP、本机TCP、TCP应用记录、保护、会话状态与两种桌面启动路径和界面行为。 |
+| `tests` | 最近全量回归 351 项，覆盖模型、控制/遥测/管理消息、管理客户端、安全连接入口、桌面安全发包与后台线程、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动与网络地址配置、遥测双发、控制断流和车端计时、真实UDP、本机TCP、TCP应用记录、保护、会话状态与两种桌面启动路径和界面行为。 |
 | `examples` | 教学示例，可单独观察离线运动、单包与周期控制、超时、命令行遥测和安全管理连接。 |
 | `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
@@ -651,6 +651,18 @@ TCP向应用提供有序字节流，一次读取可能只有半条消息，也�
 
 单条记录编解码的9项测试覆盖多字节长度、1/4096字节合法边界、短头部、零长度或超限声明以及正文长度不符。加上缓冲行为后，TCP应用记录15项通过，TCP传输7项通过。双终端已在`127.0.0.1:19176`实测管理请求与回复共用一条TCP连接，回显`request_id=7`、返回固定演示ID `demo-session`，然后正常到达EOF。[TCP应用记录](src/rover/transport/tcp_records.py) · [TCP传输](src/rover/transport/tcp_transport.py) · [记录测试](tests/test_tcp_records.py) · [传输测试](tests/test_tcp_transport.py)
 
+<a id="protocol-regression"></a>
+
+#### 5.3.4 A03 协议边界回归
+
+管理 JSON 正文上限为 4096 字节，TCP 管理记录另有 4 字节长度头。控制和遥测 UDP 消息分别限制为 1200 字节。2026-11-22 在 `7232cd2` 基线上的工作区复跑 8 个协议相关测试模块，**118 项通过**。覆盖合法边界、非法字段与编码、分段读取、截断和组帧超时，以及有效的管理请求与回复在本机 TCP 上往返。
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B -m unittest -v tests.test_management_codec tests.test_tcp_records tests.test_tcp_transport tests.test_management_connection tests.test_control_codec tests.test_windowed_control_codec tests.test_telemetry_codec tests.test_windowed_vehicle_app
+```
+
+结果记录于 `local/a-tests/a03/protocol-regression-b9152b56.txt`。当前证据来自编解码、传输和车端单步测试。正式车端进程在跨系统环境下拒绝异常消息并继续正常服务的完整现场记录待补。
+
 <a id="tls-certificates"></a>
 
 ### 5.4 TLS握手与证书校验
@@ -1057,6 +1069,22 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 未启动车端监听时，本机连接可能返回`WinError 10061`。此时先核对车端启动输出和管理端口，凭据检查发生在TCP连接和TLS握手之后。
 
+<a id="tls-trust-preflight"></a>
+
+#### 5.14.2 A05 TLS 信任链与凭据预检
+
+**Windows 本机回环预检（2026-11-22，基于 `7232cd2` 的工作区）**。正式车端使用临时 CA 签发的证书，桌面端依次使用正常配置、无关 CA、错误主机名和错误账号凭据连接，最后恢复正常配置。
+
+| 场景 | 实测结果 |
+| --- | --- |
+| 正常配置 | TLS 校验和账号认证通过，打开会话 |
+| 无关 CA | TLS 握手拒绝，客户端未发起应用认证，车端凭据校验 0 次 |
+| 错误主机名 | TLS 握手拒绝，客户端未发起应用认证，车端凭据校验 0 次 |
+| 错误凭据 | TLS 握手通过，车端检查凭据 1 次后拒绝打开会话 |
+| 恢复正常配置 | 再次认证并打开新会话 |
+
+车端在该轮记录两次会话打开和关闭，均来自正确配置。原始 CSV 位于 `local/a-tests/a05/loopback-tls-trust-a85ac18c/`。VMware 环境中的正常连接见 [5.19](#vmware-lan-acceptance)。
+
 ### 5.15 桌面安全控制与窗口续期
 
 `SecureControlSession`将实验脚本里已验证的桌面发包流程整理成可重复调用的代码。它使用已认证的`ManagementClient`处理管理请求，保存当前会话ID、密钥、窗口和下一个UDP序号。
@@ -1177,6 +1205,301 @@ PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./loca
 | 本机独立补测 | 正式车端、离屏 Qt 控制台和只读接收器使用真实 TLS/UDP 及独立临时端口。两处都读到首次移动和停车。确认观察端进程已退出后才再次应用 `1.2 m/s`，控制台仍收到运动和零速停车遥测。关窗后车端撤销管理会话。 |
 
 提交 `b22220a` 加入遥测双发，`1d0ec91` 开放观察端监听参数。车端专项 RED 记录为 5 个失败和 5 个错误，完成接线后复跑 16 项通过，全量 345 项通过。专项覆盖两路发送使用相同的快照字节、任一目的地发送出错时另一处仍尝试发送，以及命令行参数校验。
+
+<a id="control-outage-lab"></a>
+
+### 5.21 N4/N5 控制断流与恢复实验
+
+在 [VMware 联调拓扑](#vmware-lan-acceptance)上增加一个控制 UDP 转发器。Windows 控制端发往 Ubuntu 的 `10002/UDP`，转发器将同一数据报送到 Ubuntu 车端的 `9999/UDP`。TLS 管理继续直连 `19177/TCP`，车端遥测继续发往控制台 `10000/UDP` 和观察端 `10001/UDP`。
+
+先关闭上一轮车端和控制台。下面以 Ubuntu `192.168.174.128`、Windows VMnet8 `192.168.174.1` 为例，在各自项目目录操作。每次实验使用新的日志文件名。
+
+N0–N5 的运行日志统一放在 `local/n-tests/` 下。`n0` 保存正常链路，`n1` 保存丢包，`n2` 保存延迟，`n3` 保存乱序与重复，`n4-n5` 保存同一轮断流与恢复的记录。首次使用时在各自项目目录创建这些子目录。
+
+```bash
+mkdir -p ./local/n-tests/{n0,n1,n2,n3,n4-n5}
+```
+
+```powershell
+foreach ($roverTestFolder in 'n0', 'n1', 'n2', 'n3', 'n4-n5') {
+    New-Item -ItemType Directory -Path ".\local\n-tests\$roverTestFolder" -Force | Out-Null
+}
+```
+
+**Ubuntu 终端 1** 启动车端，开启车端事件记录。
+
+```bash
+PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./local/certs-vm --credentials-file ./local/trusted_clients.json --bind-host 192.168.174.128 --telemetry-host 192.168.174.1 --observer-host 192.168.174.1 --observer-port 10001 --event-log ./local/n-tests/n4-n5/n4n5-vehicle-01.csv
+```
+
+**Ubuntu 终端 2** 启动控制转发器。
+
+```bash
+PYTHONPATH="$PWD/src" python3 -B -m rover.transport.udp_control_outage --bind-host 192.168.174.128 --desktop-host 192.168.174.1 --event-log ./local/n-tests/n4-n5/n4n5-relay-01.csv
+```
+
+**Windows 终端 1** 启动控制台，使用转发器的控制端口。
+
+```powershell
+.\.venv\Scripts\python.exe -m rover.desktop.app --secure --vehicle-host 192.168.174.128 --control-port 10002 --telemetry-bind-host 192.168.174.1 --ca-file '.\local\certs-vm\ca.pem'
+```
+
+**Windows 终端 2** 启动只读观察端。
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.demo_udp_telemetry_receiver --bind-host 192.168.174.1 --port 10001 | Tee-Object -FilePath '.\local\n-tests\n4-n5\n4n5-observer-01.txt'
+```
+
+1. 在控制台应用 `1.0 m/s`，确认上方实测速度和观察端都显示车辆运动。
+2. 在转发器终端按一次 Enter。转发器在接下来的 2 秒直接丢弃控制报文。控制台和观察端应持续收到遥测，并显示零速和故障锁存。
+3. 看到 `forwarding resumed` 后，观察车辆继续保持零速和锁存。点击「显式复位」，确认解除锁存后车辆仍停着，再点击「开始／应用」验证主动恢复。
+4. 完成后先正常停车、关闭控制台，再结束车端、转发器和观察器。保存两份 CSV、观察端日志及关键界面或终端画面。
+
+转发器 CSV 的 `outage_started` 和 `outage_ended` 记录本轮断流边界，`outage_ended` 行的 `dropped_packets` 是本轮丢弃计数。计算停车耗时时，从车端 CSV 取本轮首次零速锁存的 `state`，减去它之前最近一条 `control_accepted` 的 `elapsed_s`。两个时刻来自同一车端的单调时钟。实验计划的初始目标为 550 ms，复现时保留每次实测值及超限样本。
+
+2026-11-22，用户在同一台物理电脑的 Windows 宿主机和 Ubuntu VMware 虚拟机上完成首轮 N4/N5 验收。实验基线为 `3adc59a`，运行的是 `feat/udp-fault-lab` 上的断流实验代码。三份原始记录 `n4n5-relay-01.csv`、`n4n5-vehicle-01.csv` 和 `n4n5-observer-01.txt` 位于 `local/n-tests/n4-n5/`。
+
+| 验收项 | 首轮实测结果 |
+| --- | --- |
+| N4 控制断流 | 转发器断流 2.000372 秒，实际丢弃 8 条控制报文。车端从最后接收有效指令到首次记录零速锁存间隔 507.562 ms，低于 550 ms 目标。 |
+| N5 转发恢复 | 观察端持续收到遥测，车辆在 `x=6.34 m` 保持零速和故障锁存。显式复位后仍静止，重新应用控制目标后才恢复运动。最终正常停车在 `x=12.50 m`，未锁存。 |
+
+转发器另外记录了两次丢弃数为零的触发，有运动中的有效样本为 1 次。计划要求的重复轮次及物理双机局域网验收仍待完成。
+
+### 5.22 N0–N2 控制链路基线、丢包与延迟
+
+沿用 §5.21 的 VMware 拓扑。新转发器监听 Ubuntu 的 `10002/UDP`，仅处理来自 Windows 桌面端的控制报文，并将保留的报文原样发往车端 `9999/UDP`。TLS 管理和两路遥测仍然直连。每轮使用一组新日志文件名，下面以 N1 的 5% 档首轮为例。
+
+**Ubuntu 终端 1** 启动车端，记录有效指令和实际状态。
+
+```bash
+PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./local/certs-vm --credentials-file ./local/trusted_clients.json --bind-host 192.168.174.128 --telemetry-host 192.168.174.1 --observer-host 192.168.174.1 --observer-port 10001 --event-log ./local/n-tests/n1/n1-loss05-vehicle-01.csv
+```
+
+**Ubuntu 终端 2** 启动转发器。看到 `Loss 5% | delay 0 ms | seed 42` 即可开始本轮操作。
+
+```bash
+PYTHONPATH="$PWD/src" python3 -B -m rover.transport.udp_control_faults --bind-host 192.168.174.128 --desktop-host 192.168.174.1 --event-log ./local/n-tests/n1/n1-loss05-relay-01.csv --loss-percent 5 --seed 42
+```
+
+**Windows 观察端** 按 §5.21 监听 `10001/UDP`。下列命令把逐行遥测写入文件，并抑制终端刷屏。
+
+```powershell
+.\.venv\Scripts\python.exe -u -m examples.demo_udp_telemetry_receiver --bind-host 192.168.174.1 --port 10001 | Tee-Object -FilePath '.\local\n-tests\n1\n1-loss05-observer-01.txt' | Out-Null
+```
+
+**Windows 控制台** 仍使用 §5.21 的桌面启动命令，控制端口保持 `10002`。安全连接就绪且遥测可用后，将目标设为 `1.0 m/s`、`0°`，点击「开始／应用」，观察约 10 秒。若车辆持续运动，点击「正常停车」，确认遥测速度归零后关闭控制台。若车辆提前停下或锁存，记录现象并结束本轮。最后结束三个终端，保留原始日志。
+
+| 档位 | 转发器参数 | 核对内容 |
+| --- | --- | --- |
+| N0 正常 | 省略丢包和延迟参数 | 正常运动、正常停车与两路遥测 |
+| N1 丢包 | `--loss-percent 5 --seed 42` 或 `--loss-percent 15 --seed 42` | 配置概率、实际丢弃数、车端运动与锁存状态 |
+| N2 延迟 | `--delay-ms 100` 或 `--delay-ms 300` | 中继实测延迟、车端接受指令和实际状态 |
+
+N1 按种子对每个合格控制报文独立抽样。丢包档的实测比例用 `packet_dropped` 数除以 `packet_dropped`、`packet_forwarded`、`send_failed` 的合计数，发送失败另行报告。中继 `packet_index` 按收到的合格报文递增，车端 `seq` 来自协议指令，两个编号各用于本端统计。N2 的 `observed_delay_ms` 记录该报文在中继内从接收到成功提交发送的时间。控制窗口有效期为 250 ms，300 ms 档要同时核对中继发出报文和车端是否接受。
+
+短跑用于先验证联调步骤及证据是否完整。正式验收按执行计划保留每个短场景至少 10 轮的结果，N0 另做至少 30 分钟持续运行。
+
+**N0 VMware 30 分钟持续运行（2026-11-22，`807af63`）**。中继未启用故障注入。一次管理会话内，车端首次至末次接受有效指令间隔 **1849.196 秒**，其中首次正常停车至再次起步的静止阶段为 **1832.604 秒**。车端连续接受 `seq=0–27725`，序号缺口为 0，最长有效指令间隔 **132.976 ms**，全程未锁存。观察端记录车辆第一次停在 `x=10.10 m`，长跑后重新起步，最后正常停在 `x=14.06 m`。
+
+2026-11-22，用户在 Windows 宿主机与 Ubuntu VMware 虚拟机上完成 N1 两档首测。两轮均使用种子 42 和 `1.0 m/s`、`0°` 的移动目标。
+
+| 设置丢包率 | 中继处理／丢弃／转发 | 实测丢包率 | 运动期间最长有效指令间隔 | 停车结果 |
+| --- | --- | --- | --- | --- |
+| 5% | 939／38／901 条 | 4.05% | 150.086 ms | `x=9.78 m`，零速，未锁存 |
+| 15% | 237／34／203 条 | 14.35% | 247.820 ms | `x=10.02 m`，零速，未锁存 |
+
+15% 档的中继记录了连续丢弃 3 条控制报文。车端接受序号从 `87` 跳到 `91`，间隔仍低于 500 ms 看门狗阈值。两档丢包率均按各自整轮日志计算，包含正常停车后继续周期发送的零速目标。5% 档车端接受了 148 条移动目标和 752 条零速目标，15% 档分别为 136 条和 67 条。
+
+**N2 两档 VMware 首测（2026-11-22）**。两档注入丢弃数均为 0，中继停留时间由转发器本地计时。
+
+| 设置延迟 | 中继停留 P50／P95 | 中继转发／车端接受 | 车端及观察端结果 |
+| --- | --- | --- | --- |
+| 100 ms | 101.719／107.843 ms | 52／17 条 | 行驶 3.383 秒，在 `x=3.12 m` 零速锁存 |
+| 300 ms | 301.641／304.605 ms | 8／0 条 | 全程静止，在 `x=0.00 m` 零速锁存 |
+
+100 ms 档最后接受的是 `seq=42`，到锁存经过 519.250 ms。续期导致的旧窗口包晚到与这档接收情况相符。300 ms 档的每条已转发报文仅在中继就停留至少 300.429 ms，超过车端 250 ms 控制窗口的有效期。车端使能后一直没有接受有效指令，看门狗锁存。现有车端 CSV 记录了接受和锁存事件，逐包忽略原因与精确使能时刻未收录。两档观察数据写入了同一原始文件，归档保留原始文件并按遥测源端口区分。
+
+### 5.23 N3 控制报文乱序与重复实验
+
+沿用 §5.21 的 VMware 拓扑。Windows 控制台将 UDP 控制报文发往 Ubuntu 的 `192.168.174.128:10002`，转发器再发往车端 `9999/UDP`。Windows 控制台和只读观察端仍在 `192.168.174.1` 分别监听 `10000/UDP` 和 `10001/UDP`。
+
+先结束上一轮进程，每轮只选一种转发模式。首测均使用 15% 和种子 `42`。乱序模式只在没有暂留报文时抽样，选中的报文最多暂留 120 ms。下一条合格报文在期限前到达时先发下一条，再发暂留的报文。到期仍没有下一条时，先释放暂留报文。重复模式将选中报文的原始字节连续发送两次。两个百分比参数均可选 `5` 或 `15`，与 N1 的丢包和 N2 的延迟参数互斥。
+
+**Ubuntu 车端与 Windows 两端** 使用 §5.22 的原命令，按档位更换车端 `--event-log` 和 Windows 观察端的 `Tee-Object -FilePath`。控制台保持使用 `--control-port 10002`。
+
+| 档位 | Ubuntu 车端日志 | Windows 观察端日志 |
+| --- | --- | --- |
+| 15% 乱序 | `./local/n-tests/n3/n3-reorder15-vehicle-01.csv` | `.\local\n-tests\n3\n3-reorder15-observer-01.txt` |
+| 15% 重复 | `./local/n-tests/n3/n3-duplicate15-vehicle-01.csv` | `.\local\n-tests\n3\n3-duplicate15-observer-01.txt` |
+
+**Ubuntu 转发器** 每轮只执行当前档位的命令。
+
+```bash
+# 15% 乱序
+PYTHONPATH="$PWD/src" python3 -B -m rover.transport.udp_control_faults --bind-host 192.168.174.128 --desktop-host 192.168.174.1 --event-log ./local/n-tests/n3/n3-reorder15-relay-01.csv --reorder-percent 15 --seed 42
+
+# 15% 重复
+PYTHONPATH="$PWD/src" python3 -B -m rover.transport.udp_control_faults --bind-host 192.168.174.128 --desktop-host 192.168.174.1 --event-log ./local/n-tests/n3/n3-duplicate15-relay-01.csv --duplicate-percent 15 --seed 42
+```
+
+安全连接就绪且遥测可用后，将目标设为 `1.0 m/s`、`0°`，点击「开始／应用」并观察约 10 秒。若车辆持续运动，执行「正常停车」，确认速度归零。若提前停下或锁存，记录现象并结束本轮。保留两份 CSV 和观察端日志。
+
+中继 CSV 用 `relay_started` 记录配置和种子，成功发送仍记为 `packet_forwarded`。按文件行序查看 `packet_index` 和 `detail`。`original` 是正常发送，`reordered` 是在后一包之后发出的暂留报文，`hold_expired` 是到期释放的报文，`duplicate` 是原包之后发送的副本。乱序时核对较大的 `packet_index` 先出现，重复时核对两行复用同一个 `packet_index`。车端查看 `control_accepted` 的 `seq` 在同一会话内是否严格递增，有序号缺口时同时记录运动、零速与锁存状态。`packet_index` 和 `seq` 分别用于两端核对。车端 CSV 记录接受结果，逐包忽略原因待进一步取证。
+
+记录每轮的模式、配置比例、种子、中继实际乱序或重复次数、车端接受情况及最终状态。
+
+**N3 两档 VMware 首测（2026-11-22）**。两档均使用 15% 抽样概率和种子 42，注入丢弃数均为 0。
+
+| 档位 | 中继实际发送 | 车端接受 | 运动期间最长有效指令间隔 | 停车结果 |
+| --- | --- | --- | --- | --- |
+| 乱序 | 293 条，36 组相邻报文交换顺序 | 257 条，序号严格递增 | 151.952 ms | `x=10.28 m`，零速，未锁存 |
+| 重复 | 197 条原包和 29 条副本，共 226 次发送 | 197 条，`seq=0–196`，每个序号接受一次 | 109.907 ms | `x=10.02 m`，零速，未锁存 |
+
+乱序档中继起始发送顺序为 `packet_index=1, 3, 2`，车端起始接受 `seq=0, 2, 3`。重复档中继起始发送顺序为 `packet_index=1, 2, 2, 3`，车端起始接受 `seq=0, 1, 2`。重复档实测 29 个原包被复制，占 197 个原包的 14.72%。
+
+<a id="operator-event-acceptance"></a>
+
+### 5.24 A02 操作员显示与事件日志
+
+A01–A10 的运行记录统一放在 `local/a-tests/`，按验收项使用子目录，例如 `local/a-tests/a02/`。首次运行某项实验时，在各端项目目录创建相应子目录。
+
+安全模式沿用 `--client-id`，默认账号为 `desktop-a`。认证通过且控制会话就绪后，「当前操作员」显示该账号。连接期间显示「待认证」，连接失败或关闭时显示 `—`。普通模式显示「本地演示」。
+
+地图下方的只读事件日志保留最近 100 条带时间的状态变化，覆盖连接、控制、遥测可用或过期、故障锁存及解除。状态持续时，行数保持稳定。异常事件采用简短的状态描述。
+
+验收时按 §5.22 的原命令启动安全控制台，沿用 VMware 网络参数。
+
+1. 等待「安全连接就绪」和「遥测可用」，核对操作员账号及对应的带时间事件。
+2. 应用目标后点击「停止发包」，等遥测显示零速和锁存，再点击「显式复位」。核对日志按顺序记录锁存和解除。
+3. 在同一状态下观察数秒，确认日志行数保持稳定。
+
+Qt 离屏桌面专项 20 项、全量回归 368 项通过。
+
+**A02 VMware 窗口验收（2026-11-22）**。用户确认界面显示当前操作员 `desktop-a`。事件日志按顺序记录遥测可用、安全连接就绪、开始周期发送、停止发包、故障锁存、正在复位、解除锁存和安全连接就绪。车端最后接受 `seq=63`，其后 **501.428 ms** 记录零速锁存。复位后遥测仍为 `0.0 m/s`，位置 `x=4.44 m`，界面提示重新应用目标。车端确认复位后未接受新的控制指令。
+
+<a id="control-rejection-evidence"></a>
+
+### 5.25 A07 指令拒绝原因记录
+
+安全模式使用 `--event-log` 时，车端在原有 CSV 中以 `control_rejected` 记录拒绝事件。`detail` 给出实际首先失败的检查，例如 `window_mismatch`、`window_expired`、`sequence_duplicate`、`sequence_out_of_order` 或 `invalid_mac`。只有通过校验和解码的报文才记录序号。拒绝行用于统计，车端继续按既有准入和看门狗规则运行。
+
+用 §5.22 的四个终端复测 100 ms 延迟。转发器使用 `--delay-ms 100`，将车端、中继、观察端的文件名分别改为 `a07-n2-delay100-vehicle-01.csv`、`a07-n2-delay100-relay-01.csv`、`a07-n2-delay100-observer-01.txt`，并放在各端项目的 `local/a-tests/a07/`。应用 `1.0 m/s`、`0°`，观察约 10 秒，若提前锁存则保留现场并结束本轮。按 `control_rejected` 的 `detail` 分组统计，把中继转发数、车端接受数和遥测结果一起核对。
+
+**A07 VMware 100 ms 复测（2026-11-22）**。中继转发 10 条，车端接受 `seq=0`，随后拒绝 9 条。`seq=1–7` 的首个失败检查均为 `window_mismatch`，`seq=8–9` 记录为 `fault_latched`。距最后一条有效指令 **512.734 ms** 后，车端记录零速锁存，观察端位置为 `x=0.48 m`。随后车端拒绝签发新窗口，控制台显示「安全控制已暂停」。本轮原始文件归档于 A07 目录。
+
+<a id="telemetry-outage-acceptance"></a>
+
+### 5.26 A08 补充实验（控制台遥测单向中断）
+
+沿用 [VMware 虚拟局域网](#vmware-lan-acceptance)。TLS 管理和控制 UDP 仍直达 Ubuntu 车端的 `19177/TCP` 与 `9999/UDP`。车端发给控制台的遥测经 Windows 中继从 `10003/UDP` 转发至 `10000/UDP`。只读观察端继续在 `10001/UDP` 直收车端遥测。
+
+**Ubuntu 车端**
+
+```bash
+mkdir -p ./local/a-tests/a08
+PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./local/certs-vm --credentials-file ./local/trusted_clients.json --bind-host 192.168.174.128 --telemetry-host 192.168.174.1 --telemetry-port 10003 --observer-host 192.168.174.1 --observer-port 10001 --event-log "./local/a-tests/a08/vehicle-$(date +%s%N).csv"
+```
+
+**Windows 控制台**先启动并监听 `10000/UDP`。
+
+```powershell
+.\.venv\Scripts\python.exe -m rover.desktop.app --secure --vehicle-host 192.168.174.128 --control-port 9999 --telemetry-bind-host 192.168.174.1 --telemetry-port 10000 --ca-file '.\local\certs-vm\ca.pem'
+```
+
+**Windows 只读观察端**另开终端监听 `10001/UDP`，把遥测写入日志。
+
+```powershell
+New-Item -ItemType Directory -Path '.\local\a-tests\a08' -Force | Out-Null
+$a08ObserverLog = Join-Path '.\local\a-tests\a08' ('observer-{0}.txt' -f [guid]::NewGuid().ToString('N'))
+.\.venv\Scripts\python.exe -u -m examples.demo_udp_telemetry_receiver --bind-host 192.168.174.1 --port 10001 | Tee-Object -FilePath $a08ObserverLog | Out-Null
+```
+
+**Windows 中继**在控制台窗口打开后另开终端启动。
+
+```powershell
+$a08Log = Join-Path '.\local\a-tests\a08' ('relay-{0}.csv' -f [guid]::NewGuid().ToString('N'))
+.\.venv\Scripts\python.exe -m rover.transport.udp_control_outage --bind-host 192.168.174.1 --desktop-host 192.168.174.128 --listen-port 10003 --vehicle-port 10000 --event-log $a08Log
+```
+
+等待「安全连接就绪」和「遥测可用」，应用 `1.0 m/s`。车辆移动后在中继终端按一次 Enter，暂停控制台遥测转发约 2 秒。控制台收过有效遥测后，连续约 1 秒未收到新遥测便停止发送控制。车端从最后一条有效指令开始独立计时，超过 500 ms 的控制超时后停车并锁存。转发恢复后先核对车辆仍锁存且速度为零，再显式复位、重新应用目标，并用观察端确认再次运动。
+
+**VMware 实测（2026-11-22，基于 `7232cd2` 的工作区）**。三次暂停各丢弃 40 条控制台遥测。第 1 次从运动开始，最后一条有效控制指令至零速锁存为 **510.202 ms**，车端停在 `x=2.96 m`。后两次触发时车辆已锁存。只读观察端在中断期间仍收到遥测，控制台恢复接收后仍显示零速、已锁定。显式复位及重新起步已完成本机回环验证，VMware 本轮记录到恢复遥测后仍锁存。
+
+<a id="management-timing-evidence"></a>
+
+### 5.27 A10 管理往返与主动重连计时
+
+使用 5.19 的车端证书和地址，关闭控制台并启动车端。
+
+```bash
+mkdir -p ./local/a-tests/a10
+PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./local/certs-vm --credentials-file ./local/trusted_clients.json --bind-host 192.168.174.128 --event-log "./local/a-tests/a10/management-vehicle-$(date +%s%N).csv"
+```
+
+在 Windows 单独运行计时客户端。它先在已建立会话的连接内计时重复的会话请求，再测量从发起新连接至 TLS 握手、凭据验证并收到新会话回复的时间。实际断线至客户端发现故障的耗时另行取证。
+
+```powershell
+New-Item -ItemType Directory -Path '.\local\a-tests\a10' -Force | Out-Null
+$a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]::NewGuid().ToString('N'))
+.\.venv\Scripts\python.exe -m examples.demo_management_metrics --host 192.168.174.128 --ca-file '.\local\certs-vm\ca.pem' --rtt-samples 20 --reconnect-samples 10 --output $a10Log
+```
+
+**VMware 实测（2026-11-22，基于 `7232cd2` 的工作区）**。客户端原始 CSV 和车端日志放在 `local/a-tests/a10/`。车端共记录 11 组会话打开、关闭，车辆保持零速。下表采用客户端终端值。P50 取中位数，P95 取最近秩。
+
+| 指标 | 成功样本 | P50 | P95 |
+| --- | ---: | ---: | ---: |
+| 已建会话的管理 RTT | 20 | 21.301 ms | 24.766 ms |
+| 主动重连至新会话就绪 | 10 | 110.973 ms | 136.893 ms |
+
+<a id="advanced-acceptance-status"></a>
+
+### 5.28 N0–N5 日志汇总与高级版验收状态
+
+汇总工具读取 `local/n-tests/`，按场景和轮次配对车端、中继 CSV。它统计有效控制包、会话内序号缺口、转发与丢弃次数，以及从最后一条有效指令到首次零速锁存的时间。最大有效指令间隔覆盖会话全程，N1、N3 的表格仍保留运动阶段的统计口径。序号缺口也会受乱序和超窗影响。旧日志没有逐条记录拒绝原因时，汇总显示 `no records`。
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.summarize_network_trials
+```
+
+加 `--output` 和新文件路径可导出 CSV。2026-11-22 的 VMware 记录共有 8 组配对，含 N0 超过 30 分钟的正常长跑和 7 组故障档首轮。
+
+| 验收项 | 现有证据 | 待补记录 |
+| --- | --- | --- |
+| A01 局域网遥控 | [VMware 联调](#vmware-lan-acceptance)完成 Windows 宿主机与 Ubuntu 虚拟机间的控制、运动和遥测闭环 | 两台物理电脑的局域网联调及实际断网 |
+| A02 可视化控制台 | VMware 在 GUI 上观察到运动和停车，[操作员显示和状态事件](#operator-event-acceptance)已留存 | — |
+| A03 自定义协议 | [协议及传输 118 项回归](#protocol-regression)通过，含真实本机 TCP 请求与回复 | 跨系统正式车端拒绝异常消息后继续服务的现场证据 |
+| A04 通道分工 | VMware 实测 TLS 管理、UDP 控制和 [UDP 遥测双发](#telemetry-observer-acceptance)走独立端点 | — |
+| A05 TLS 与身份校验 | [本机证书与凭据矩阵](#tls-trust-preflight)及 VMware 正常 TLS 联调 | — |
+| A06 异步处理 | VMware 中控制台和只读观察端同时收到车端遥测，[本机管理等待预检](#management-wait-preflight)确认 Qt 响应与两路遥测持续更新 | VMware 跨系统管理请求等待期间的界面与遥测记录 |
+| A07 指令新鲜度 | N3 有中继和车端序号统计，[VMware 100 ms 复测](#control-rejection-evidence)有窗口不匹配和锁存原因记录 | 重复、乱序、过期及旧会话的分场景拒绝原因记录 |
+| A08 车端失联停车 | [N4 控制断流](#control-outage-lab)和[遥测中断停发](#telemetry-outage-acceptance)首轮从末条有效指令到零速锁存分别为 507.562 ms 和 510.202 ms | 控制端进程异常退出及真实断网条件下的停车记录 |
+| A09 重连与主动恢复 | N5 转发恢复后显式复位并重新应用才起步，[本机已验证管理连接主动关闭和重连](#management-close-preflight) | VMware 管理链路突然中断后的检测、停车及重连。遥测恢复后复位起步的 VMware 记录 |
+| A10 故障实验与证据 | N0 正常长跑、故障档首轮和[管理计时](#management-timing-evidence)均有原始数据 | 各短场景至少 10 轮，汇总结果并留存演示录像 |
+
+<a id="management-close-preflight"></a>
+
+### 5.29 A09 管理连接关闭与重新使能
+
+车端检测到当前控制会话的 TLS 连接关闭后，清除该会话的控制密钥、窗口、使能与当前目标。车辆在处理关闭事件的仿真步内归零，原有保护锁存状态保留。UDP 单独断流时，车端则由最后一次有效指令的 500 ms 看门狗处理超时。
+
+**Windows 本机回环预检（2026-11-22，基于 `7232cd2` 的工作区）**。车辆以 `1.0 m/s` 运动时，客户端主动关闭管理连接，UDP 控制和遥测套接字仍打开。车端在末条有效指令后 **31.000 ms** 记录会话关闭和零速，保护未锁存。另有一条在途控制报文在同轮因 `missing_session_key` 被拒。重新认证并打开新会话后，13 条遥测连续显示零速且位置不变。显式使能并应用新目标后，车速才达到 `1.2 m/s`。原始车端 CSV 位于 `local/a-tests/a09/loopback-management-close-88d2a05d/`。
+
+本轮覆盖主动关闭管理连接。真实链路故障发生后，客户端与车端何时检测到断线需另行实测。
+
+<a id="management-wait-preflight"></a>
+
+### 5.30 A06 管理请求等待时的异步更新
+
+**Windows 本机回环预检（2026-11-22，基于 `7232cd2` 的工作区）**。测试夹具暂缓处理一个已通过身份验证的会话请求，实际观测等待窗口约 **1.254 秒**。正式车端继续推进仿真并向两个独立的 UDP 套接字发送遥测。离屏 Qt 控制台继续处理界面事件，管理连接的等待发生在桌面后台线程。
+
+| 观测项 | 等待窗口内的实测 |
+| --- | --- |
+| Qt 界面 | 63 次采样计时回调。速度框响应按键，「开始／应用」保持禁用 |
+| 控制台遥测 | 采样到 24 个不同的最近遥测时间戳 |
+| 独立只读观察端 | 接收 25 条零速、未锁存的遥测 |
+
+请求放行后，两端均观察到应用目标时的 `1.0 m/s` 运动，以及正常停车后的 `0.0 m/s`。本次等待由本机夹具引入，VMware 跨系统场景待实测。车端和客户端原始 CSV 位于 `local/a-tests/a06/loopback-management-wait-f9cf83d3/`。
 
 <a id="project-maintenance"></a>
 

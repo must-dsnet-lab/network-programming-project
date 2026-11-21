@@ -6,12 +6,13 @@ from time import monotonic
 from math import radians
 
 from rover.core.control_target import ControlTarget
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTime, QTimer
 from PySide6.QtWidgets import (
     QApplication,
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QPlainTextEdit,
     QVBoxLayout,
     QWidget,
     QDoubleSpinBox,
@@ -28,16 +29,24 @@ from rover.desktop.desktop_map import VehicleMap
 from rover.transport.udp_transport import send_target, try_receive_telemetry
 
 
+EVENT_LOG_LIMIT = 100
+
+
 class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
     def __init__(
         self,
         *,
         secure_worker: SecureControlWorker | None = None,
         telemetry_address: tuple[str, int] = ("127.0.0.1", 10000),
+        operator_id: str | None = None,
     ):
         super().__init__()
         self.secure_worker = secure_worker
+        self.operator_id = operator_id
         self._secure_close_pending = False
+        self._last_secure_state: str | None = None
+        self._last_telemetry_fault_latched = False
+        self._telemetry_control_suspended = False
         self.setWindowTitle("虚拟小车遥测观察台")
         self.resize(1000, 600)
         self.setStyleSheet(
@@ -57,6 +66,10 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
 
         """地图"""
         self.map = VehicleMap()
+        self.event_log = QPlainTextEdit()
+        self.event_log.setReadOnly(True)
+        self.event_log.setMaximumBlockCount(EVENT_LOG_LIMIT)
+        self.event_log.setFixedHeight(96)
 
         """"遥测显示标签（self.status, self.values）"""
         self.status = QLabel("等待遥测")# QLabel 默认不换行,所以要设置setWordWrap为自动换行
@@ -65,6 +78,10 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         self.values = QLabel("x：—\ny：—\n朝向：—\n速度：—\n保护：—")
         self.values.setMinimumWidth(250)
         self.values.setWordWrap(True)
+        initial_operator = "待认证" if secure_worker is not None else "本地演示"
+        self.operator_label = QLabel(f"当前操作员：{initial_operator}")
+        self.operator_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.operator_label.setWordWrap(True)
 
         """"遥测显示标签 添加到右侧的side"""
         # addWidget：往盒子里放控件
@@ -74,6 +91,7 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             QLabel(f"监听 {self.listen_address[0]}:{self.listen_address[1]}")
         )
         side.addWidget(self.values)  # 数值标签
+        side.addWidget(self.operator_label)
         side.addStretch()
 
         """"控制输入区（speed_input、heading_input、_button、control_status）"""
@@ -120,8 +138,11 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             side.addWidget(self.reset_button)
         side.addWidget(self.control_status)
 
-        """左地图 右控件 拼接"""
-        layout.addWidget(self.map, 1)  # 左边地图控件
+        map_panel = QVBoxLayout()
+        map_panel.addWidget(self.map, 1)
+        map_panel.addWidget(QLabel("事件日志"))
+        map_panel.addWidget(self.event_log)
+        layout.addLayout(map_panel, 1)
         layout.addLayout(side)  # 右边状态控件
 
         ####################### 两个Socket #######################
@@ -171,6 +192,8 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             heading_rad=radians(self.heading_input.value()),
         )
         if self.secure_worker is not None:
+            if self._secure_motion_blocked():
+                return
             if self.secure_worker.apply_target(target):
                 self.current_target = target
             self.poll_secure_status()
@@ -268,7 +291,7 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         ):
             self.current_target = None
 
-        can_apply = state in ("ready", "sending", "stopped")
+        can_apply = state in ("ready", "sending", "stopped") and not self._secure_motion_blocked()
         has_target = can_apply and self.current_target is not None
         self.start_button.setEnabled(can_apply)
         self.stop_button.setEnabled(has_target)
@@ -301,6 +324,42 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             text += f"：{snapshot.detail}"
         self.control_status.setText(text)
 
+        if state != self._last_secure_state:
+            if state in ("new", "connecting"):
+                operator = "待认证"
+            elif state in ("failed", "closing", "closed"):
+                operator = "—"
+            else:
+                operator = self.operator_id or "—"
+            self.operator_label.setText(f"当前操作员：{operator}")
+            self._append_event(labels[state])
+            self._last_secure_state = state
+
+    def _append_event(self, message: str) -> None:
+        timestamp = QTime.currentTime().toString("HH:mm:ss")
+        self.event_log.appendPlainText(f"[{timestamp}] {message}")
+
+    def _set_telemetry_status(self, text: str, event_message: str | None = None) -> None:
+        if self.status.text() != text:
+            self.status.setText(text)
+            self._append_event(event_message or text)
+
+    def _secure_motion_blocked(self) -> bool:
+        return self._telemetry_control_suspended or self._last_telemetry_fault_latched
+
+    def _set_telemetry_control_suspended(self, suspended: bool) -> None:
+        if (
+            self.secure_worker is None
+            or self._secure_close_pending
+            or self._telemetry_control_suspended == suspended
+        ):
+            return
+        self._telemetry_control_suspended = suspended
+        if suspended:
+            self.stop_control()
+        else:
+            self.poll_secure_status()
+
     def poll_telemetry(self):
         latest = None
         receive_error = None
@@ -326,6 +385,11 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
 
             # 每个合法状态都交给地图，保留中间位置
             self.map.set_state(latest.state)
+            if latest.fault_latched != self._last_telemetry_fault_latched:
+                self._last_telemetry_fault_latched = latest.fault_latched
+                message = "故障锁存" if latest.fault_latched else "故障锁存已解除"
+                self._append_event(message)
+                self.poll_secure_status()
 
         if latest is not None:
             state = latest.state
@@ -342,18 +406,21 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
 
         # 报错前若收到过合法数据，先同步读数，再显示错误
         if receive_error is not None:
-            self.status.setText(f"接收错误：{receive_error}")
+            self._set_telemetry_status(f"接收错误：{receive_error}", "遥测接收错误")
+            self._set_telemetry_control_suspended(True)
             return
 
         # 没有新包时，也继续检查显示状态是否过期
         if self.last_received_s is None:
-            self.status.setText("等待遥测")
+            self._set_telemetry_status("等待遥测")
         elif monotonic() - self.last_received_s >= self.telemetry_timeout_s:
-            self.status.setText(
-                f"遥测过期（{self.telemetry_timeout_s:.1f}秒" "未收到合法报文）"
+            self._set_telemetry_status(
+                f"遥测过期（{self.telemetry_timeout_s:.1f}秒未收到合法报文）", "遥测过期"
             )
+            self._set_telemetry_control_suspended(True)
         else:
-            self.status.setText("遥测可用")
+            self._set_telemetry_status("遥测可用")
+            self._set_telemetry_control_suspended(False)
 
     # 操作系统会捕捉到用户用鼠标点击窗口右上角的“❌”的动作，并把它告诉 Qt 框架。Qt 框架会自动去寻找 closeEvent 方法
     def closeEvent(self, event):
@@ -362,6 +429,8 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
                 self._secure_close_pending = True
                 self.secure_worker.close()
                 self.control_status.setText("正在关闭安全连接")
+                self.operator_label.setText("当前操作员：—")
+                self._append_event("正在关闭安全连接")
                 self.start_button.setEnabled(False)
                 self.stop_button.setEnabled(False)
                 self.stop_sending_button.setEnabled(False)
@@ -424,6 +493,7 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     worker = None
+    client_id = args.client_id or "desktop-a"
     if args.secure:
         credential = getpass("Credential (hidden): ")
         connect = partial(
@@ -431,7 +501,7 @@ def main(argv: list[str] | None = None) -> int:
             (vehicle_host, args.management_port or 19177),
             ca_file=args.ca_file or Path("local/certs/ca.pem"),
             server_hostname=args.server_name or args.vehicle_host or "localhost",
-            client_id=args.client_id or "desktop-a",
+            client_id=client_id,
             credential=credential,
         )
         worker = SecureControlWorker(connect, (vehicle_host, args.control_port or 9999))
@@ -444,6 +514,7 @@ def main(argv: list[str] | None = None) -> int:
         window = DesktopConsole(
             secure_worker=worker,
             telemetry_address=telemetry_address,
+            operator_id=client_id if worker is not None else None,
         )  # 窗口的首次显示、鼠标拖拽拉伸：全靠 Qt 底层的操作系统事件
     except OSError as exc:
         QMessageBox.critical(

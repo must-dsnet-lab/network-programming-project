@@ -2,6 +2,7 @@ import unittest
 
 from rover.vehicle.control_window import (
     ControlWindow,
+    control_window_rejection_reason,
     is_control_window_valid,
     issue_control_window,
 )
@@ -60,6 +61,30 @@ class TestControlWindow(unittest.TestCase):
         self.assertTrue(is_control_window_valid(window, "window-a", 100.12))
         self.assertFalse(is_control_window_valid(window, "window-a", 100.125))
         self.assertEqual(window.expires_at_s, 100.125)
+
+    def test_reports_why_a_window_check_failed(self):
+        window = ControlWindow("window-a", 100.0, 100.25)
+        cases = (
+            (None, "window-a", 100.1, "window_missing"),
+            (window, "window-other", 100.1, "window_mismatch"),
+            (window, "window-a", float("nan"), "window_time_invalid"),
+            (window, "window-a", 99.9, "window_not_started"),
+            (window, "window-a", 100.0, None),
+            (window, "window-a", 100.249, None),
+            (window, "window-a", 100.25, "window_expired"),
+            (window, "window-a", 100.5, "window_expired"),
+            (ControlWindow("window-a", float("nan"), 100.25),
+             "window-a", 100.1, "window_time_invalid"),
+            (ControlWindow("window-a", 100.0, float("nan")),
+             "window-a", 100.1, "window_time_invalid"),
+        )
+
+        for current, window_id, now_s, expected in cases:
+            with self.subTest(window_id=window_id, now_s=now_s, reason=expected):
+                self.assertEqual(
+                    control_window_rejection_reason(current, window_id, now_s),
+                    expected,
+                )
 
     def test_issue_rejects_invalid_parameters(self):
         cases = (
