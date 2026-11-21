@@ -17,15 +17,22 @@ from PySide6.QtWidgets import (
     QDoubleSpinBox,
     QPushButton,
 )
+import argparse
+from functools import partial
+from getpass import getpass
+from pathlib import Path
 
+from rover.desktop.control_worker import SecureControlWorker
+from rover.desktop.secure_connection import connect_management
 from rover.desktop.desktop_map import VehicleMap
 from rover.transport.udp_transport import send_target, try_receive_telemetry
 
 
 class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
-    def __init__(self):
-        ####################### 搭界面 #######################
+    def __init__(self, *, secure_worker: SecureControlWorker | None = None):
         super().__init__()
+        self.secure_worker = secure_worker
+        self._secure_close_pending = False
         self.setWindowTitle("虚拟小车遥测观察台")
         self.resize(1000, 600)
         self.setStyleSheet(
@@ -99,6 +106,13 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         side.addWidget(self.start_button)
         side.addWidget(self.stop_button)
         side.addWidget(self.stop_sending_button)
+        if self.secure_worker is not None:
+            self.emergency_stop_button = QPushButton("急停")
+            self.reset_button = QPushButton("显式复位")
+            self.emergency_stop_button.clicked.connect(self.request_emergency_stop)
+            self.reset_button.clicked.connect(self.request_reset)
+            side.addWidget(self.emergency_stop_button)
+            side.addWidget(self.reset_button)
         side.addWidget(self.control_status)
 
         """左地图 右控件 拼接"""
@@ -113,12 +127,13 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             self.sock.setblocking(False)
             self.sock.bind(self.listen_address)
 
-            self.control_sock = socket.socket(
-                socket.AF_INET,
-                socket.SOCK_DGRAM,
-            )
-            self.control_sock.setblocking(False)
-            self.control_sock.bind(("127.0.0.1", 0))
+            if self.secure_worker is None:
+                self.control_sock = socket.socket(
+                    socket.AF_INET,
+                    socket.SOCK_DGRAM,
+                )
+                self.control_sock.setblocking(False)
+                self.control_sock.bind(("127.0.0.1", 0))
         except OSError:
             self.sock.close()
             if self.control_sock is not None:
@@ -138,16 +153,31 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         self.start_button.clicked.connect(self.start_control) #通过人点击触发
         self.stop_button.clicked.connect(self.stop_motion)
         self.stop_sending_button.clicked.connect(self.stop_control)
+        if self.secure_worker is not None:
+            self.secure_status_timer = QTimer(self)
+            self.secure_status_timer.timeout.connect(self.poll_secure_status)
+            self.secure_worker.start()
+            self.poll_secure_status()
+            self.secure_status_timer.start(50)
 
     def start_control(self):
-        self.current_target = ControlTarget(
+        target = ControlTarget(
             speed_mps=self.speed_input.value(),
             heading_rad=radians(self.heading_input.value()),
         )
-        self.control_timer.start() #进入100ms倒计时，每隔100ms就send_control
-        self.send_control() #立即send_control -> 零延迟响应
+        if self.secure_worker is not None:
+            if self.secure_worker.apply_target(target):
+                self.current_target = target
+            self.poll_secure_status()
+            return
+
+        self.current_target = target
+        self.control_timer.start()  # 进入100ms倒计时，每隔100ms就send_control
+        self.send_control()  # 立即send_control -> 零延迟响应
 
     def send_control(self):
+        if self.secure_worker is not None:
+            return
         if not self.control_timer.isActive() or self.current_target is None:
             return
         try:
@@ -171,6 +201,16 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
     # 保留 current_target 中已应用的朝向，所以输入框里尚未应用的不会生效。
     # 它立即发出零速目标，原定时器继续周期发送。
     def stop_motion(self):
+        if self.secure_worker is not None:
+            if self.current_target is None:
+                return
+            target = ControlTarget(0.0, self.current_target.heading_rad)
+            if self.secure_worker.apply_target(target):
+                self.current_target = target
+                self.speed_input.setValue(0.0)
+            self.poll_secure_status()
+            return
+
         if not self.control_timer.isActive() or self.current_target is None:
             return
 
@@ -184,11 +224,77 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
     # 停止控制定时器，保留两个 Socket 和遥测轮询。
     # 之后即使触发发送回调，send_control() 的入口检查也会阻止发包。
     def stop_control(self):
+        if self.secure_worker is not None:
+            self.current_target = None
+            self.secure_worker.stop_sending()
+            self.poll_secure_status()
+            return
+
         if not self.control_timer.isActive():
             return
 
         self.control_timer.stop()
         self.control_status.setText("已停止发包")
+
+    def request_emergency_stop(self):
+        if self.secure_worker.emergency_stop():
+            self.current_target = None
+        self.poll_secure_status()
+
+    def request_reset(self):
+        if self.secure_worker.reset_control():
+            self.current_target = None
+        self.poll_secure_status()
+
+    def poll_secure_status(self):
+        worker = self.secure_worker
+        if worker is None:
+            return
+        if self._secure_close_pending:
+            if worker.wait_closed(0):
+                self.close()
+            return
+
+        snapshot = worker.status()
+        state = snapshot.state
+        if state in (
+            "stopping", "latched", "resetting", "blocked",
+            "failed", "closing", "closed",
+        ):
+            self.current_target = None
+
+        can_apply = state in ("ready", "sending", "stopped")
+        has_target = can_apply and self.current_target is not None
+        self.start_button.setEnabled(can_apply)
+        self.stop_button.setEnabled(has_target)
+        self.stop_sending_button.setEnabled(has_target)
+        self.emergency_stop_button.setEnabled(
+            state in ("ready", "sending", "stopped", "latched", "blocked")
+        )
+        self.reset_button.setEnabled(
+            state in ("ready", "stopped", "latched", "blocked")
+            and self.current_target is None
+        )
+        labels = {
+            "new": "安全连接尚未启动",
+            "connecting": "正在连接和认证",
+            "ready": "安全连接就绪",
+            "sending": "正在周期发送安全控制指令",
+            "stopped": "已停止发包",
+            "failed": "安全控制失败",
+            "closing": "正在关闭安全连接",
+            "closed": "安全连接已关闭",
+            "stopping": "急停请求已提交，等待车端确认",
+            "latched": "车端已确认急停并锁存",
+            "resetting": "正在复位",
+            "blocked": "安全控制已暂停",
+        }
+        text = labels[state]
+        if has_target and state in ("ready", "stopped"):
+            text = "控制目标已提交，等待后台发送"
+        if snapshot.detail:
+            text += f"：{snapshot.detail}"
+        self.control_status.setText(text)
 
     def poll_telemetry(self):
         latest = None
@@ -246,21 +352,62 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
 
     # 操作系统会捕捉到用户用鼠标点击窗口右上角的“❌”的动作，并把它告诉 Qt 框架。Qt 框架会自动去寻找 closeEvent 方法
     def closeEvent(self, event):
+        if self.secure_worker is not None:
+            if not self._secure_close_pending:
+                self._secure_close_pending = True
+                self.secure_worker.close()
+                self.control_status.setText("正在关闭安全连接")
+                self.start_button.setEnabled(False)
+                self.stop_button.setEnabled(False)
+                self.stop_sending_button.setEnabled(False)
+                self.emergency_stop_button.setEnabled(False)
+                self.reset_button.setEnabled(False)
+
+            if not self.secure_worker.wait_closed(0):
+                event.ignore()
+                return
+            self.secure_status_timer.stop()
+
         self.control_timer.stop()
         self.timer.stop()
-        self.control_sock.close()
+        if self.control_sock is not None:
+            self.control_sock.close()
         self.sock.close()
         event.accept()
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="虚拟小车桌面控制台")
+    parser.add_argument("--secure", action="store_true", help="启用安全控制")
+    parser.add_argument("--ca-file", type=Path, help="公开 CA 证书")
+    parser.add_argument("--server-name", help="车端证书上的名称")
+    parser.add_argument("--client-id", help="桌面账号")
+    args = parser.parse_args(argv)
+
+    tls_args = (args.ca_file, args.server_name, args.client_id)
+    if not args.secure and any(value is not None for value in tls_args):
+        parser.error("--ca-file、--server-name 和 --client-id 需要 --secure")
+
+    worker = None
+    if args.secure:
+        credential = getpass("Credential (hidden): ")
+        connect = partial(
+            connect_management,
+            ("127.0.0.1", 19177),
+            ca_file=args.ca_file or Path("local/certs/ca.pem"),
+            server_hostname=args.server_name or "localhost",
+            client_id=args.client_id or "desktop-a",
+            credential=credential,
+        )
+        worker = SecureControlWorker(connect, ("127.0.0.1", 9999))
+
     # QApplication 负责管理整个程序的全局资源
     # sys.argv：把程序参数传给 Qt
     app = QApplication(sys.argv)
 
     try:
         window = (
-            DesktopConsole()
+            DesktopConsole(secure_worker=worker)
         )  # 窗口的首次显示、鼠标拖拽拉伸：全靠 Qt 底层的操作系统事件
     except OSError as exc:
         QMessageBox.critical(

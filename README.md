@@ -75,7 +75,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-最近实际回归：2026-11-21，33个测试模块、310项通过，用户终端用时0.775秒；启动参数专项9项通过（0.099秒）。遥测接口绑定的定向测试先取得1项预期失败（0.009秒），修正后通过；模块`--help`已显示正式参数。本地配置、新证书及正式车端命令已完成真实TLS/UDP双终端验收。此前管理运行时基线为32个模块、301项（1.065秒），正式复位为31个模块、298项（0.345秒），急停为30个模块、288项（0.335秒），管理客户端为29个模块、276项（0.307秒），窗口控制为28个模块、269项（0.311秒），相应实测记录分别保留。开发方式及RED/GREEN实例见[6.4 测试驱动开发与阶段验收](#development-method)。
+最近实际回归（2026-11-21）包含36个测试模块，用户终端339项通过（1.114秒）。桌面急停与复位接线经历21项中的4项预期失败，补全后专项21项通过（0.232秒），并完成本机联调。基础安全桌面提交2100a51的基线为335项，后台提交c784bb1为330项（1.115秒），桌面安全发包为324项（1.300秒），桌面安全连接入口为316项（1.243秒）。正式车端PR #21已合并为5314264，合并后310项通过（0.970秒）。此前管理运行时301项、正式复位298项、急停288项、管理客户端276项及窗口控制269项的实测记录分别保留。开发方式及RED/GREEN实例见[6.4 测试驱动开发与阶段验收](#development-method)。
 
 历史基线：2026-11-19助手完整回归21个测试模块、214项通过，包括控制编解码40项、认证控制编解码9项、HMAC计算与核对6项、管理消息编解码26项、会话密钥8项、UDP控制收发15项、TCP应用记录15项、TCP传输7项、控制保护28项、桌面控制8项。Qt使用离屏模式，Socket使用本机回环；原始记录保留供对照。
 
@@ -107,9 +107,9 @@ LICENSE          项目许可证
 | `protocol` | `control_codec.py`、`telemetry_codec.py`与`management_codec.py`定义控制、遥测和管理消息的JSON编解码与字段校验；`control_auth.py`计算和核对HMAC认证码。 |
 | `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误；`tcp_records.py`编解码TCP应用记录并从分次到达的字节中提取完整正文；`tcp_transport.py`负责本机TCP收发、EOF及读取期限。 |
 | `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理会话、密钥、使能、接受记录及超时；`management_session.py`处理身份和会话归属，`management_connection.py`处理管理消息流，`management_runtime.py`负责TLS监听、网络线程与主线程队列交接；`vehicle_runtime.py`组合受保护步进，`app.py`运行车端循环。 |
-| `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹；`management_client.py`封装TLS管理请求、自动编号及回复配对，目前由实验脚本调用。 |
-| `tests` | 最近实际完整回归覆盖33个测试模块、310项测试，涵盖模型、控制/遥测/管理消息、管理客户端、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动配置、真实UDP、本机TCP、TCP应用记录、保护、会话状态与界面行为。 |
-| `examples` | 8个教学示例，可单独观察离线运动、单包/周期控制、超时及命令行遥测。 |
+| `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹；`management_client.py`封装TLS管理请求、自动编号及回复配对；`secure_connection.py`统一证书校验、账号认证和连接清理；`secure_control.py`组织桌面会话、窗口与签名发包；`control_worker.py`负责后台连接、周期发送、保活和状态更新。 |
+| `tests` | 最近实际完整回归覆盖36个测试模块、339项测试，涵盖模型、控制/遥测/管理消息、管理客户端、安全连接入口、桌面安全发包与后台线程、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动配置、真实UDP、本机TCP、TCP应用记录、保护、会话状态与两种桌面启动路径和界面行为。 |
+| `examples` | 教学示例，可单独观察离线运动、单包与周期控制、超时、命令行遥测和安全管理连接。 |
 | `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
 `core`负责运动规则，车端`vehicle`决定何时应用什么目标；同一模型可用于离线示例和联网运行。
@@ -927,7 +927,7 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 仅修改桌面端，车端不会自动获得新业务处理逻辑；仅修改车端，也不会让现有桌面端自动发出新请求。物理上可以把代码集中到更少文件，但发送与接收两侧的职责仍然存在。
 
-本主题导图按用户2026-11-20最新要求延后：后续同类管理操作接齐、接口较稳定后统一总结，优先评估与既有图8合并更新，不在每项动作后生成一张相似图。其他新增导图先提出主题和作用，与用户商量后再绘制。
+安全桌面接入后的请求往返、业务分支与实际函数统一画在[图9](#management-request-flow)。图8仍用于逐步阅读认证和会话登记的双终端实验。专家版交接和租约完成后另作升级图。
 
 ### 5.11 正式复位与重新建立控制
 
@@ -1008,6 +1008,113 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 跨机阶段将集中完善地址参数化的证书签发工具、每种角色的部署说明，以及可保存的桌面连接配置，目标为首次配置完成后日常直接启动。现有证书只列出`localhost`和`127.0.0.1`；正式跨机证书还需纳入车端实际局域网地址或名称，并由客户端核对对应身份。以上为后续部署目标，当前尚未完成跨机和GUI验收，不通过关闭证书校验简化接入。
 
+### 5.14 桌面安全连接入口
+
+`desktop/secure_connection.py`中的`connect_management()`把实验脚本反复使用的连接步骤统一起来：
+
+```text
+读取公开CA → 建立TCP连接 → TLS校验证书与主机名
+           → 发送账号凭据 → 认证通过 → 交付ManagementClient
+                                           ↓
+                                 调用者退出时关闭连接
+```
+
+| 参数或对象 | 用途 |
+| --- | --- |
+| `address` | 实际连接的车端网络地址，例如127.0.0.1:19177。 |
+| `ca_file` | 公开CA证书路径，用于验证车端证书。 |
+| `server_hostname` | TLS期望的车端身份；本机实验使用localhost，与TCP连接地址127.0.0.1分开传入。 |
+| `client_id`、`credential` | 证书校验通过后，在TLS管理通道内提交的桌面账号及凭据。 |
+| `timeout_s` | TCP连接及随后Socket阻塞操作使用的超时，默认3秒；它不是整个会话的生命周期。记录接收仍另有1秒的分次组装期限。 |
+| `ManagementClient` | 在同一TLS连接中执行管理请求，保留单一接收流并自动分配请求编号。 |
+
+`@contextmanager`将包含`yield`的函数包装成可供`with`使用的上下文管理器。进入`with connect_management(...) as client`时先执行证书校验和账号认证；只有认证通过才到达`yield client`，交付该对象。调用者的`with`代码执行结束或抛出异常时，连接入口继续退出内层`with`并关闭TLS/TCP资源。账号认证占用请求编号1，随后由调用者打开会话的请求自然使用编号2。
+
+证书或主机名校验失败时不发送账号凭据；凭据拒绝时抛出`PermissionError`，不向调用者交付客户端。该入口只负责接通与清理，打开会话、使能、窗口和UDP发送仍由后续控制流程显式执行。函数会同步等待网络操作，GUI整合时由后台线程调用，界面通过命令和状态交接。
+
+用户已完成本轮RED/GREEN：6项FAIL（0.005秒）→6项通过（0.005秒），完整316项通过（1.243秒）。六项专项核对成功后的编号延续、认证拒绝、证书失败不发凭据、调用者异常清理、截断认证回复清理，以及缺少CA时不建立TCP。测试替换网络和SSL边界，管理客户端、编解码与TCP分帧真实运行。
+
+#### 5.14.1 本机双终端验收
+
+在项目根目录启动正式车端，等它显示`Management TLS listening on ('127.0.0.1', 19177)`，并保持该终端运行。
+
+```powershell
+.\.venv\Scripts\python.exe -m rover.vehicle.app --secure --cert-dir ".\local\certs" --credentials-file ".\local\trusted_clients.json"
+```
+
+在另一个终端运行[连接示例](examples/demo_secure_connection.py)。默认使用`local/certs/ca.pem`和账号`desktop-a`，凭据由程序提示输入。
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.demo_secure_connection
+.\.venv\Scripts\python.exe -m examples.demo_secure_connection --server-name wrong.localhost
+```
+
+| 场景 | 实测结果 |
+| --- | --- |
+| 正确主机名和凭据 | 认证通过。两次打开会话的请求编号为2和3，返回同一个会话ID。客户端退出后，车端显示`Management session: None`。 |
+| 正确主机名、错误凭据 | 客户端显示`REJECT credential`。 |
+| 错误主机名 | 客户端显示`REJECT certificate: Hostname mismatch`，车端记录TLS握手告警。 |
+
+未启动车端监听时，本机连接可能返回`WinError 10061`。此时先核对车端启动输出和管理端口，凭据检查发生在TCP连接和TLS握手之后。
+
+### 5.15 桌面安全控制与窗口续期
+
+`SecureControlSession`将实验脚本里已验证的桌面发包流程整理成可重复调用的代码。它使用已认证的`ManagementClient`处理管理请求，保存当前会话ID、密钥、窗口和下一个UDP序号。
+
+| 方法 | 行为 |
+| --- | --- |
+| `open()` | 打开或复用本对象的会话，取得32字节控制密钥。 |
+| `start(target)` | 先取得窗口，再请求使能，检查窗口期限并发送首包。已经处于发送状态时，直接发送新的目标。 |
+| `send(target)` | 到达续窗时刻后先申请新窗口，再编码并发送签名指令。续窗保留同一会话的UDP序号，成功发送后递增。 |
+| `stop_sending()` | 关闭本地发送开关。车端看门狗独立判断最后一条有效指令何时超时并停车。 |
+
+桌面使用本地单调时钟，将申请窗口之前的时刻加上车端回复的有效时长作为保守截止时间，并在收到回复后的剩余时间中点安排续窗。车端以自己的签发时刻判断报文是否有效。续窗拒绝、超时或发送错误时关闭本地发送开关。周期调度已交给桌面后台线程，下一步将正式界面接入该线程。
+
+用户实测为8项预期失败、8项通过、完整324项通过。专项用可控的时间和管理回复检查会话复用、窗口和使能时序、续窗后的签名报文与序号、拒绝或异常后的停发。
+
+### 5.16 桌面后台控制线程
+
+`SecureControlWorker`在一个后台线程内创建并持有TLS管理连接、UDP socket和安全控制会话。提交控制目标后约每50毫秒发送一条签名控制指令。空闲时约每2秒通过真实的管理请求确认仍持有同一会话并保持连接。调用方可读取最新状态或发出关闭请求；网络资源由后台线程释放。
+
+每次提交目标、停发和关闭都会更新本地操作编号。处理使能或续窗时，线程可以等待车端回复，调用方也可以同时提交新的操作。真正发UDP之前，发送检查核对操作编号和关闭状态；过时操作的准备工作可以结束，实际UDP发送被取消。管理协议请求编号、UDP序号和这里的桌面操作编号各司其职。
+
+后台线程专项RED为4项预期失败。补全后，与安全发包模块合计14项通过，全量330项通过。专项使用真实线程、模拟管理回复与UDP socket，验证周期发包、停发后旧目标首包取消、空闲保活和异常清理。
+
+### 5.17 安全桌面界面的本机验收
+
+先在终端A启动车端，再在终端B启动桌面界面。两个终端均在仓库根目录运行。
+
+```powershell
+# 终端 A
+.\.venv\Scripts\python.exe -m rover.vehicle.app --secure --cert-dir ".\local\certs" --credentials-file ".\local\trusted_clients.json" --telemetry-host 127.0.0.1 --telemetry-port 10000
+
+# 终端 B
+.\.venv\Scripts\python.exe -m rover.desktop.app --secure
+```
+
+桌面端在终端中隐藏凭据输入。窗口内分别显示管理连接和遥测状态。启动入口将后台控制对象传入`DesktopConsole(secure_worker=worker)`，由窗口启动线程并定时读取状态。测试覆盖这条入口，避免选择安全模式后仍调用普通控制路径。
+
+| 操作 | 验收结果 |
+| --- | --- |
+| 输入合法凭据后点击「开始／应用」 | 车端登记会话，接受带窗口的指令。用户日志从seq=0开始，速度达到1.0 m/s。 |
+| 点击「正常停车」 | 同一会话继续发包，seq=46起发送零速目标，车辆停在x=2.80 m，故障未锁存。 |
+| 点击「停止发包」 | 用户日志中最后接受seq=80后，车端约0.5秒进入锁存，仍保持零速。离屏Qt联调也观察到遥测继续更新。 |
+| 关闭窗口 | 离屏Qt联调验证窗口等待后台结束，车端输出`Management session: None`。 |
+
+基础界面专项13项通过。助手使用临时回环端口，运行真实车端、TLS和UDP，对界面按钮及关窗补充验证，随后完整335项通过。后续接入急停与显式复位按钮，并验证急停后实际遥测归零、复位保持位置、原TLS连接上重建会话及手动恢复。车端日志中174.844秒仍为1.0 m/s，174.906秒已零速锁存；停发的另一段日志从217.438秒到217.938秒，间隔0.500秒。这里的间隔是车端状态记录之差。
+
+界面上方「最近收到的车辆状态」显示遥测速率，下方「控制目标（输入值）」保留用户填写的速度。车端确认急停后应观察上方零速与锁存状态，复位后由使用者重新应用目标。
+
+<a id="management-request-flow"></a>
+
+### 5.18 图9 管理请求主干与业务分支
+
+图9先连起TCP连接与TLS证书校验、账号认证，再用向下箭头标出认证通过后车端开始接收会话请求的位置。同一条已认证的连接可执行多次管理请求。主干从桌面发起，经车端网络线程分派和仿真线程裁决，再沿回复路径回到界面。断开后由同一任务队列撤销会话。各业务卡片列出权限和状态规则、两端方法及实际使用的编解码入口，底部对照UDP控制、三种停车方式与各编号的用途。
+
+![图9 管理请求怎样运行](reference_image/diagrams/09-management-request-flow.svg)
+
+[PNG 大图](reference_image/diagrams/09-management-request-flow.png) · [图源](reference_image/diagrams/render_management_request_flow.py)
+
 <a id="project-maintenance"></a>
 
 ## 6. 项目配置与文档维护
@@ -1078,7 +1185,7 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 #### 6.3.2 SVG导图与生成源
 
-图4的[运动与坐标生成源](reference_image/diagrams/render_vehicle_motion.py)、图5的[网络分层生成源](reference_image/diagrams/render_network_layers.py)、图6的[封装与边界生成源](reference_image/diagrams/render_encapsulation.py)、图7的[TCP接收生成源](reference_image/diagrams/render_tcp_record_receive.py)和图8的[TLS 管理会话生成源](reference_image/diagrams/render_tls_management.py)包含可修改的文字、变量名及布局。图6的`LABELS`、`FIELDS`和布局常量集中保存函数名、字段文字、位置与尺寸。
+图4的[运动与坐标生成源](reference_image/diagrams/render_vehicle_motion.py)、图5的[网络分层生成源](reference_image/diagrams/render_network_layers.py)、图6的[封装与边界生成源](reference_image/diagrams/render_encapsulation.py)、图7的[TCP接收生成源](reference_image/diagrams/render_tcp_record_receive.py)、图8的[TLS 管理会话生成源](reference_image/diagrams/render_tls_management.py)和图9的[管理请求流程生成源](reference_image/diagrams/render_management_request_flow.py)包含可修改的文字、变量名及布局。图6的`LABELS`、`FIELDS`和布局常量集中保存函数名、字段文字、位置与尺寸。
 使用项目已有PySide6，在仓库根目录运行：
 
 ```powershell
@@ -1087,9 +1194,10 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 .\.venv\Scripts\python.exe reference_image/diagrams/render_encapsulation.py
 .\.venv\Scripts\python.exe reference_image/diagrams/render_tcp_record_receive.py
 .\.venv\Scripts\python.exe reference_image/diagrams/render_tls_management.py
+.\.venv\Scripts\python.exe reference_image/diagrams/render_management_request_flow.py
 ```
 
-每个命令各自更新对应的SVG与高清PNG，输出到生成源所在目录。图5、图6和图7复用同目录图4生成源的绘图工具，须一并保留。README使用相对链接，图的位置和资源目录均可调整。
+每个命令各自更新对应的SVG与高清PNG，输出到生成源所在目录。图5至图9复用同目录图4生成源的绘图工具，须一并保留。README使用相对链接，图的位置和资源目录均可调整。
 
 新增协议能力时，同步修订图5的核对日期、各层状态、报文类型和通道说明；以实际接入与验证结果标记进展。安全机制不硬塞到单个OSI层，未做的跨机实验也不写成已完成。
 

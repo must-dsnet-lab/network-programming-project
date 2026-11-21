@@ -1,10 +1,15 @@
 import json
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from math import pi
 
+from PySide6.QtGui import QCloseEvent
+
+from rover.core.control_target import ControlTarget
+from rover.desktop.control_worker import SecureControlWorker, WorkerStatus
 from PySide6.QtWidgets import QApplication
 
-from rover.desktop.app import DesktopConsole
+from rover.desktop.app import DesktopConsole, main
 
 # 用列表记录发送报文，不实际占用端口。按钮、窗口和项目里的编码逻辑仍真实运行
 class FakeSocket:
@@ -211,6 +216,109 @@ class TestDesktopControl(unittest.TestCase):
 
         self.assertFalse(self.window.control_timer.isActive())
         self.assertEqual(self.window.control_sock.send_attempts, attempts_before)
+
+
+class TestSecureDesktopControl(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def setUp(self):
+        self.sent = []
+        self.worker = Mock(spec=SecureControlWorker)
+        self.worker.status.return_value = WorkerStatus("ready")
+        self.worker.apply_target.return_value = True
+        self.worker.wait_closed.return_value = True
+
+        sockets = patch(
+            "rover.desktop.app.socket.socket",
+            side_effect=lambda *args: FakeSocket(self.sent),
+        )
+        sockets.start()
+        self.addCleanup(sockets.stop)
+        self.window = DesktopConsole(secure_worker=self.worker)
+        self.addCleanup(self.window.close)
+
+    def test_apply_routes_target_to_worker(self):
+        self.worker.start.assert_called_once_with()
+        self.window.speed_input.setValue(1.5)
+        self.window.heading_input.setValue(90.0)
+        self.window.start_button.click()
+
+        self.worker.apply_target.assert_called_once_with(ControlTarget(1.5, pi / 2))
+        self.assertFalse(self.window.control_timer.isActive())
+        self.assertEqual(self.sent, [])
+
+    def test_normal_stop_and_stop_sending_are_different(self):
+        self.window.speed_input.setValue(1.5)
+        self.window.heading_input.setValue(90.0)
+        self.window.start_button.click()
+        self.window.heading_input.setValue(-90.0)
+        self.window.stop_button.click()
+
+        self.worker.apply_target.assert_called_with(ControlTarget(0.0, pi / 2))
+        self.window.stop_sending_button.click()
+        self.worker.stop_sending.assert_called_once_with()
+        self.window.stop_button.click()
+        self.assertEqual(self.worker.apply_target.call_count, 2)
+        self.assertEqual(self.sent, [])
+
+    def test_worker_failure_disables_control_and_keeps_telemetry(self):
+        self.worker.status.return_value = WorkerStatus("failed", "TLS lost")
+        self.window.poll_secure_status()
+
+        self.assertFalse(self.window.start_button.isEnabled())
+        self.assertIn("TLS lost", self.window.control_status.text())
+        self.assertTrue(self.window.timer.isActive())
+        self.assertFalse(self.window.sock.closed)
+
+    def test_close_lets_worker_finish_without_blocking_ui(self):
+        self.worker.wait_closed.return_value = False
+        event = QCloseEvent()
+        self.window.closeEvent(event)
+
+        self.worker.close.assert_called_once_with()
+        self.worker.wait_closed.assert_called_with(0)
+        self.assertFalse(event.isAccepted())
+        self.assertFalse(self.window.sock.closed)
+
+        self.worker.wait_closed.return_value = True
+        self.window.poll_secure_status()
+        self.assertTrue(self.window.sock.closed)
+        self.worker.close.assert_called_once_with()
+
+    def test_secure_cli_passes_worker_to_window(self):
+        with (
+            patch("rover.desktop.app.getpass", return_value="test-only"),
+            patch("rover.desktop.app.SecureControlWorker") as create_worker,
+            patch("rover.desktop.app.QApplication") as create_app,
+            patch("rover.desktop.app.DesktopConsole") as create_window,
+        ):
+            create_app.return_value.exec.return_value = 0
+            self.assertEqual(main(["--secure"]), 0)
+            create_worker.assert_called_once()
+            create_window.assert_called_once_with(
+                secure_worker=create_worker.return_value
+            )
+
+    def test_secure_emergency_and_reset_buttons_call_worker(self):
+        emergency = getattr(self.window, "emergency_stop_button", None)
+        reset = getattr(self.window, "reset_button", None)
+        self.assertIsNotNone(emergency)
+        self.assertIsNotNone(reset)
+
+        self.window.start_button.click()
+        self.assertFalse(reset.isEnabled())
+        emergency.click()
+        self.worker.emergency_stop.assert_called_once_with()
+        self.assertIsNone(self.window.current_target)
+
+        self.worker.status.return_value = WorkerStatus("latched")
+        self.window.poll_secure_status()
+        self.assertFalse(self.window.start_button.isEnabled())
+        self.assertTrue(reset.isEnabled())
+        reset.click()
+        self.worker.reset_control.assert_called_once_with()
 
 
 if __name__ == "__main__":
