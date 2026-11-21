@@ -2,7 +2,7 @@ import json
 import unittest
 from unittest.mock import Mock, patch
 from math import pi
-
+from io import StringIO
 from PySide6.QtGui import QCloseEvent
 
 from rover.core.control_target import ControlTarget
@@ -298,7 +298,8 @@ class TestSecureDesktopControl(unittest.TestCase):
             self.assertEqual(main(["--secure"]), 0)
             create_worker.assert_called_once()
             create_window.assert_called_once_with(
-                secure_worker=create_worker.return_value
+                secure_worker=create_worker.return_value,
+                telemetry_address=("127.0.0.1", 10000),
             )
 
     def test_secure_emergency_and_reset_buttons_call_worker(self):
@@ -319,6 +320,77 @@ class TestSecureDesktopControl(unittest.TestCase):
         self.assertTrue(reset.isEnabled())
         reset.click()
         self.worker.reset_control.assert_called_once_with()
+
+    def test_secure_cli_routes_lan_addresses(self):
+        with (
+            patch("rover.desktop.app.getpass", return_value="test-only"),
+            patch("rover.desktop.app.connect_management") as connect_management,
+            patch("rover.desktop.app.SecureControlWorker") as create_worker,
+            patch("rover.desktop.app.QApplication") as create_app,
+            patch("rover.desktop.app.DesktopConsole") as create_window,
+        ):
+            create_app.return_value.exec.return_value = 0
+            self.assertEqual(
+                main(
+                    [
+                        "--secure",
+                        "--vehicle-host",
+                        "192.0.2.10",
+                        "--management-port",
+                        "19178",
+                        "--control-port",
+                        "9998",
+                        "--telemetry-bind-host",
+                        "192.0.2.20",
+                        "--telemetry-port",
+                        "10001",
+                        "--server-name",
+                        "rover.demo",
+                    ]
+                ),
+                0,
+            )
+
+            connect, control_address = create_worker.call_args.args
+            self.assertEqual(control_address, ("192.0.2.10", 9998))
+            connect()
+            self.assertEqual(
+                connect_management.call_args.args[0], ("192.0.2.10", 19178)
+            )
+            self.assertEqual(
+                connect_management.call_args.kwargs["server_hostname"], "rover.demo"
+            )
+            create_window.assert_called_once_with(
+                secure_worker=create_worker.return_value,
+                telemetry_address=("192.0.2.20", 10001),
+            )
+
+    def test_telemetry_socket_binds_requested_address(self):
+        address = ("192.0.2.20", 10001)
+        with patch("rover.desktop.app.socket.socket") as create_socket:
+            window = DesktopConsole(
+                secure_worker=self.worker, telemetry_address=address
+            )
+            self.addCleanup(window.close)
+            create_socket.return_value.bind.assert_called_once_with(address)
+
+    def test_cli_rejects_invalid_lan_options_before_prompt(self):
+        cases = (
+            (["--vehicle-host", "192.0.2.10"], "局域网参数需要 --secure"),
+            (["--secure", "--control-port", "0"], "--control-port 需要 1–65535"),
+            (["--secure", "--vehicle-host", " "], "地址不能为空"),
+        )
+        for argv, message in cases:
+            with (
+                self.subTest(argv=argv),
+                patch("rover.desktop.app.getpass") as ask_credential,
+                patch("sys.stderr", new_callable=StringIO) as stderr,
+            ):
+                with self.assertRaises(SystemExit) as error:
+                    main(argv)
+                self.assertEqual(error.exception.code, 2)
+                self.assertIn(message, stderr.getvalue())
+                ask_credential.assert_not_called()
 
 
 if __name__ == "__main__":
