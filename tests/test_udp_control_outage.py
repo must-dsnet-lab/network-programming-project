@@ -91,6 +91,25 @@ class TestUdpControlOutage(unittest.TestCase):
             "outage_aborted", "relay_stopped",
         ])
 
+    def test_windows_udp_reset_keeps_relay_running_for_the_next_datagram(self):
+        reset = ConnectionResetError("destination port unreachable")
+        reset.winerror = 10054
+        sock, rows = self.run_relay(
+            list(enumerate([
+                (b"first", self.desktop), reset, (b"next", self.desktop), KeyboardInterrupt(),
+            ])),
+            [70.0, 70.1, 70.2, 70.3, 70.4],
+            trigger_at=set(),
+        )
+
+        self.assertEqual(sock.sendto.call_args_list, [
+            call(b"first", self.vehicle), call(b"next", self.vehicle),
+        ])
+        self.assertEqual([row["event"] for row in rows], [
+            "relay_started", "packet_forwarded", "destination_unreachable",
+            "packet_forwarded", "relay_stopped",
+        ])
+
     def test_cli_rejects_public_host_or_a_relay_loop_before_opening_socket(self):
         for options in (
             ["--desktop-host", "8.8.8.8"],

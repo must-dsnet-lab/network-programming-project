@@ -46,6 +46,7 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         self._secure_close_pending = False
         self._last_secure_state: str | None = None
         self._last_telemetry_fault_latched = False
+        self._telemetry_control_suspended = False
         self.setWindowTitle("虚拟小车遥测观察台")
         self.resize(1000, 600)
         self.setStyleSheet(
@@ -191,6 +192,8 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             heading_rad=radians(self.heading_input.value()),
         )
         if self.secure_worker is not None:
+            if self._secure_motion_blocked():
+                return
             if self.secure_worker.apply_target(target):
                 self.current_target = target
             self.poll_secure_status()
@@ -288,7 +291,7 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         ):
             self.current_target = None
 
-        can_apply = state in ("ready", "sending", "stopped")
+        can_apply = state in ("ready", "sending", "stopped") and not self._secure_motion_blocked()
         has_target = can_apply and self.current_target is not None
         self.start_button.setEnabled(can_apply)
         self.stop_button.setEnabled(has_target)
@@ -341,6 +344,22 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             self.status.setText(text)
             self._append_event(event_message or text)
 
+    def _secure_motion_blocked(self) -> bool:
+        return self._telemetry_control_suspended or self._last_telemetry_fault_latched
+
+    def _set_telemetry_control_suspended(self, suspended: bool) -> None:
+        if (
+            self.secure_worker is None
+            or self._secure_close_pending
+            or self._telemetry_control_suspended == suspended
+        ):
+            return
+        self._telemetry_control_suspended = suspended
+        if suspended:
+            self.stop_control()
+        else:
+            self.poll_secure_status()
+
     def poll_telemetry(self):
         latest = None
         receive_error = None
@@ -370,6 +389,7 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
                 self._last_telemetry_fault_latched = latest.fault_latched
                 message = "故障锁存" if latest.fault_latched else "故障锁存已解除"
                 self._append_event(message)
+                self.poll_secure_status()
 
         if latest is not None:
             state = latest.state
@@ -387,6 +407,7 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         # 报错前若收到过合法数据，先同步读数，再显示错误
         if receive_error is not None:
             self._set_telemetry_status(f"接收错误：{receive_error}", "遥测接收错误")
+            self._set_telemetry_control_suspended(True)
             return
 
         # 没有新包时，也继续检查显示状态是否过期
@@ -396,8 +417,10 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             self._set_telemetry_status(
                 f"遥测过期（{self.telemetry_timeout_s:.1f}秒未收到合法报文）", "遥测过期"
             )
+            self._set_telemetry_control_suspended(True)
         else:
             self._set_telemetry_status("遥测可用")
+            self._set_telemetry_control_suspended(False)
 
     # 操作系统会捕捉到用户用鼠标点击窗口右上角的“❌”的动作，并把它告诉 Qt 框架。Qt 框架会自动去寻找 closeEvent 方法
     def closeEvent(self, event):

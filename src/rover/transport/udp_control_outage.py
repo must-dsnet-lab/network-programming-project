@@ -53,12 +53,20 @@ def relay_controls(
     try:
         while True:
             received = None
+            destination_unreachable = False
             try:
                 received = sock.recvfrom(UDP_RECEIVE_BUFFER_BYTES)
             except TimeoutError:
                 pass
+            except ConnectionResetError as error:
+                # Windows can report an unopened UDP destination on the next read.
+                if getattr(error, "winerror", None) != 10054:
+                    raise
+                destination_unreachable = True
 
             now_s = monotonic()
+            if destination_unreachable:
+                record(now_s, "destination_unreachable", detail="WinError 10054")
             if outage_until_s is not None and now_s >= outage_until_s:
                 outage_until_s = None
                 record(now_s, "outage_ended")

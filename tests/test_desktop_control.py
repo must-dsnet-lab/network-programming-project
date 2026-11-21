@@ -204,6 +204,26 @@ class TestDesktopControl(unittest.TestCase):
         self.assertTrue(self.window.timer.isActive())
         self.assertFalse(self.window.sock.closed)
 
+    def test_legacy_control_keeps_publishing_when_telemetry_expires(self):
+        self.apply_inputs(1.5, 0.0)
+        snapshot = TelemetrySnapshot(state=VehicleState(), fault_latched=False)
+        with (
+            patch("rover.desktop.app.monotonic") as clock,
+            patch("rover.desktop.app.try_receive_telemetry", side_effect=[
+                (snapshot, ("127.0.0.1", 9999)), None, None,
+            ]),
+        ):
+            clock.return_value = 10.0
+            self.window.poll_telemetry()
+            clock.return_value = 11.0
+            self.window.poll_telemetry()
+
+        self.assertIn("遥测过期", self.window.status.text())
+        self.assertTrue(self.window.control_timer.isActive())
+        self.window.control_timer.timeout.emit()
+        self.assertEqual(len(self.sent), 2)
+        self.assertEqual(self.message(1)["speed_mps"], 1.5)
+
     def test_normal_stop_does_not_start_inactive_publishing(self):
         self.control("stop_button").click()
 
@@ -242,6 +262,18 @@ class TestSecureDesktopControl(unittest.TestCase):
         self.window = DesktopConsole(secure_worker=self.worker)
         self.addCleanup(self.window.close)
 
+    def poll_telemetry_at(self, now, received=None):
+        side_effect = [received] if received is None else [received, None]
+        with (
+            patch("rover.desktop.app.monotonic", return_value=now),
+            patch("rover.desktop.app.try_receive_telemetry", side_effect=side_effect),
+        ):
+            self.window.poll_telemetry()
+
+    @staticmethod
+    def telemetry_packet(*, fault_latched=False):
+        return TelemetrySnapshot(state=VehicleState(), fault_latched=fault_latched), ("127.0.0.1", 9999)
+
     def test_apply_routes_target_to_worker(self):
         self.worker.start.assert_called_once_with()
         self.window.speed_input.setValue(1.5)
@@ -274,6 +306,77 @@ class TestSecureDesktopControl(unittest.TestCase):
         self.assertIn("TLS lost", self.window.control_status.text())
         self.assertTrue(self.window.timer.isActive())
         self.assertFalse(self.window.sock.closed)
+
+    def test_telemetry_expiry_stops_secure_control_once_at_timeout(self):
+        self.poll_telemetry_at(10.0, self.telemetry_packet())
+        self.window.speed_input.setValue(1.5)
+        self.window.start_button.click()
+        self.worker.status.return_value = WorkerStatus("sending")
+
+        self.poll_telemetry_at(10.99)
+        self.worker.stop_sending.assert_not_called()
+        self.assertTrue(self.window.start_button.isEnabled())
+
+        self.poll_telemetry_at(11.0)
+        self.assertIn("遥测过期", self.window.status.text())
+        self.assertIsNone(self.window.current_target)
+        self.assertFalse(self.window.start_button.isEnabled())
+        self.worker.stop_sending.assert_called_once_with()
+
+        self.poll_telemetry_at(11.5)
+        self.window.poll_secure_status()
+        self.window.start_control()
+        self.worker.stop_sending.assert_called_once_with()
+        self.worker.apply_target.assert_called_once_with(ControlTarget(1.5, 0.0))
+        self.assertIsNone(self.window.current_target)
+        self.assertFalse(self.window.start_button.isEnabled())
+        self.assertTrue(self.window.timer.isActive())
+
+    def test_telemetry_recovery_requires_unlocked_state_and_explicit_apply(self):
+        self.poll_telemetry_at(10.0, self.telemetry_packet())
+        self.window.speed_input.setValue(1.5)
+        self.window.start_button.click()
+        self.poll_telemetry_at(11.0)
+        self.worker.status.return_value = WorkerStatus("stopped")
+
+        self.poll_telemetry_at(11.5, self.telemetry_packet(fault_latched=True))
+        self.assertEqual(self.window.status.text(), "遥测可用")
+        self.assertFalse(self.window.start_button.isEnabled())
+        self.assertTrue(self.window.emergency_stop_button.isEnabled())
+        self.assertTrue(self.window.reset_button.isEnabled())
+        self.window.start_control()
+
+        self.poll_telemetry_at(11.6, self.telemetry_packet())
+        self.assertTrue(self.window.start_button.isEnabled())
+        self.assertIsNone(self.window.current_target)
+        self.worker.apply_target.assert_called_once_with(ControlTarget(1.5, 0.0))
+        self.worker.stop_sending.assert_called_once_with()
+
+        self.window.start_button.click()
+        self.assertEqual(self.worker.apply_target.call_count, 2)
+        self.assertEqual(self.window.current_target, ControlTarget(1.5, 0.0))
+
+    def test_nonblocking_telemetry_receive_error_suspends_secure_control(self):
+        self.poll_telemetry_at(10.0, self.telemetry_packet())
+        self.window.speed_input.setValue(1.5)
+        self.window.start_button.click()
+        self.worker.status.return_value = WorkerStatus("sending")
+
+        with (
+            patch("rover.desktop.app.monotonic", return_value=10.1),
+            patch("rover.desktop.app.try_receive_telemetry", side_effect=OSError("telemetry socket failed")),
+        ):
+            self.window.poll_telemetry()
+            self.window.poll_telemetry()
+
+        self.assertIn("接收错误", self.window.status.text())
+        self.assertTrue(self.window.sock.closed)
+        self.assertFalse(self.window.timer.isActive())
+        self.assertFalse(self.window.start_button.isEnabled())
+        self.assertIsNone(self.window.current_target)
+        self.worker.stop_sending.assert_called_once_with()
+        self.window.start_control()
+        self.worker.apply_target.assert_called_once_with(ControlTarget(1.5, 0.0))
 
     def test_operator_label_tracks_authenticated_session(self):
         self.worker.status.return_value = WorkerStatus("connecting")
