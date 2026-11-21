@@ -75,7 +75,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-局域网配置版本 `ead59ba` 全量回归 342 项通过（1.184 秒），桌面接口专项 17 项通过（0.084 秒）。上一个安全桌面基线的 36 个测试模块共 339 项通过（1.114 秒）。桌面急停与复位接线经历21项中的4项预期失败，补全后专项21项通过（0.232秒），并完成本机联调。基础安全桌面提交2100a51的基线为335项，后台提交c784bb1为330项（1.115秒），桌面安全发包为324项（1.300秒），桌面安全连接入口为316项（1.243秒）。正式车端PR #21已合并为5314264，合并后310项通过（0.970秒）。此前管理运行时301项、正式复位298项、急停288项、管理客户端276项及窗口控制269项的实测记录分别保留。开发方式及RED/GREEN实例见[6.4 测试驱动开发与阶段验收](#development-method)。
+观察端版本 `1d0ec91` 全量回归 345 项通过（1.130 秒），车端专项 16 项通过（0.133 秒）。局域网配置版本 `ead59ba` 全量回归 342 项通过（1.184 秒），桌面接口专项 17 项通过（0.084 秒）。上一个安全桌面基线的 36 个测试模块共 339 项通过（1.114 秒）。桌面急停与复位接线经历21项中的4项预期失败，补全后专项21项通过（0.232秒），并完成本机联调。基础安全桌面提交2100a51的基线为335项，后台提交c784bb1为330项（1.115秒），桌面安全发包为324项（1.300秒），桌面安全连接入口为316项（1.243秒）。正式车端PR #21已合并为5314264，合并后310项通过（0.970秒）。此前管理运行时301项、正式复位298项、急停288项、管理客户端276项及窗口控制269项的实测记录分别保留。开发方式及RED/GREEN实例见[6.4 测试驱动开发与阶段验收](#development-method)。
 
 历史基线：2026-11-19助手完整回归21个测试模块、214项通过，包括控制编解码40项、认证控制编解码9项、HMAC计算与核对6项、管理消息编解码26项、会话密钥8项、UDP控制收发15项、TCP应用记录15项、TCP传输7项、控制保护28项、桌面控制8项。Qt使用离屏模式，Socket使用本机回环；原始记录保留供对照。
 
@@ -108,7 +108,7 @@ LICENSE          项目许可证
 | `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误；`tcp_records.py`编解码TCP应用记录并从分次到达的字节中提取完整正文；`tcp_transport.py`负责本机TCP收发、EOF及读取期限。 |
 | `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理会话、密钥、使能、接受记录及超时；`management_session.py`处理身份和会话归属，`management_connection.py`处理管理消息流，`management_runtime.py`负责TLS监听、网络线程与主线程队列交接；`vehicle_runtime.py`组合受保护步进，`app.py`运行车端循环。 |
 | `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹；`management_client.py`封装TLS管理请求、自动编号及回复配对；`secure_connection.py`统一证书校验、账号认证和连接清理；`secure_control.py`组织桌面会话、窗口与签名发包；`control_worker.py`负责后台连接、周期发送、保活和状态更新。 |
-| `tests` | 最近全量回归 342 项，覆盖模型、控制/遥测/管理消息、管理客户端、安全连接入口、桌面安全发包与后台线程、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动与网络地址配置、真实UDP、本机TCP、TCP应用记录、保护、会话状态与两种桌面启动路径和界面行为。 |
+| `tests` | 最近全量回归 345 项，覆盖模型、控制/遥测/管理消息、管理客户端、安全连接入口、桌面安全发包与后台线程、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动与网络地址配置、遥测双发、真实UDP、本机TCP、TCP应用记录、保护、会话状态与两种桌面启动路径和界面行为。 |
 | `examples` | 教学示例，可单独观察离线运动、单包与周期控制、超时、命令行遥测和安全管理连接。 |
 | `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
@@ -1153,6 +1153,30 @@ PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./loca
 | 应用 `1.0 m/s` 目标 | Ubuntu 从 `192.168.174.1` 接受 `seq=0–37` 的运动指令。车端实测速度达 `1.0 m/s`，首条零速指令到达前的位置记录为 `x=2.32 m`。 |
 | 正常停车 | Ubuntu 自 `seq=38` 起接受零速目标。车端位置停在 `x=2.36 m`，车端速度回到 `0.0 m/s`，`fault_latched=False`。 |
 | 关窗撤销 | 车端共接受 `seq=0–150` 的 151 条指令。关闭 GUI 后，Ubuntu 终端打印 `Management session: None`。 |
+
+<a id="telemetry-observer-acceptance"></a>
+
+### 5.20 只读观察端与遥测双发
+
+车端在一个采样周期生成一份 `TelemetrySnapshot`，通过现有的非阻塞 UDP 套接字分别发往控制台和可选观察端。每个目的地址单独处理发送错误。[观察程序](examples/demo_udp_telemetry_receiver.py)只绑定遥测接收端口，无需 TLS 凭据或控制会话。
+
+2026-11-22 沿用 [5.19 的 VMware 拓扑](#vmware-lan-acceptance)。Ubuntu 车端为 `192.168.174.128`。Windows 宿主机 `192.168.174.1` 上的控制台和观察端是两个独立进程，分别监听 UDP `10000` 和 `10001`。保留 5.19 的 Windows 控制台启动命令。Ubuntu 车端增加观察地址，Windows 另开终端运行接收器：
+
+```bash
+PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./local/certs-vm --credentials-file ./local/trusted_clients.json --bind-host 192.168.174.128 --telemetry-host 192.168.174.1 --observer-host 192.168.174.1 --observer-port 10001
+```
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.demo_udp_telemetry_receiver --bind-host 192.168.174.1 --port 10001
+```
+
+| 证据 | 实测结果 |
+| --- | --- |
+| Windows 观察端输出 | 从 Ubuntu 收到 `0.0 → 1.0 → 0.0 m/s` 的遥测，停车时 `x=3.24 m`、故障未锁存。最后输出 `telemetry receiver stopped`。 |
+| Ubuntu 车端输出 | 首次正常停车同样记录 `x=3.24 m`、速度 `0.0 m/s`。随后的车端日志片段记录了 `1.2 m/s` 的再次运动，及停在 `x=4.992 m`、速度 `0.0 m/s`、故障未锁存。 |
+| 本机独立补测 | 正式车端、离屏 Qt 控制台和只读接收器使用真实 TLS/UDP 及独立临时端口。两处都读到首次移动和停车。确认观察端进程已退出后才再次应用 `1.2 m/s`，控制台仍收到运动和零速停车遥测。关窗后车端撤销管理会话。 |
+
+提交 `b22220a` 加入遥测双发，`1d0ec91` 开放观察端监听参数。车端专项 RED 记录为 5 个失败和 5 个错误，完成接线后复跑 16 项通过，全量 345 项通过。专项覆盖两路发送使用相同的快照字节、任一目的地发送出错时另一处仍尝试发送，以及命令行参数校验。
 
 <a id="project-maintenance"></a>
 
