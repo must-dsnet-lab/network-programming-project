@@ -108,7 +108,7 @@ LICENSE          项目许可证
 | `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误；`tcp_records.py`编解码TCP应用记录并从分次到达的字节中提取完整正文；`tcp_transport.py`负责本机TCP收发、EOF及读取期限。 |
 | `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理会话、密钥、使能、接受记录及超时；`management_session.py`处理身份和会话归属，`management_connection.py`处理管理消息流，`management_runtime.py`负责TLS监听、网络线程与主线程队列交接；`vehicle_runtime.py`组合受保护步进，`app.py`运行车端循环。 |
 | `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹；`management_client.py`封装TLS管理请求、自动编号及回复配对；`secure_connection.py`统一证书校验、账号认证和连接清理；`secure_control.py`组织桌面会话、窗口与签名发包；`control_worker.py`负责后台连接、周期发送、保活和状态更新。 |
-| `tests` | 最近全量回归 345 项，覆盖模型、控制/遥测/管理消息、管理客户端、安全连接入口、桌面安全发包与后台线程、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动与网络地址配置、遥测双发、真实UDP、本机TCP、TCP应用记录、保护、会话状态与两种桌面启动路径和界面行为。 |
+| `tests` | 最近全量回归 351 项，覆盖模型、控制/遥测/管理消息、管理客户端、安全连接入口、桌面安全发包与后台线程、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动与网络地址配置、遥测双发、控制断流和车端计时、真实UDP、本机TCP、TCP应用记录、保护、会话状态与两种桌面启动路径和界面行为。 |
 | `examples` | 教学示例，可单独观察离线运动、单包与周期控制、超时、命令行遥测和安全管理连接。 |
 | `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
@@ -1177,6 +1177,54 @@ PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./loca
 | 本机独立补测 | 正式车端、离屏 Qt 控制台和只读接收器使用真实 TLS/UDP 及独立临时端口。两处都读到首次移动和停车。确认观察端进程已退出后才再次应用 `1.2 m/s`，控制台仍收到运动和零速停车遥测。关窗后车端撤销管理会话。 |
 
 提交 `b22220a` 加入遥测双发，`1d0ec91` 开放观察端监听参数。车端专项 RED 记录为 5 个失败和 5 个错误，完成接线后复跑 16 项通过，全量 345 项通过。专项覆盖两路发送使用相同的快照字节、任一目的地发送出错时另一处仍尝试发送，以及命令行参数校验。
+
+<a id="control-outage-lab"></a>
+
+### 5.21 N4/N5 控制断流与恢复实验
+
+在 [VMware 联调拓扑](#vmware-lan-acceptance)上增加一个控制 UDP 转发器。Windows 控制端发往 Ubuntu 的 `10002/UDP`，转发器将同一数据报送到 Ubuntu 车端的 `9999/UDP`。TLS 管理继续直连 `19177/TCP`，车端遥测继续发往控制台 `10000/UDP` 和观察端 `10001/UDP`。
+
+先关闭上一轮车端和控制台。下面以 Ubuntu `192.168.174.128`、Windows VMnet8 `192.168.174.1` 为例，在各自项目目录操作。每次实验使用新的日志文件名。
+
+**Ubuntu 终端 1** 启动车端，开启车端事件记录。
+
+```bash
+PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./local/certs-vm --credentials-file ./local/trusted_clients.json --bind-host 192.168.174.128 --telemetry-host 192.168.174.1 --observer-host 192.168.174.1 --observer-port 10001 --event-log ./local/n4n5-vehicle-01.csv
+```
+
+**Ubuntu 终端 2** 启动控制转发器。
+
+```bash
+PYTHONPATH="$PWD/src" python3 -B -m rover.transport.udp_control_outage --bind-host 192.168.174.128 --desktop-host 192.168.174.1 --event-log ./local/n4n5-relay-01.csv
+```
+
+**Windows 终端 1** 启动控制台，使用转发器的控制端口。
+
+```powershell
+.\.venv\Scripts\python.exe -m rover.desktop.app --secure --vehicle-host 192.168.174.128 --control-port 10002 --telemetry-bind-host 192.168.174.1 --ca-file '.\local\certs-vm\ca.pem'
+```
+
+**Windows 终端 2** 启动只读观察端。
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.demo_udp_telemetry_receiver --bind-host 192.168.174.1 --port 10001 | Tee-Object -FilePath '.\local\n4n5-observer-01.txt'
+```
+
+1. 在控制台应用 `1.0 m/s`，确认上方实测速度和观察端都显示车辆运动。
+2. 在转发器终端按一次 Enter。转发器在接下来的 2 秒直接丢弃控制报文。控制台和观察端应持续收到遥测，并显示零速和故障锁存。
+3. 看到 `forwarding resumed` 后，观察车辆继续保持零速和锁存。点击「显式复位」，确认解除锁存后车辆仍停着，再点击「开始／应用」验证主动恢复。
+4. 完成后先正常停车、关闭控制台，再结束车端、转发器和观察器。保存两份 CSV、观察端日志及关键界面或终端画面。
+
+转发器 CSV 的 `outage_started` 和 `outage_ended` 记录本轮断流边界，`outage_ended` 行的 `dropped_packets` 是本轮丢弃计数。计算停车耗时时，从车端 CSV 取本轮首次零速锁存的 `state`，减去它之前最近一条 `control_accepted` 的 `elapsed_s`。两个时刻来自同一车端的单调时钟。实验计划的初始目标为 550 ms，复现时保留每次实测值及超限样本。
+
+2026-11-22，用户在同一台物理电脑的 Windows 宿主机和 Ubuntu VMware 虚拟机上完成首轮 N4/N5 验收。实验基线为 `3adc59a`，运行的是 `feat/udp-fault-lab` 上的断流实验代码。三份原始记录分别为 `n4n5-relay-01.csv`、`n4n5-vehicle-01.csv` 和 `n4n5-observer-01.txt`。
+
+| 验收项 | 首轮实测结果 |
+| --- | --- |
+| N4 控制断流 | 转发器断流 2.000372 秒，实际丢弃 8 条控制报文。车端从最后接收有效指令到首次记录零速锁存间隔 507.562 ms，低于 550 ms 目标。 |
+| N5 转发恢复 | 观察端持续收到遥测，车辆在 `x=6.34 m` 保持零速和故障锁存。显式复位后仍静止，重新应用控制目标后才恢复运动。最终正常停车在 `x=12.50 m`，未锁存。 |
+
+转发器另外记录了两次丢弃数为零的触发，有运动中的有效样本为 1 次。计划要求的重复轮次及物理双机局域网验收仍待完成。
 
 <a id="project-maintenance"></a>
 

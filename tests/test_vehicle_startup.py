@@ -212,6 +212,12 @@ class TestVehicleStartup(unittest.TestCase):
             with self.subTest(argv=argv):
                 self.assert_rejected_without_startup(argv)
 
+    def test_event_log_argument_routes_output_path(self):
+        event_log = self.root / "vehicle-events.csv"
+        with patch.object(app, "main") as main:
+            app.cli(["--event-log", str(event_log)])
+        self.assertEqual(main.call_args.kwargs["event_log"], event_log)
+
     def test_one_telemetry_tick_attempts_both_destinations(self):
         primary = ("192.0.2.20", 20003)
         observer = ("192.0.2.30", 20004)

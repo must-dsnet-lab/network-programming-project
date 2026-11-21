@@ -1,5 +1,6 @@
 """初始文件名：demo_udp_vehicle_loop.py"""
 import argparse
+import csv
 import json
 from pathlib import Path
 from ipaddress import IPv4Address
@@ -29,6 +30,7 @@ def main(
     address: tuple[str, int] = ("127.0.0.1", 9999),
     telemetry_address: tuple[str, int] = ("127.0.0.1", 10000),
     observer_address: tuple[str, int] | None = None,
+    event_log: Path | None = None,
 ) -> None:
     telemetry_destinations = (telemetry_address,)
     if observer_address is not None and observer_address != telemetry_address:
@@ -44,7 +46,12 @@ def main(
     previous_speed = None
     previous_fault = None
 
+    log_context = (
+        event_log.open("x", encoding="utf-8", newline="", buffering=1)
+        if event_log is not None else nullcontext()
+    )
     with (
+        log_context as event_stream,
         socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock,
         socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as telemetry_sock,
         management if management is not None else nullcontext() as process_management,
@@ -55,12 +62,27 @@ def main(
         telemetry_sock.bind((address[0], 0))
         telemetry_sock.setblocking(False)
 
+        writer = csv.writer(event_stream) if event_stream is not None else None
+
+        def record(at_s: float, event: str, *, seq: int | None = None, detail: str = "") -> None:
+            if writer is not None:
+                writer.writerow((
+                    f"{at_s - started_at_s:.6f}", event, seq, state.speed_mps,
+                    str(guard.fault_latched).lower(), detail,
+                ))
+
+        last_recorded_state = (state.speed_mps, guard.fault_latched)
+        if writer is not None:
+            writer.writerow(("elapsed_s", "event", "seq", "speed_mps", "fault_latched", "detail"))
+            record(started_at_s, "state", detail="initial")
+
         print(f"waiting for UDP on {address}; Ctrl+C to exit", flush=True)
 
         try:
             while True:
                 # 1. 记录本轮起点，先检查保护状态
                 tick_started_s = monotonic()
+                session_change = ""
                 if process_management is not None: # 如果没有后台管理，就继续沿用物理引擎
                     # process_management(guard)调用之前备份原来的guard.sesion_id
                     previous_session_id = guard.session_id
@@ -70,6 +92,12 @@ def main(
                     if guard.session_id != previous_session_id:
 
                         print(f"Management session: {guard.session_id}", flush=True)
+                        if guard.session_id is None:
+                            session_change = "closed"
+                        elif previous_session_id is None:
+                            session_change = "opened"
+                        else:
+                            session_change = "replaced"
                 guard = update_control_guard(guard, tick_started_s)
 
                 # 2. 每轮最多尝试接收一个控制报文
@@ -123,6 +151,7 @@ def main(
                 if rejected_message is not None:
                     print(f"rejected: {rejected_message}", flush=True)
 
+                event = None
                 if received is not None:
                     message, peer = received
                     if process_management is None:
@@ -130,6 +159,17 @@ def main(
                     else:
                         event = "accepted" if guard.last_seq != previous_seq else "ignored"
                     print(f"{event} from {peer}: {message}", flush=True)
+
+                if writer is not None:
+                    if session_change:
+                        record(now_s, "session", detail=session_change)
+                    if event == "accepted":
+                        record(guard.last_accepted.accepted_at_s, "control_accepted", seq=guard.last_seq)
+                    observed_state = (state.speed_mps, guard.fault_latched)
+                    if observed_state != last_recorded_state:
+                        # Use the timestamp after stepping the simulation for actual motion.
+                        record(telemetry_now_s, "state")
+                        last_recorded_state = observed_state
 
                 if (
                     received is not None
@@ -157,6 +197,8 @@ def main(
             if process_management is not None and guard.session_id is not None:
                 guard = close_control_session(guard, guard.session_id)
                 print(f"Management session: {guard.session_id}", flush=True)
+                if writer is not None:
+                    record(monotonic(), "session", detail="closed")
 
 
 def load_trusted_credentials(path: Path) -> dict[str, bytes]:
@@ -205,6 +247,7 @@ def cli(argv: list[str] | None = None) -> None:
     parser.add_argument("--telemetry-port", type=_port_argument, default=10000)
     parser.add_argument("--observer-host", type=IPv4Address, help="optional observer IPv4")
     parser.add_argument("--observer-port", type=_port_argument, help="observer UDP port (default: 10001)")
+    parser.add_argument("--event-log", type=Path, help="write vehicle events to a new CSV file")
     args = parser.parse_args(argv)
 
     if args.secure: # 命令中带 --secure
@@ -230,11 +273,13 @@ def cli(argv: list[str] | None = None) -> None:
                 address=(args.bind_host, args.management_port),
             )
 
+        log_options = {"event_log": args.event_log} if args.event_log is not None else {}
         main(
             address=(args.bind_host, args.control_port),
             telemetry_address=(args.telemetry_host, args.telemetry_port),
             management=management,
             observer_address=observer_address,
+            **log_options,
         )
     except (OSError, ValueError) as error:
         parser.error(f"vehicle startup failed: {error}")
