@@ -1,12 +1,18 @@
 import select
 import socket
 from time import monotonic
-
+import argparse
 from rover.transport.udp_transport import try_receive_telemetry
 
 
-def main() -> None:
-    address = ("127.0.0.1", 10000)
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(description="Read-only rover telemetry receiver.")
+    parser.add_argument("--bind-host", default="127.0.0.1")
+    parser.add_argument("--port", type=int, default=10000)
+    args = parser.parse_args(argv)
+    if not 1 <= args.port <= 65535:
+        parser.error("--port must be between 1 and 65535")
+    address = (args.bind_host, args.port)
     next_print_at_s = 0.0
     previous_fault = None
 
