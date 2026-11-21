@@ -10,7 +10,7 @@
 - **网络与保护**：UDP控制与遥测、TLS认证管理、HMAC与有效窗口准入、控制超时停车、急停和故障锁存。
 - **桌面控制**：数值输入、正常停车/停发、地图与轨迹、遥测可用/过期提示。
 
-当前原型可在本机以源码方式运行，无需实体小车。最终交付目标为Windows EXE，发布包待制作。
+当前可在本机以源码方式运行，无需实体小车。桌面 Windows EXE 的构建方式见[4.5](#desktop-acceptance-tools)。
 
 ### 模块职责速查
 
@@ -37,7 +37,7 @@
 
 ### 章节导航
 
-本页按开发顺序保留各阶段示例，当前完整桌面操作可直接看[4.1启动](#quick-start)和[4.3数值控制](#desktop-control-acceptance)。
+本页保留各阶段示例。教学模式见[4.1启动](#quick-start)和[4.3数值控制](#desktop-control-acceptance)，新界面、只读观察、故障与验收工具见[4.5](#desktop-acceptance-tools)。
 旧示例中的A/B/C是该例自己的终端标签。
 
 | 板块 | 内容 |
@@ -494,6 +494,49 @@ flowchart TB
 - `timeout.emit()`只手动调用一次回调，不证明实际经过100ms；真实UDP由传输测试和双进程联调验证。
 
 对应源码：[桌面窗口](src/rover/desktop/app.py)、[桌面测试](tests/test_desktop_control.py)、[轨迹历史](src/rover/desktop/trajectory.py)、[UDP传输](src/rover/transport/udp_transport.py)。
+
+<a id="desktop-acceptance-tools"></a>
+
+### 4.5 地图、只读观察与故障验收
+
+地图支持拖拽平移和以光标为中心的滚轮缩放。「定位车辆」将最后上报的位置移到画面中心，「清除轨迹」从当前位置重新绘制。遥测过期时继续显示最后读数，速度、车辆和轨迹改用琥珀色。
+
+观察端只接收遥测。车端的 `--telemetry-host`、`--telemetry-port` 指向观察端或控制台，每轮使用一个接收端。同机切换时先关闭占用端口的旧接收端。
+
+```powershell
+.\.venv\Scripts\python.exe -m rover.desktop.app --observe --listen-host 127.0.0.1 --telemetry-port 10000
+```
+
+安全控制按[5.17](#secure-desktop-ui)启动。跨机时可用 `--control-host` 和 `--control-port` 指定车端控制目的地址，`--management-port` 指定 TLS 管理端口，`--server-name` 指定证书上校验的名称，`--listen-host` 指定桌面的遥测接收接口。
+
+每轮先在「故障与验收」页点击「开始记录」，完成操作后点击「结束记录」。同一次启动可以记录多轮，并用「导出 CSV」保存包含轮次、原始遥测、车端故障位、控制与故障事件的时间线。
+
+| 场景 | 操作 | 核对结果 |
+| --- | --- | --- |
+| 控制 UDP 丢包 | 运动时开启「控制 UDP 每 3 次丢弃 1 次」 | CSV 出现 `control_dropped`，其余控制继续发送。 |
+| 停发保护 | 运动时在驾驶页点击「停止发包」 | 原始遥测持续更新，车端上报零速并锁存。 |
+| 急停与恢复 | 运动时急停，再断开、重连和复位 | 车端确认急停并锁存。重连后保持停驶，复位并重新应用目标才恢复运动。 |
+| 延迟遥测显示 | 选择「延迟遥测 1.5 秒」 | 延迟样本保留原始接收时刻，超过 1 秒显示为过期。 |
+| 暂停遥测显示 | 选择暂停，再切回正常交付 | 地图冻结，原始遥测继续写入 CSV。恢复后显示新样本。 |
+
+`control_sent` 表示本机发包，`telemetry` 表示收到车端快照。以原始遥测的零速及锁存值确认车端结果。计算时间间隔时使用轮内单调毫秒时间，并考虑遥测周期和系统调度。
+
+#### Windows 桌面构建
+
+在 Windows PowerShell 的项目目录执行下面命令。构建时使用系统 DLL 搜索路径，避免第三方 ICU DLL 与 Qt 的 Windows 依赖冲突。
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install pyinstaller==6.22.3
+$roverBuildPath = $env:Path
+try {
+    $env:Path = "$env:SystemRoot\System32;$env:SystemRoot"
+    .\.venv\Scripts\python.exe -m PyInstaller --clean --noconfirm --windowed --onedir --name RoverDesktop --specpath local/member-c-build --paths src src/rover/desktop/app.py
+} finally {
+    $env:Path = $roverBuildPath
+}
+```
+
+保留完整的 `dist/RoverDesktop/` 目录。双击 `RoverDesktop.exe` 进入教学模式，或用 `RoverDesktop.exe --secure --ca-file .\local\certs\ca.pem` 启动安全界面。凭据在窗口输入，公开 CA 证书通过启动参数提供。
 
 <a id="network-layers"></a>
 
@@ -1080,6 +1123,8 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 后台线程专项RED为4项预期失败。补全后，与安全发包模块合计14项通过，全量330项通过。专项使用真实线程、模拟管理回复与UDP socket，验证周期发包、停发后旧目标首包取消、空闲保活和异常清理。
 
+<a id="secure-desktop-ui"></a>
+
 ### 5.17 安全桌面界面的本机验收
 
 先在终端A启动车端，再在终端B启动桌面界面。两个终端均在仓库根目录运行。
@@ -1092,7 +1137,7 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 .\.venv\Scripts\python.exe -m rover.desktop.app --secure
 ```
 
-桌面端在终端中隐藏凭据输入。窗口内分别显示管理连接和遥测状态。启动入口将后台控制对象传入`DesktopConsole(secure_worker=worker)`，由窗口启动线程并定时读取状态。测试覆盖这条入口，避免选择安全模式后仍调用普通控制路径。
+桌面端在窗口中输入凭据并点击「连接并认证」。窗口分别显示管理连接和遥测状态，后台控制线程处理证书校验、身份认证、HMAC 控制及空闲保活。连接成功后明确应用目标。断开和重连会撤销旧的本地驾驶目标，故障锁存由车端复位流程处理。
 
 | 操作 | 验收结果 |
 | --- | --- |
@@ -1103,7 +1148,7 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 基础界面专项13项通过。助手使用临时回环端口，运行真实车端、TLS和UDP，对界面按钮及关窗补充验证，随后完整335项通过。后续接入急停与显式复位按钮，并验证急停后实际遥测归零、复位保持位置、原TLS连接上重建会话及手动恢复。车端日志中174.844秒仍为1.0 m/s，174.906秒已零速锁存；停发的另一段日志从217.438秒到217.938秒，间隔0.500秒。这里的间隔是车端状态记录之差。
 
-界面上方「最近收到的车辆状态」显示遥测速率，下方「控制目标（输入值）」保留用户填写的速度。车端确认急停后应观察上方零速与锁存状态，复位后由使用者重新应用目标。
+右侧「车辆遥测」显示实测速度，「控制目标」保留用户填写的速度。车端确认急停后应观察零速与锁存状态，复位后由使用者重新应用目标。界面及故障工具见[4.5](#desktop-acceptance-tools)。
 
 <a id="management-request-flow"></a>
 

@@ -20,6 +20,9 @@ class TrajectoryHistory:
 
         self._points.append(point)
 
+    def clear(self) -> None:
+        self._points.clear()
+
     # Python的列表是引用传递，防止 self._points 里 append 新点后，外部引用的 points() 也跟着改变。
     # Python的元组不可变,所以tuple(self._points)：返回独立的不可变快照。
     def points(self) -> tuple[tuple[float, float], ...]:

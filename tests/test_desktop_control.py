@@ -140,7 +140,8 @@ class TestDesktopControl(unittest.TestCase):
 
     def test_failed_periodic_send_preserves_telemetry(self):
         self.apply_inputs(1.5, 90.0)
-        before_values = self.window.values.text()
+        readings = [self.window.speed_value, *self.window.pose_values, self.window.protection_value]
+        before_values = [label.text() for label in readings]
         before_status = self.window.status.text()
         before_state = self.window.map.state
 
@@ -156,7 +157,7 @@ class TestDesktopControl(unittest.TestCase):
         self.assertFalse(self.window.sock.closed)
         self.assertIn("发送失败", self.window.control_status.text())
 
-        self.assertEqual(self.window.values.text(), before_values)
+        self.assertEqual([label.text() for label in readings], before_values)
         self.assertEqual(self.window.status.text(), before_status)
         self.assertIs(self.window.map.state, before_state)
 
@@ -287,19 +288,19 @@ class TestSecureDesktopControl(unittest.TestCase):
         self.assertTrue(self.window.sock.closed)
         self.worker.close.assert_called_once_with()
 
-    def test_secure_cli_passes_worker_to_window(self):
+    def test_secure_cli_passes_connection_to_window_for_graphical_authentication(self):
         with (
-            patch("rover.desktop.app.getpass", return_value="test-only"),
-            patch("rover.desktop.app.SecureControlWorker") as create_worker,
+            patch("rover.desktop.app.connect_management") as connect,
             patch("rover.desktop.app.QApplication") as create_app,
             patch("rover.desktop.app.DesktopConsole") as create_window,
         ):
             create_app.return_value.exec.return_value = 0
             self.assertEqual(main(["--secure"]), 0)
-            create_worker.assert_called_once()
-            create_window.assert_called_once_with(
-                secure_worker=create_worker.return_value
-            )
+            options = create_window.call_args.kwargs
+            self.assertEqual(options["management_address"], ("127.0.0.1", 19177))
+            self.assertEqual(options["client_id"], "desktop-a")
+            self.assertIs(options["management_connect"].func, connect)
+            connect.assert_not_called()
 
     def test_secure_emergency_and_reset_buttons_call_worker(self):
         emergency = getattr(self.window, "emergency_stop_button", None)
