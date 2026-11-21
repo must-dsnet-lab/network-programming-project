@@ -8,6 +8,7 @@ from rover.vehicle.control_guard import (
     ControlGuardState,
     close_control_session,
     update_windowed_command_guard,
+    update_windowed_command_guard_with_reason,
 )
 from rover.vehicle.control_watchdog import AcceptedTarget
 from rover.vehicle.control_window import ControlWindow
@@ -102,6 +103,73 @@ class TestWindowedControlGuard(unittest.TestCase):
                     update_windowed_command_guard(guard, now_s=100.2, incoming=command),
                     guard,
                 )
+
+    def test_rejection_reports_the_first_failed_check_without_refreshing_control(self):
+        cases = (
+            (
+                "fault_latched",
+                replace(self.guard, fault_latched=True, control_window=None),
+                self.command,
+                100.2,
+            ),
+            (
+                "window_missing",
+                replace(self.guard, enabled=False, control_window=None),
+                self.command,
+                100.2,
+            ),
+            (
+                "window_mismatch",
+                self.guard,
+                replace(self.command, window_id="window-other"),
+                100.25,
+            ),
+            ("window_time_invalid", self.guard, self.command, float("nan")),
+            (
+                "window_not_started",
+                replace(self.guard, control_window=ControlWindow("window-a", 100.2, 100.45)),
+                self.command,
+                100.19,
+            ),
+            ("window_expired", self.guard, self.command, 100.25),
+            (
+                "session_disabled",
+                replace(self.guard, enabled=False),
+                replace(self.command, session_id="session-other"),
+                100.2,
+            ),
+            (
+                "session_mismatch",
+                self.guard,
+                replace(self.command, session_id="session-other", seq=3),
+                100.2,
+            ),
+            ("sequence_duplicate", self.guard, replace(self.command, seq=3), 100.2),
+            ("sequence_out_of_order", self.guard, replace(self.command, seq=2), 100.2),
+        )
+
+        for expected, guard, command, now_s in cases:
+            with self.subTest(reason=expected):
+                after, reason = update_windowed_command_guard_with_reason(
+                    guard, now_s=now_s, incoming=command
+                )
+                self.assertIs(after, guard)
+                self.assertEqual(reason, expected)
+
+    def test_accepted_command_and_idle_watchdog_do_not_report_rejections(self):
+        accepted, accepted_reason = update_windowed_command_guard_with_reason(
+            self.guard, now_s=100.2, incoming=self.command
+        )
+        self.assertEqual(accepted.last_seq, self.command.seq)
+        self.assertEqual(accepted.last_accepted, AcceptedTarget(self.command.target, 100.2))
+        self.assertIsNone(accepted_reason)
+
+        idle, idle_reason = update_windowed_command_guard_with_reason(
+            self.guard, now_s=100.6
+        )
+        self.assertTrue(idle.fault_latched)
+        self.assertIsNone(idle.last_accepted)
+        self.assertIsNone(idle_reason)
 
     def test_idle_still_checks_watchdog(self):
         after = update_windowed_command_guard(self.guard, now_s=100.6)

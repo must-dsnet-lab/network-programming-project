@@ -9,6 +9,11 @@ from rover.protocol.control_auth import (
 
 MAX_CONTROL_MESSAGE_BYTES = 1200
 
+
+class ControlMacVerificationError(ValueError):
+    """The received control MAC failed verification."""
+
+
 @dataclass(frozen=True)
 # 在已有会话中更新运动目标
 # controlCommand控制的是一个具体的报文
@@ -225,7 +230,7 @@ def decode_windowed_command(data: bytes, key: bytes) -> ControlCommand:
     received_mac = message.pop("mac", None)
     payload = _encode_control_fields(message)
     if not verify_control_mac(payload, key, received_mac):
-        raise ValueError("control MAC verification failed")
+        raise ControlMacVerificationError("control MAC verification failed")
 
     version = message.get("version")
 

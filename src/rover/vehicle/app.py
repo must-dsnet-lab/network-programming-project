@@ -11,11 +11,13 @@ from rover.vehicle.control_guard import (
     ControlGuardState,
     update_control_guard,
     close_control_session,
-    update_windowed_command_guard,
+    update_windowed_command_guard_with_reason,
 )
 from rover.vehicle.management_runtime import management_listener
+from rover.protocol.control_codec import ControlMacVerificationError
 from rover.protocol.telemetry_codec import TelemetrySnapshot
 from rover.transport.udp_transport import (
+    NoActiveControlKeyError,
     send_telemetry,
     try_receive_windowed_control_command,
     try_receive_target,
@@ -103,6 +105,7 @@ def main(
                 # 2. 每轮最多尝试接收一个控制报文
                 received = None
                 rejected_message = None
+                rejection_reason = None
                 try:
                     if process_management is None:
                         received = try_receive_target(sock)
@@ -112,15 +115,25 @@ def main(
                         )
                 except ValueError as exc:
                     rejected_message = str(exc)
+                    if process_management is not None:
+                        if isinstance(exc, ControlMacVerificationError):
+                            rejection_reason = "invalid_mac"
+                        elif isinstance(exc, NoActiveControlKeyError):
+                            rejection_reason = "missing_session_key"
+                        else:
+                            rejection_reason = "invalid_datagram"
 
                 # 3. 收包后重新取时，再判定保护状态
                 now_s = monotonic()
                 incoming = received[0] if received is not None else None
-                previous_seq = guard.last_seq
                 if process_management is None:
                     guard = update_control_guard(guard, now_s, incoming)
                 else:
-                    guard = update_windowed_command_guard(guard, now_s, incoming)
+                    guard, guard_rejection = update_windowed_command_guard_with_reason(
+                        guard, now_s, incoming
+                    )
+                    if guard_rejection is not None:
+                        rejection_reason = guard_rejection
 
                 # 4. 每轮只推进车辆一次
                 state = step_vehicle(state, guard.last_accepted, now_s, dt_s)
@@ -157,7 +170,7 @@ def main(
                     if process_management is None:
                         event = "ignored" if guard.fault_latched else "accepted"
                     else:
-                        event = "accepted" if guard.last_seq != previous_seq else "ignored"
+                        event = "accepted" if rejection_reason is None else "ignored"
                     print(f"{event} from {peer}: {message}", flush=True)
 
                 if writer is not None:
@@ -165,6 +178,9 @@ def main(
                         record(now_s, "session", detail=session_change)
                     if event == "accepted":
                         record(guard.last_accepted.accepted_at_s, "control_accepted", seq=guard.last_seq)
+                    elif rejection_reason is not None:
+                        rejected_seq = incoming.seq if incoming is not None else None
+                        record(now_s, "control_rejected", seq=rejected_seq, detail=rejection_reason)
                     observed_state = (state.speed_mps, guard.fault_latched)
                     if observed_state != last_recorded_state:
                         # Use the timestamp after stepping the simulation for actual motion.
