@@ -6,7 +6,9 @@ from io import StringIO
 from PySide6.QtGui import QCloseEvent
 
 from rover.core.control_target import ControlTarget
+from rover.core.vehicle_model import VehicleState
 from rover.desktop.control_worker import SecureControlWorker, WorkerStatus
+from rover.protocol.telemetry_codec import TelemetrySnapshot
 from PySide6.QtWidgets import QApplication
 
 from rover.desktop.app import DesktopConsole, main
@@ -86,6 +88,7 @@ class TestDesktopControl(unittest.TestCase):
         return result
 
     def test_window_starts_without_sending(self):
+        self.assertEqual(self.window.operator_label.text(), "当前操作员：本地演示")
         self.assertEqual(self.sent, [])
         self.assertIsNone(self.window.map.state)
         self.assertFalse(self.control("control_timer").isActive())
@@ -272,6 +275,73 @@ class TestSecureDesktopControl(unittest.TestCase):
         self.assertTrue(self.window.timer.isActive())
         self.assertFalse(self.window.sock.closed)
 
+    def test_operator_label_tracks_authenticated_session(self):
+        self.worker.status.return_value = WorkerStatus("connecting")
+        window = DesktopConsole(secure_worker=self.worker, operator_id="desk-a02")
+        self.addCleanup(window.close)
+        self.assertEqual(window.operator_label.text(), "当前操作员：待认证")
+
+        for state in ("ready", "sending", "latched"):
+            self.worker.status.return_value = WorkerStatus(state)
+            window.poll_secure_status()
+            self.assertEqual(window.operator_label.text(), "当前操作员：desk-a02")
+
+        self.worker.status.return_value = WorkerStatus("failed")
+        window.poll_secure_status()
+        self.assertEqual(window.operator_label.text(), "当前操作员：—")
+
+        self.worker.status.return_value = WorkerStatus("ready")
+        window.poll_secure_status()
+        self.worker.wait_closed.return_value = False
+        window.closeEvent(QCloseEvent())
+        self.worker.wait_closed.return_value = True
+        self.assertEqual(window.operator_label.text(), "当前操作员：—")
+
+    def test_event_log_is_bounded_deduplicated_and_omits_failure_detail(self):
+        history = self.window.event_log
+        self.assertTrue(history.isReadOnly())
+
+        self.worker.status.return_value = WorkerStatus("failed", "private diagnostic")
+        self.window.poll_secure_status()
+        self.window.poll_secure_status()
+        lines = history.toPlainText().splitlines()
+        self.assertEqual(len(lines), 2)
+        self.assertRegex(lines[0], r"^\[\d{2}:\d{2}:\d{2}\] 安全连接就绪$")
+        self.assertRegex(lines[1], r"^\[\d{2}:\d{2}:\d{2}\] 安全控制失败$")
+
+        for _ in range(51):
+            for state in ("connecting", "ready"):
+                self.worker.status.return_value = WorkerStatus(state)
+                self.window.poll_secure_status()
+        lines = history.toPlainText().splitlines()
+        self.assertEqual(len(lines), 100)
+        self.assertTrue(lines[-1].endswith("安全连接就绪"))
+        self.assertNotIn("安全控制失败", history.toPlainText())
+
+    def test_event_log_records_telemetry_availability_and_fault_transitions(self):
+        peer = ("127.0.0.1", 9999)
+        state = VehicleState(x_m=0.0, y_m=0.0, heading_rad=0.0, speed_mps=0.0)
+        normal = (TelemetrySnapshot(state=state, fault_latched=False), peer)
+        latched = (TelemetrySnapshot(state=state, fault_latched=True), peer)
+        with (
+            patch("rover.desktop.app.monotonic") as clock,
+            patch("rover.desktop.app.try_receive_telemetry", side_effect=[
+                normal, None, latched, latched, None, None, None, normal, None,
+            ]),
+        ):
+            for now in (10.0, 10.1, 11.2, 11.3, 11.4):
+                clock.return_value = now
+                self.window.poll_telemetry()
+
+        messages = [
+            line.split("] ", 1)[1]
+            for line in self.window.event_log.toPlainText().splitlines()
+        ]
+        self.assertEqual(messages.count("遥测可用"), 2)
+        self.assertEqual(messages.count("遥测过期"), 1)
+        self.assertEqual(messages.count("故障锁存"), 1)
+        self.assertEqual(messages.count("故障锁存已解除"), 1)
+
     def test_close_lets_worker_finish_without_blocking_ui(self):
         self.worker.wait_closed.return_value = False
         event = QCloseEvent()
@@ -300,6 +370,7 @@ class TestSecureDesktopControl(unittest.TestCase):
             create_window.assert_called_once_with(
                 secure_worker=create_worker.return_value,
                 telemetry_address=("127.0.0.1", 10000),
+                operator_id="desktop-a",
             )
 
     def test_secure_emergency_and_reset_buttons_call_worker(self):
@@ -346,6 +417,8 @@ class TestSecureDesktopControl(unittest.TestCase):
                         "10001",
                         "--server-name",
                         "rover.demo",
+                        "--client-id",
+                        "desk-a02",
                     ]
                 ),
                 0,
@@ -360,9 +433,11 @@ class TestSecureDesktopControl(unittest.TestCase):
             self.assertEqual(
                 connect_management.call_args.kwargs["server_hostname"], "rover.demo"
             )
+            self.assertEqual(connect_management.call_args.kwargs["client_id"], "desk-a02")
             create_window.assert_called_once_with(
                 secure_worker=create_worker.return_value,
                 telemetry_address=("192.0.2.20", 10001),
+                operator_id="desk-a02",
             )
 
     def test_telemetry_socket_binds_requested_address(self):
