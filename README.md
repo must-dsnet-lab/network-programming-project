@@ -75,7 +75,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-最近实际回归：2026-11-21，33个测试模块、310项通过，用户终端用时0.775秒；启动参数专项9项通过（0.099秒）。遥测接口绑定的定向测试先取得1项预期失败（0.009秒），修正后通过；模块`--help`已显示正式参数。本地配置、新证书及正式车端命令已完成真实TLS/UDP双终端验收。此前管理运行时基线为32个模块、301项（1.065秒），正式复位为31个模块、298项（0.345秒），急停为30个模块、288项（0.335秒），管理客户端为29个模块、276项（0.307秒），窗口控制为28个模块、269项（0.311秒），相应实测记录分别保留。开发方式及RED/GREEN实例见[6.4 测试驱动开发与阶段验收](#development-method)。
+最近实际回归：2026-11-21，34个测试模块、316项通过，用户终端用时1.243秒；桌面安全连接入口先取得6项预期失败，再取得6项通过（均0.005秒）。正式车端PR #21已合并为5314264，合并后310项通过（0.970秒）；启动参数专项9项通过（0.099秒），正式车端命令和本地新证书此前已完成真实TLS/UDP双终端验收。此前管理运行时基线为32个模块、301项（1.065秒），正式复位为31个模块、298项（0.345秒），急停为30个模块、288项（0.335秒），管理客户端为29个模块、276项（0.307秒），窗口控制为28个模块、269项（0.311秒），相应实测记录分别保留。开发方式及RED/GREEN实例见[6.4 测试驱动开发与阶段验收](#development-method)。
 
 历史基线：2026-11-19助手完整回归21个测试模块、214项通过，包括控制编解码40项、认证控制编解码9项、HMAC计算与核对6项、管理消息编解码26项、会话密钥8项、UDP控制收发15项、TCP应用记录15项、TCP传输7项、控制保护28项、桌面控制8项。Qt使用离屏模式，Socket使用本机回环；原始记录保留供对照。
 
@@ -107,9 +107,9 @@ LICENSE          项目许可证
 | `protocol` | `control_codec.py`、`telemetry_codec.py`与`management_codec.py`定义控制、遥测和管理消息的JSON编解码与字段校验；`control_auth.py`计算和核对HMAC认证码。 |
 | `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误；`tcp_records.py`编解码TCP应用记录并从分次到达的字节中提取完整正文；`tcp_transport.py`负责本机TCP收发、EOF及读取期限。 |
 | `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理会话、密钥、使能、接受记录及超时；`management_session.py`处理身份和会话归属，`management_connection.py`处理管理消息流，`management_runtime.py`负责TLS监听、网络线程与主线程队列交接；`vehicle_runtime.py`组合受保护步进，`app.py`运行车端循环。 |
-| `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹；`management_client.py`封装TLS管理请求、自动编号及回复配对，目前由实验脚本调用。 |
-| `tests` | 最近实际完整回归覆盖33个测试模块、310项测试，涵盖模型、控制/遥测/管理消息、管理客户端、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动配置、真实UDP、本机TCP、TCP应用记录、保护、会话状态与界面行为。 |
-| `examples` | 8个教学示例，可单独观察离线运动、单包/周期控制、超时及命令行遥测。 |
+| `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹；`management_client.py`封装TLS管理请求、自动编号及回复配对；`secure_connection.py`统一证书校验、账号认证和连接清理，后台循环及GUI接入继续推进。 |
+| `tests` | 最近实际完整回归覆盖34个测试模块、316项测试，涵盖模型、控制/遥测/管理消息、管理客户端、安全连接入口、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动配置、真实UDP、本机TCP、TCP应用记录、保护、会话状态与界面行为。 |
+| `examples` | 教学示例，可单独观察离线运动、单包与周期控制、超时、命令行遥测和安全管理连接。 |
 | `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
 `core`负责运动规则，车端`vehicle`决定何时应用什么目标；同一模型可用于离线示例和联网运行。
@@ -1007,6 +1007,55 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 跨机部署按角色准备材料：车端保存`server.pem`、`server.key`和可信客户端配置；控制端读取项目CA的公开`ca.pem`，配置车端地址及自己的客户端ID/凭据。当前方案不要求每个控制端分别生成CA或申请客户端证书，也无需修改Windows全局信任库；CA私钥保留在签发材料的一处，不分发给控制端。
 
 跨机阶段将集中完善地址参数化的证书签发工具、每种角色的部署说明，以及可保存的桌面连接配置，目标为首次配置完成后日常直接启动。现有证书只列出`localhost`和`127.0.0.1`；正式跨机证书还需纳入车端实际局域网地址或名称，并由客户端核对对应身份。以上为后续部署目标，当前尚未完成跨机和GUI验收，不通过关闭证书校验简化接入。
+
+### 5.14 桌面安全连接入口
+
+`desktop/secure_connection.py`中的`connect_management()`把实验脚本反复使用的连接步骤统一起来：
+
+```text
+读取公开CA → 建立TCP连接 → TLS校验证书与主机名
+           → 发送账号凭据 → 认证通过 → 交付ManagementClient
+                                           ↓
+                                 调用者退出时关闭连接
+```
+
+| 参数或对象 | 用途 |
+| --- | --- |
+| `address` | 实际连接的车端网络地址，例如127.0.0.1:19177。 |
+| `ca_file` | 公开CA证书路径，用于验证车端证书。 |
+| `server_hostname` | TLS期望的车端身份；本机实验使用localhost，与TCP连接地址127.0.0.1分开传入。 |
+| `client_id`、`credential` | 证书校验通过后，在TLS管理通道内提交的桌面账号及凭据。 |
+| `timeout_s` | TCP连接及随后Socket阻塞操作使用的超时，默认3秒；它不是整个会话的生命周期。记录接收仍另有1秒的分次组装期限。 |
+| `ManagementClient` | 在同一TLS连接中执行管理请求，保留单一接收流并自动分配请求编号。 |
+
+`@contextmanager`将包含`yield`的函数包装成可供`with`使用的上下文管理器。进入`with connect_management(...) as client`时先执行证书校验和账号认证；只有认证通过才到达`yield client`，交付该对象。调用者的`with`代码执行结束或抛出异常时，连接入口继续退出内层`with`并关闭TLS/TCP资源。账号认证占用请求编号1，随后由调用者打开会话的请求自然使用编号2。
+
+证书或主机名校验失败时不发送账号凭据；凭据拒绝时抛出`PermissionError`，不向调用者交付客户端。该入口只负责接通与清理，打开会话、使能、窗口和UDP发送仍由后续控制流程显式执行。函数会同步等待网络操作，GUI整合时由后台线程调用，界面通过命令和状态交接。
+
+用户已完成本轮RED/GREEN：6项FAIL（0.005秒）→6项通过（0.005秒），完整316项通过（1.243秒）。六项专项核对成功后的编号延续、认证拒绝、证书失败不发凭据、调用者异常清理、截断认证回复清理，以及缺少CA时不建立TCP。测试替换网络和SSL边界，管理客户端、编解码与TCP分帧真实运行。
+
+#### 5.14.1 本机双终端验收
+
+在项目根目录启动正式车端，等它显示`Management TLS listening on ('127.0.0.1', 19177)`，并保持该终端运行。
+
+```powershell
+.\.venv\Scripts\python.exe -m rover.vehicle.app --secure --cert-dir ".\local\certs" --credentials-file ".\local\trusted_clients.json"
+```
+
+在另一个终端运行[连接示例](examples/demo_secure_connection.py)。默认使用`local/certs/ca.pem`和账号`desktop-a`，凭据由程序提示输入。
+
+```powershell
+.\.venv\Scripts\python.exe -m examples.demo_secure_connection
+.\.venv\Scripts\python.exe -m examples.demo_secure_connection --server-name wrong.localhost
+```
+
+| 场景 | 实测结果 |
+| --- | --- |
+| 正确主机名和凭据 | 认证通过。两次打开会话的请求编号为2和3，返回同一个会话ID。客户端退出后，车端显示`Management session: None`。 |
+| 正确主机名、错误凭据 | 客户端显示`REJECT credential`。 |
+| 错误主机名 | 客户端显示`REJECT certificate: Hostname mismatch`，车端记录TLS握手告警。 |
+
+未启动车端监听时，本机连接可能返回`WinError 10061`。此时先核对车端启动输出和管理端口，凭据检查发生在TCP连接和TLS握手之后。
 
 <a id="project-maintenance"></a>
 
