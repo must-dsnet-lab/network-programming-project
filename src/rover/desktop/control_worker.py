@@ -31,9 +31,12 @@ class SecureControlWorker:
         self,
         connect: Callable[[], AbstractContextManager[ManagementClient]],
         address: tuple[str, int],
+        *,
+        send_command: Callable[..., int] | None = None,
     ):
         self._connect = connect
         self._address = address
+        self._send_command = send_command
         self._condition = Condition()  # Python 的条件变量, 让线程在没事做时睡眠
         self._target: ControlTarget | None = None
         self._generation = 0
@@ -133,7 +136,7 @@ class SecureControlWorker:
                 socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp,
             ):
                 udp.setblocking(False)
-                session = SecureControlSession(client, udp, self._address)
+                session = SecureControlSession(client, udp, self._address, send_command=self._send_command)
                 with self._condition:
                     if self._closing:
                         return

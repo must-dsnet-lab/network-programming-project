@@ -26,11 +26,13 @@ class SecureControlSession:
         address: tuple[str, int],
         *,
         clock: Callable[[], float] = monotonic,
+        send_command: Callable[..., int] | None = None,
     ):
         self._client = client
         self._sock = sock
         self._address = address
         self._clock = clock
+        self._send_command = send_command
         self._clear_session()
 
     def _clear_session(self) -> None:
@@ -96,7 +98,8 @@ class SecureControlSession:
             )
             gate = send_gate if send_gate is not None else nullcontext()
             with gate:
-                sent = send_windowed_control_command(
+                send = self._send_command or send_windowed_control_command
+                sent = send(
                     self._sock, command, self._address, key=self._key
                 )
         except (OSError, ValueError):
