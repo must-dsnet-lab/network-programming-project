@@ -29,7 +29,12 @@ from rover.transport.udp_transport import send_target, try_receive_telemetry
 
 
 class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
-    def __init__(self, *, secure_worker: SecureControlWorker | None = None):
+    def __init__(
+        self,
+        *,
+        secure_worker: SecureControlWorker | None = None,
+        telemetry_address: tuple[str, int] = ("127.0.0.1", 10000),
+    ):
         super().__init__()
         self.secure_worker = secure_worker
         self._secure_close_pending = False
@@ -40,7 +45,7 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             "QLabel { font-size: 14px; }"
         )
 
-        self.listen_address = ("127.0.0.1", 10000)
+        self.listen_address = telemetry_address
         self.last_received_s = None
         self.telemetry_timeout_s = 1.0
 
@@ -382,32 +387,63 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--ca-file", type=Path, help="公开 CA 证书")
     parser.add_argument("--server-name", help="车端证书上的名称")
     parser.add_argument("--client-id", help="桌面账号")
+    parser.add_argument("--vehicle-host", type=str.strip, help="车端地址")
+    parser.add_argument("--management-port", type=int, help="车端 TCP 管理端口")
+    parser.add_argument("--control-port", type=int, help="车端 UDP 控制端口")
+    parser.add_argument("--telemetry-bind-host", type=str.strip, help="桌面端监听遥测的本机地址")
+    parser.add_argument("--telemetry-port", type=int, help="桌面端监听遥测的 UDP 端口")
     args = parser.parse_args(argv)
 
     tls_args = (args.ca_file, args.server_name, args.client_id)
     if not args.secure and any(value is not None for value in tls_args):
         parser.error("--ca-file、--server-name 和 --client-id 需要 --secure")
 
+    lan_args = (
+        args.vehicle_host,
+        args.management_port,
+        args.control_port,
+        args.telemetry_bind_host,
+        args.telemetry_port,
+    )
+    if not args.secure and any(value is not None for value in lan_args):
+        parser.error("局域网参数需要 --secure")
+    if args.vehicle_host == "" or args.telemetry_bind_host == "":
+        parser.error("--vehicle-host 和 --telemetry-bind-host 的地址不能为空")
+    for option, port in (
+        ("--management-port", args.management_port),
+        ("--control-port", args.control_port),
+        ("--telemetry-port", args.telemetry_port),
+    ):
+        if port is not None and not 1 <= port <= 65535:
+            parser.error(f"{option} 需要 1–65535 的端口")
+
+    vehicle_host = args.vehicle_host or "127.0.0.1"
+    telemetry_address = (
+        args.telemetry_bind_host or "127.0.0.1",
+        args.telemetry_port or 10000,
+    )
+
     worker = None
     if args.secure:
         credential = getpass("Credential (hidden): ")
         connect = partial(
             connect_management,
-            ("127.0.0.1", 19177),
+            (vehicle_host, args.management_port or 19177),
             ca_file=args.ca_file or Path("local/certs/ca.pem"),
-            server_hostname=args.server_name or "localhost",
+            server_hostname=args.server_name or args.vehicle_host or "localhost",
             client_id=args.client_id or "desktop-a",
             credential=credential,
         )
-        worker = SecureControlWorker(connect, ("127.0.0.1", 9999))
+        worker = SecureControlWorker(connect, (vehicle_host, args.control_port or 9999))
 
     # QApplication 负责管理整个程序的全局资源
     # sys.argv：把程序参数传给 Qt
     app = QApplication(sys.argv)
 
     try:
-        window = (
-            DesktopConsole(secure_worker=worker)
+        window = DesktopConsole(
+            secure_worker=worker,
+            telemetry_address=telemetry_address,
         )  # 窗口的首次显示、鼠标拖拽拉伸：全靠 Qt 底层的操作系统事件
     except OSError as exc:
         QMessageBox.critical(

@@ -1,12 +1,29 @@
 #生成实验 CA → 签发服务器证书 → 校验名称和有效期
 param(
     [string]$OpenSsl = "openssl",
-    [string]$OutputDirectory = ""
+    [string]$OutputDirectory = "",
+    [string]$ServerIp
 )
 
 $ErrorActionPreference = "Stop"
 [void](Get-Command -Name $OpenSsl -CommandType Application -ErrorAction Stop)
+$serverIps = @("127.0.0.1")
+if ($PSBoundParameters.ContainsKey("ServerIp")) {
+    $parsedIp = $null
+    if (
+        -not [System.Net.IPAddress]::TryParse($ServerIp, [ref]$parsedIp) -or
+        $parsedIp.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork -or
+        $parsedIp.ToString() -cne $ServerIp -or
+        $ServerIp -eq "0.0.0.0"
+    ) {
+        throw "ServerIp must be a specific IPv4 address, such as 192.168.1.20."
+    }
 
+    if ($ServerIp -ne "127.0.0.1") {
+        $serverIps += $ServerIp
+    }
+}
+$subjectAltName = "DNS:localhost," + (($serverIps | ForEach-Object { "IP:$_" }) -join ",")
 if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $PSScriptRoot "..\local\certs"
 }
@@ -26,7 +43,7 @@ $serverKey = Join-Path $OutputDirectory "server.key"
 $serverCsr = Join-Path $OutputDirectory "server.csr"
 $serverCert = Join-Path $OutputDirectory "server.pem"
 
-@'
+@"
 [req]
 distinguished_name = dn
 
@@ -39,12 +56,12 @@ subjectKeyIdentifier = hash
 
 [server_ext]
 basicConstraints = critical,CA:FALSE
-subjectAltName = DNS:localhost,IP:127.0.0.1
+subjectAltName = $subjectAltName
 keyUsage = critical,digitalSignature,keyEncipherment
 extendedKeyUsage = serverAuth
 subjectKeyIdentifier = hash
 authorityKeyIdentifier = keyid,issuer
-'@ | Set-Content -LiteralPath $config -Encoding ascii
+"@ | Set-Content -LiteralPath $config -Encoding ascii
 
 function Invoke-TlsOpenSsl {
     param([string[]]$Arguments)
@@ -74,10 +91,12 @@ Invoke-TlsOpenSsl -Arguments @(
     "verify", "-CAfile", $caCert, "-purpose", "sslserver",
     "-verify_hostname", "localhost", $serverCert
 )
-Invoke-TlsOpenSsl -Arguments @(
-    "verify", "-CAfile", $caCert, "-purpose", "sslserver",
-    "-verify_ip", "127.0.0.1", $serverCert
-)
+foreach ($ip in $serverIps) {
+    Invoke-TlsOpenSsl -Arguments @(
+        "verify", "-CAfile", $caCert, "-purpose", "sslserver",
+        "-verify_ip", $ip, $serverCert
+    )
+}
 Invoke-TlsOpenSsl -Arguments @(
     "x509", "-in", $serverCert, "-noout", "-dates", "-ext", "subjectAltName"
 )
