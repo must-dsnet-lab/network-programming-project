@@ -11,7 +11,7 @@ class TestUdpControlFaults(unittest.TestCase):
     desktop = ("192.168.174.1", 55186)
     vehicle = ("192.168.174.128", 9999)
 
-    def run_relay(self, receives, *, loss_percent=0, delay_ms=0, seed=42):
+    def run_relay(self, receives, *, loss_percent=0, delay_ms=0, seed=42, **order_options):
         now = 10.0
         incoming = iter(receives)
         sock = Mock()
@@ -29,6 +29,7 @@ class TestUdpControlFaults(unittest.TestCase):
             udp_control_faults.relay_controls(
                 sock, self.desktop[0], self.vehicle, log,
                 loss_percent=loss_percent, delay_ms=delay_ms, seed=seed,
+                **order_options,
             )
         log.seek(0)
         return sock, list(csv.DictReader(log))
@@ -89,11 +90,75 @@ class TestUdpControlFaults(unittest.TestCase):
         sock.sendto.assert_not_called()
         self.assertEqual(rows[-1]["detail"], "pending_discarded=1")
 
+    def test_reorder_sends_the_later_datagram_first_and_records_original_indices(self):
+        sock, rows = self.run_relay([
+            (10.0, (b"first", self.desktop)),
+            (10.05, (b"second", self.desktop)),
+            (10.10, (b"unrelated", ("192.168.174.50", 12345))),
+            (10.11, (b"third", self.desktop)),
+            (11.0, KeyboardInterrupt()),
+        ], reorder_percent=15)
+        self.assertEqual(sock.sendto.call_args_list, [
+            call(b"first", self.vehicle), call(b"third", self.vehicle), call(b"second", self.vehicle),
+        ])
+        self.assertIn("reorder_percent=15", rows[0]["detail"])
+        self.assertIn("reorder_hold_ms=120", rows[0]["detail"])
+        forwards = [row for row in rows if row["event"] == "packet_forwarded"]
+        self.assertEqual([(row["packet_index"], row["detail"]) for row in forwards], [
+            ("1", "original"), ("3", "original"), ("2", "reordered"),
+        ])
+        self.assertEqual(forwards[-1]["observed_delay_ms"], "60.000")
+
+    def test_reorder_flushes_held_datagram_at_deadline_even_if_idle(self):
+        deadline = 10.05 + 0.12
+        sock, rows = self.run_relay([
+            (10.0, (b"first", self.desktop)),
+            (10.05, (b"held", self.desktop)),
+            (deadline - 0.01, TimeoutError()),
+            (deadline, TimeoutError()),
+            (11.0, KeyboardInterrupt()),
+        ], reorder_percent=15)
+        self.assertEqual(sock.sendto.call_args_list, [
+            call(b"first", self.vehicle), call(b"held", self.vehicle),
+        ])
+        forwards = [row for row in rows if row["event"] == "packet_forwarded"]
+        self.assertEqual(forwards[-1]["detail"], "hold_expired")
+        self.assertEqual(forwards[-1]["observed_delay_ms"], "120.000")
+
+    def test_reorder_shutdown_reports_pending_without_sending_it_early(self):
+        sock, rows = self.run_relay([
+            (10.0, (b"first", self.desktop)),
+            (10.05, (b"held", self.desktop)),
+            (10.10, KeyboardInterrupt()),
+        ], reorder_percent=15)
+        sock.sendto.assert_called_once_with(b"first", self.vehicle)
+        self.assertEqual(rows[-1]["detail"], "pending_discarded=1")
+
+    def test_duplicate_forwards_a_byte_identical_copy_with_the_same_index(self):
+        sock, rows = self.run_relay([
+            (10.0, (b"first", self.desktop)),
+            (10.05, (b"\x00\xffsecond", self.desktop)),
+            (10.10, (b"third", self.desktop)),
+            (11.0, KeyboardInterrupt()),
+        ], duplicate_percent=15)
+        self.assertEqual(sock.sendto.call_args_list, [
+            call(b"first", self.vehicle), call(b"\x00\xffsecond", self.vehicle),
+            call(b"\x00\xffsecond", self.vehicle), call(b"third", self.vehicle),
+        ])
+        self.assertIn("duplicate_percent=15", rows[0]["detail"])
+        forwards = [row for row in rows if row["event"] == "packet_forwarded"]
+        self.assertEqual([(row["packet_index"], row["detail"]) for row in forwards], [
+            ("1", "original"), ("2", "original"), ("2", "duplicate"), ("3", "original"),
+        ])
+
     def test_cli_rejects_invalid_configuration_before_allocating_socket(self):
         for options in (
             ["--loss-percent", "10"],
             ["--delay-ms", "99"],
             ["--loss-percent", "5", "--delay-ms", "100"],
+            ["--reorder-percent", "10"],
+            ["--reorder-percent", "15", "--duplicate-percent", "15"],
+            ["--loss-percent", "5", "--duplicate-percent", "15"],
             ["--listen-port", "9999"],
             ["--desktop-host", "8.8.8.8"],
         ):

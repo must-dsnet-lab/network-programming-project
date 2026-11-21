@@ -1278,6 +1278,44 @@ N1 按种子对每个合格控制报文独立抽样。丢包档的实测比例�
 
 100 ms 档最后接受的是 `seq=42`，到锁存经过 519.250 ms。续期导致的旧窗口包晚到与这档接收情况相符。300 ms 档的每条已转发报文仅在中继就停留至少 300.429 ms，超过车端 250 ms 控制窗口的有效期。车端使能后一直没有接受有效指令，看门狗锁存。现有车端 CSV 记录了接受和锁存事件，逐包忽略原因与精确使能时刻未收录。两档观察数据写入了同一原始文件，归档保留原始文件并按遥测源端口区分。
 
+### 5.23 N3 控制报文乱序与重复实验
+
+沿用 §5.21 的 VMware 拓扑。Windows 控制台将 UDP 控制报文发往 Ubuntu 的 `192.168.174.128:10002`，转发器再发往车端 `9999/UDP`。Windows 控制台和只读观察端仍在 `192.168.174.1` 分别监听 `10000/UDP` 和 `10001/UDP`。
+
+先结束上一轮进程，每轮只选一种转发模式。首测均使用 15% 和种子 `42`。乱序模式只在没有暂留报文时抽样，选中的报文最多暂留 120 ms。下一条合格报文在期限前到达时先发下一条，再发暂留的报文。到期仍没有下一条时，先释放暂留报文。重复模式将选中报文的原始字节连续发送两次。两个百分比参数均可选 `5` 或 `15`，与 N1 的丢包和 N2 的延迟参数互斥。
+
+**Ubuntu 车端与 Windows 两端** 使用 §5.22 的原命令，按档位更换车端 `--event-log` 和 Windows 观察端的 `Tee-Object -FilePath`。控制台保持使用 `--control-port 10002`。
+
+| 档位 | Ubuntu 车端日志 | Windows 观察端日志 |
+| --- | --- | --- |
+| 15% 乱序 | `./local/n3-reorder15-vehicle-01.csv` | `.\local\n3-reorder15-observer-01.txt` |
+| 15% 重复 | `./local/n3-duplicate15-vehicle-01.csv` | `.\local\n3-duplicate15-observer-01.txt` |
+
+**Ubuntu 转发器** 每轮只执行当前档位的命令。
+
+```bash
+# 15% 乱序
+PYTHONPATH="$PWD/src" python3 -B -m rover.transport.udp_control_faults --bind-host 192.168.174.128 --desktop-host 192.168.174.1 --event-log ./local/n3-reorder15-relay-01.csv --reorder-percent 15 --seed 42
+
+# 15% 重复
+PYTHONPATH="$PWD/src" python3 -B -m rover.transport.udp_control_faults --bind-host 192.168.174.128 --desktop-host 192.168.174.1 --event-log ./local/n3-duplicate15-relay-01.csv --duplicate-percent 15 --seed 42
+```
+
+安全连接就绪且遥测可用后，将目标设为 `1.0 m/s`、`0°`，点击「开始／应用」并观察约 10 秒。若车辆持续运动，执行「正常停车」，确认速度归零。若提前停下或锁存，记录现象并结束本轮。保留两份 CSV 和观察端日志。
+
+中继 CSV 用 `relay_started` 记录配置和种子，成功发送仍记为 `packet_forwarded`。按文件行序查看 `packet_index` 和 `detail`。`original` 是正常发送，`reordered` 是在后一包之后发出的暂留报文，`hold_expired` 是到期释放的报文，`duplicate` 是原包之后发送的副本。乱序时核对较大的 `packet_index` 先出现，重复时核对两行复用同一个 `packet_index`。车端查看 `control_accepted` 的 `seq` 在同一会话内是否严格递增，有序号缺口时同时记录运动、零速与锁存状态。`packet_index` 和 `seq` 分别用于两端核对。车端 CSV 记录接受结果，逐包忽略原因待进一步取证。
+
+记录每轮的模式、配置比例、种子、中继实际乱序或重复次数、车端接受情况及最终状态。
+
+**N3 两档 VMware 首测（2026-11-22）**。两档均使用 15% 抽样概率和种子 42，注入丢弃数均为 0。
+
+| 档位 | 中继实际发送 | 车端接受 | 运动期间最长有效指令间隔 | 停车结果 |
+| --- | --- | --- | --- | --- |
+| 乱序 | 293 条，36 组相邻报文交换顺序 | 257 条，序号严格递增 | 151.952 ms | `x=10.28 m`，零速，未锁存 |
+| 重复 | 197 条原包和 29 条副本，共 226 次发送 | 197 条，`seq=0–196`，每个序号接受一次 | 109.907 ms | `x=10.02 m`，零速，未锁存 |
+
+乱序档中继起始发送顺序为 `packet_index=1, 3, 2`，车端起始接受 `seq=0, 2, 3`。重复档中继起始发送顺序为 `packet_index=1, 2, 2, 3`，车端起始接受 `seq=0, 1, 2`。重复档实测 29 个原包被复制，占 197 个原包的 14.72%。
+
 <a id="project-maintenance"></a>
 
 ## 6. 项目配置与文档维护
