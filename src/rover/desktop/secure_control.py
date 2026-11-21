@@ -1,11 +1,15 @@
 import socket
 from collections.abc import Callable
 from time import monotonic
-
+from contextlib import AbstractContextManager, nullcontext
 from rover.core.control_target import ControlTarget
 from rover.desktop.management_client import ManagementClient
 from rover.protocol.control_codec import ControlCommand
 from rover.transport.udp_transport import send_windowed_control_command
+
+
+class ControlSendCancelled(OSError):
+    """调用者在控制报文发出前取消了本次发送。"""
 
 
 class SecureControlSession:
@@ -46,9 +50,14 @@ class SecureControlSession:
         self._key = key
         return self._session_id
 
-    def start(self, target: ControlTarget) -> int:
+    def start(
+        self,
+        target: ControlTarget,
+        *,
+        send_gate: AbstractContextManager[None] | None = None,
+    ) -> int:
         if self._sending:
-            return self.send(target)
+            return self.send(target, send_gate=send_gate)
 
         session_id = self.open()
         self._renew_window(session_id)
@@ -58,9 +67,14 @@ class SecureControlSession:
             raise TimeoutError("control window expired while enabling")
 
         self._sending = True
-        return self.send(target)
+        return self.send(target, send_gate=send_gate)
 
-    def send(self, target: ControlTarget) -> int:
+    def send(
+        self,
+        target: ControlTarget,
+        *,
+        send_gate: AbstractContextManager[None] | None = None,
+    ) -> int:
         if not self._sending:
             raise RuntimeError("control sending is inactive")
 
@@ -73,9 +87,11 @@ class SecureControlSession:
                 target=target,
                 window_id=self._window_id,
             )
-            sent = send_windowed_control_command(
-                self._sock, command, self._address, key=self._key
-            )
+            gate = send_gate if send_gate is not None else nullcontext()
+            with gate:
+                sent = send_windowed_control_command(
+                    self._sock, command, self._address, key=self._key
+                )
         except (OSError, ValueError):
             self.stop_sending()
             raise

@@ -1,10 +1,11 @@
 import socket
 import unittest
 from unittest.mock import Mock
-
 from rover.core.control_target import ControlTarget
 from rover.desktop.management_client import ManagementClient
-from rover.desktop.secure_control import SecureControlSession
+from contextlib import contextmanager
+
+from rover.desktop.secure_control import ControlSendCancelled, SecureControlSession
 from rover.protocol.control_codec import ControlCommand, decode_windowed_command
 from rover.protocol.management_codec import (
     ControlWindowResult,
@@ -130,3 +131,41 @@ class TestSecureControlSession(unittest.TestCase):
         with self.assertRaises(RuntimeError):
             self.session.send(self.target)
         self.assertEqual(self.udp.sendto.call_count, 1)
+
+    @contextmanager
+    def packet_gate(self):
+        if self.stop_requested:
+            raise ControlSendCancelled("stop requested")
+        yield
+
+    def test_stop_requested_during_enable_blocks_first_packet(self):
+        self.stop_requested = False
+
+        def enable_and_stop(session_id):
+            self.stop_requested = True
+            return SessionEnableResult(4, True)
+
+        self.client.enable_session.side_effect = enable_and_stop
+        with self.assertRaises(ControlSendCancelled):
+            self.session.start(self.target, send_gate=self.packet_gate())
+
+        self.udp.sendto.assert_not_called()
+        with self.assertRaises(RuntimeError):
+            self.session.send(self.target)
+
+    def test_stop_requested_during_renewal_blocks_next_packet(self):
+        self.stop_requested = False
+        self.session.start(self.target)
+        self.now = 0.15
+
+        def renew_and_stop(session_id):
+            self.stop_requested = True
+            return ControlWindowResult(5, True, "window-b", 0.25)
+
+        self.client.issue_control_window.side_effect = renew_and_stop
+        with self.assertRaises(ControlSendCancelled):
+            self.session.send(self.target, send_gate=self.packet_gate())
+
+        self.assertEqual(self.udp.sendto.call_count, 1)
+        with self.assertRaises(RuntimeError):
+            self.session.send(self.target)
