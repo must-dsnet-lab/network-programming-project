@@ -106,6 +106,13 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         side.addWidget(self.start_button)
         side.addWidget(self.stop_button)
         side.addWidget(self.stop_sending_button)
+        if self.secure_worker is not None:
+            self.emergency_stop_button = QPushButton("急停")
+            self.reset_button = QPushButton("显式复位")
+            self.emergency_stop_button.clicked.connect(self.request_emergency_stop)
+            self.reset_button.clicked.connect(self.request_reset)
+            side.addWidget(self.emergency_stop_button)
+            side.addWidget(self.reset_button)
         side.addWidget(self.control_status)
 
         """左地图 右控件 拼接"""
@@ -229,6 +236,16 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         self.control_timer.stop()
         self.control_status.setText("已停止发包")
 
+    def request_emergency_stop(self):
+        if self.secure_worker.emergency_stop():
+            self.current_target = None
+        self.poll_secure_status()
+
+    def request_reset(self):
+        if self.secure_worker.reset_control():
+            self.current_target = None
+        self.poll_secure_status()
+
     def poll_secure_status(self):
         worker = self.secure_worker
         if worker is None:
@@ -240,7 +257,10 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
 
         snapshot = worker.status()
         state = snapshot.state
-        if state in ("failed", "closing", "closed"):
+        if state in (
+            "stopping", "latched", "resetting", "blocked",
+            "failed", "closing", "closed",
+        ):
             self.current_target = None
 
         can_apply = state in ("ready", "sending", "stopped")
@@ -248,7 +268,13 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         self.start_button.setEnabled(can_apply)
         self.stop_button.setEnabled(has_target)
         self.stop_sending_button.setEnabled(has_target)
-
+        self.emergency_stop_button.setEnabled(
+            state in ("ready", "sending", "stopped", "latched", "blocked")
+        )
+        self.reset_button.setEnabled(
+            state in ("ready", "stopped", "latched", "blocked")
+            and self.current_target is None
+        )
         labels = {
             "new": "安全连接尚未启动",
             "connecting": "正在连接和认证",
@@ -258,6 +284,10 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             "failed": "安全控制失败",
             "closing": "正在关闭安全连接",
             "closed": "安全连接已关闭",
+            "stopping": "急停请求已提交，等待车端确认",
+            "latched": "车端已确认急停并锁存",
+            "resetting": "正在复位",
+            "blocked": "安全控制已暂停",
         }
         text = labels[state]
         if has_target and state in ("ready", "stopped"):
@@ -330,6 +360,8 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
                 self.start_button.setEnabled(False)
                 self.stop_button.setEnabled(False)
                 self.stop_sending_button.setEnabled(False)
+                self.emergency_stop_button.setEnabled(False)
+                self.reset_button.setEnabled(False)
 
             if not self.secure_worker.wait_closed(0):
                 event.ignore()

@@ -12,6 +12,10 @@ class ControlSendCancelled(OSError):
     """调用者在控制报文发出前取消了本次发送。"""
 
 
+class ControlRequestRejected(PermissionError):
+    """车端明确拒绝使能或签发窗口。"""
+
+
 class SecureControlSession:
     """在一条已认证的管理连接上维护桌面端的控制状态。"""
 
@@ -27,6 +31,9 @@ class SecureControlSession:
         self._sock = sock
         self._address = address
         self._clock = clock
+        self._clear_session()
+
+    def _clear_session(self) -> None:
         self._session_id = ""
         self._key = b""
         self._next_seq = 0
@@ -62,7 +69,7 @@ class SecureControlSession:
         session_id = self.open()
         self._renew_window(session_id)
         if not self._client.enable_session(session_id).enabled:
-            raise PermissionError("vehicle refused to enable control")
+            raise ControlRequestRejected("vehicle refused to enable control")
         if self._clock() >= self._window_expires_at_s:
             raise TimeoutError("control window expired while enabling")
 
@@ -102,12 +109,19 @@ class SecureControlSession:
     def stop_sending(self) -> None:
         self._sending = False
 
+    def reset_control(self) -> bool:
+        self.stop_sending()
+        result = self._client.reset_control(self.open())
+        if result.accepted:
+            self._clear_session()
+        return result.accepted
+
     def _renew_window(self, session_id: str) -> None:
         self._window_id = None
         requested_at_s = self._clock()
         window = self._client.issue_control_window(session_id)
         if not window.granted:
-            raise PermissionError("vehicle refused a control window")
+            raise ControlRequestRejected("vehicle refused a control window")
         if not window.window_id or window.lifetime_s is None:
             raise ValueError("control window reply is incomplete")
 

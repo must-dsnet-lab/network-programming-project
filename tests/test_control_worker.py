@@ -3,7 +3,7 @@ import unittest
 from contextlib import contextmanager
 from queue import Empty, Queue
 from unittest.mock import MagicMock, Mock, patch
-
+from time import monotonic
 from rover.core.control_target import ControlTarget
 from rover.desktop.control_worker import SecureControlWorker
 from rover.desktop.management_client import ManagementClient
@@ -12,8 +12,9 @@ from rover.protocol.management_codec import (
     ControlWindowResult,
     SessionEnableResult,
     SessionOpened,
+    EmergencyStopResult,
+    ResetControlResult,
 )
-
 
 class TestSecureControlWorker(unittest.TestCase):
     def setUp(self):
@@ -135,3 +136,74 @@ class TestSecureControlWorker(unittest.TestCase):
         self.assertEqual(self.worker.status().state, "failed")
         self.assertIn("send failed", self.worker.status().detail)
         self.assertFalse(self.worker.apply_target(ControlTarget(0.5, 0.0)))
+
+    def wait_for_state(self, wanted):
+        deadline = monotonic() + 1.5
+        while monotonic() < deadline:
+            if self.worker.status().state == wanted:
+                return
+            threading.Event().wait(0.005)
+        self.fail(f"expected {wanted}, got {self.worker.status()}")
+
+    def test_emergency_stop_cancels_pending_first_packet(self):
+        entered, release = threading.Event(), threading.Event()
+        self.addCleanup(release.set)
+
+        def enable(session_id):
+            entered.set()
+            if not release.wait(2.0):
+                raise TimeoutError("test did not release enable")
+            return SessionEnableResult(4, True)
+
+        self.client.enable_session.side_effect = enable
+        self.client.emergency_stop.return_value = EmergencyStopResult(5, True)
+        self.worker.start()
+        self.assertTrue(self.worker.apply_target(ControlTarget(1.0, 0.0)))
+        self.assertTrue(entered.wait(1.0))
+        self.assertTrue(self.worker.emergency_stop())
+        self.assertFalse(self.worker.apply_target(ControlTarget(0.5, 0.0)))
+        release.set()
+
+        self.wait_for_state("latched")
+        self.client.emergency_stop.assert_called_once_with("session-a")
+        self.udp.sendto.assert_not_called()
+        self.assertFalse(self.worker.apply_target(ControlTarget(0.5, 0.0)))
+
+    def test_reset_replaces_session_and_waits_for_apply(self):
+        new_key = b"m" * 32
+        self.client.emergency_stop.return_value = EmergencyStopResult(5, True)
+        self.client.reset_control.return_value = ResetControlResult(6, True)
+        self.client.open_session.side_effect = lambda: (
+            SessionOpened(7, "session-b", new_key.hex())
+            if self.client.reset_control.called
+            else SessionOpened(2, "session-a", self.key.hex())
+        )
+
+        self.worker.start()
+        self.assertTrue(self.worker.apply_target(ControlTarget(1.0, 0.0)))
+        self.assertEqual(self.receive_command().seq, 0)
+        self.assertTrue(self.worker.emergency_stop())
+        self.wait_for_state("latched")
+        sends_before_reset = self.udp.sendto.call_count
+        while not self.packets.empty():
+            self.packets.get_nowait()
+
+        self.assertTrue(self.worker.reset_control())
+        self.wait_for_state("ready")
+        self.client.reset_control.assert_called_once_with("session-a")
+        self.assertEqual(self.udp.sendto.call_count, sends_before_reset)
+
+        self.key = new_key
+        self.assertTrue(self.worker.apply_target(ControlTarget(0.5, 0.0)))
+        fresh = self.receive_command()
+        self.assertEqual((fresh.session_id, fresh.seq), ("session-b", 0))
+        self.assertEqual(fresh.target.speed_mps, 0.5)
+
+    def test_control_denial_keeps_connection_for_reset(self):
+        self.client.enable_session.return_value = SessionEnableResult(4, False)
+        self.worker.start()
+        self.assertTrue(self.worker.apply_target(ControlTarget(1.0, 0.0)))
+
+        self.wait_for_state("blocked")
+        self.assertFalse(self.released.is_set())
+        self.udp.sendto.assert_not_called()

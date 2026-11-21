@@ -301,6 +301,25 @@ class TestSecureDesktopControl(unittest.TestCase):
                 secure_worker=create_worker.return_value
             )
 
+    def test_secure_emergency_and_reset_buttons_call_worker(self):
+        emergency = getattr(self.window, "emergency_stop_button", None)
+        reset = getattr(self.window, "reset_button", None)
+        self.assertIsNotNone(emergency)
+        self.assertIsNotNone(reset)
+
+        self.window.start_button.click()
+        self.assertFalse(reset.isEnabled())
+        emergency.click()
+        self.worker.emergency_stop.assert_called_once_with()
+        self.assertIsNone(self.window.current_target)
+
+        self.worker.status.return_value = WorkerStatus("latched")
+        self.window.poll_secure_status()
+        self.assertFalse(self.window.start_button.isEnabled())
+        self.assertTrue(reset.isEnabled())
+        reset.click()
+        self.worker.reset_control.assert_called_once_with()
+
 
 if __name__ == "__main__":
     unittest.main()
