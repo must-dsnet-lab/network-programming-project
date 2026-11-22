@@ -37,7 +37,7 @@
 
 图中按实现和验证状态标记进展。A01—A10用于拆解组内实现与验证，最终评定依据教师评分标准。实验数据和待补项见[高级版验收记录](#advanced-acceptance-status)。
 
-[详细开发路线](docs/development-roadmap.md) · [AI 与贡献者入口](AGENTS.md) · [图 10 核心函数运行结构](reference_image/diagrams/10-advanced-runtime.svg) · [展开模块与函数关系](docs/runtime-reference.md) · [新增验收记录](docs/verification.md)
+[详细开发路线](docs/development-roadmap.md) · [AI 与贡献者入口](AGENTS.md) · [图 10 核心函数运行结构](#advanced-runtime-map) · [展开模块与函数关系](docs/runtime-reference.md) · [新增验收记录](docs/verification.md)
 
 ### 后续待办
 
@@ -1274,6 +1274,14 @@ PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./loca
 | 本机独立补测 | 正式车端、离屏 Qt 控制台和只读接收器使用真实 TLS/UDP 及独立临时端口。两处都读到首次移动和停车。确认观察端进程已退出后才再次应用 `1.2 m/s`，控制台仍收到运动和零速停车遥测。关窗后车端撤销管理会话。 |
 
 提交 `b22220a` 加入遥测双发，`1d0ec91` 开放观察端监听参数。车端专项 RED 记录为 5 个失败和 5 个错误，完成接线后复跑 16 项通过，全量 345 项通过。专项覆盖两路发送使用相同的快照字节、任一目的地发送出错时另一处仍尝试发送，以及命令行参数校验。
+
+<a id="advanced-runtime-map"></a>
+
+### 7.4 图 10：高级版核心函数调用与交接
+
+[![图 10：桌面线程、TLS 管理、UDP 控制、车端仿真及遥测回传的核心函数调用](reference_image/diagrams/10-advanced-runtime.png)](reference_image/diagrams/10-advanced-runtime.svg)
+
+点击图片可打开矢量原图放大。也可按线程和模块查看[函数索引](docs/runtime-reference.md)。
 
 <a id="fault-experiment-sequence"></a>
 
