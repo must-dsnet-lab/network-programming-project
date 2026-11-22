@@ -71,6 +71,7 @@
 - [x] U2 增加图形化连接配置，已通过 Windows 本机联调。 [操作与复跑](#desktop-graphical-connection)
 - [ ] U3 跑通二维启动与只读观察，最小 Windows EXE 待无开发环境验收。 [操作与打包](#desktop-windows-starter)
 - [ ] 二维用户版支持三个及以上桌面端在线，登录后自动接收遥测，支持在多个候选端之间选择交接对象。 [多端任务与验收](docs/development-roadmap.md#multi-desktop-telemetry)
+- [ ] 交付车端管理 EXE，供管理员实时查看各桌面会话的连接、遥测登记、控制权和近期事件。 [车端管理验收](docs/development-roadmap.md#vehicle-admin-exe)
 - [ ] U4 接入方向摇杆、油门与刹车，定义回中、失焦和断开行为。
 - [ ] U5 在二维车端验证加速、滑行、制动与转向模型。
 - [ ] U6 建立真实三维坐标与遥测，验证高度变化和兼容性。
