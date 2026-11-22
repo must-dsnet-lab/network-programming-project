@@ -116,6 +116,7 @@ class TestVehicleStartup(unittest.TestCase):
     def test_invalid_and_incomplete_arguments_do_not_start_runtime(self):
         cases = [
             ["--secure"], ["--secure", "--cert-dir", str(self.cert_dir)],
+            ["--expert-management"],
             ["--secure", "--credentials-file", str(self.credentials)],
             ["--cert-dir", str(self.cert_dir)],
             ["--credentials-file", str(self.credentials)],
@@ -128,6 +129,16 @@ class TestVehicleStartup(unittest.TestCase):
         for argv in cases:
             with self.subTest(argv=argv):
                 self.assert_rejected_without_startup(argv)
+
+    def test_expert_management_selects_opt_in_listener(self):
+        with (
+            patch.object(app, "main") as main,
+            patch.object(app, "expert_management_listener", return_value=sentinel.context),
+            patch.object(app, "management_listener") as advanced,
+        ):
+            app.cli([*self.secure_args, "--expert-management"])
+        advanced.assert_not_called()
+        self.assertIs(main.call_args.kwargs["management"], sentinel.context)
 
     def test_invalid_or_missing_credentials_prevent_secure_startup(self):
         for document in (b"{", b"\xff", b"[]", b"{}", b'{"client": " "}'):

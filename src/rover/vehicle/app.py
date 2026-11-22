@@ -14,6 +14,7 @@ from rover.vehicle.control_guard import (
     update_windowed_command_guard_with_reason,
 )
 from rover.vehicle.management_runtime import management_listener
+from rover.vehicle.expert_management_runtime import ExpertManagementRuntime, expert_management_listener
 from rover.protocol.control_codec import ControlMacVerificationError
 from rover.protocol.telemetry_codec import TelemetrySnapshot
 from rover.transport.udp_transport import (
@@ -65,6 +66,7 @@ def main(
         telemetry_sock.setblocking(False)
 
         writer = csv.writer(event_stream) if event_stream is not None else None
+        expert = process_management if isinstance(process_management, ExpertManagementRuntime) else None
 
         def record(at_s: float, event: str, *, seq: int | None = None, detail: str = "") -> None:
             if writer is not None:
@@ -72,6 +74,17 @@ def main(
                     f"{at_s - started_at_s:.6f}", event, seq, state.speed_mps,
                     str(guard.fault_latched).lower(), detail,
                 ))
+
+        last_authority = expert.authority if expert is not None else None
+
+        def record_authority_change(at_s: float) -> None:
+            nonlocal last_authority
+            if expert is not None and expert.authority != last_authority:
+                last_authority = expert.authority
+                record(
+                    at_s, "authority",
+                    detail=f"phase={last_authority.phase.value} generation={last_authority.last_generation}",
+                )
 
         last_recorded_state = (state.speed_mps, guard.fault_latched)
         if writer is not None:
@@ -91,6 +104,7 @@ def main(
                     # process_management(guard) 每轮最多处理一个管理请求，队列空就直接返回。
                     # 仿真循环保存 guard，TLS 线程等待结果
                     guard = process_management(guard)
+                    record_authority_change(tick_started_s)
                     if guard.session_id != previous_session_id:
 
                         print(f"Management session: {guard.session_id}", flush=True)
@@ -137,6 +151,9 @@ def main(
 
                 # 4. 每轮只推进车辆一次
                 state = step_vehicle(state, guard.last_accepted, now_s, dt_s)
+                if expert is not None:
+                    guard = expert.observe_vehicle(guard, state)
+                    record_authority_change(monotonic())
 
                 # 5. 更新车辆后，按发送期限采样并回传
                 telemetry_now_s = monotonic()
@@ -254,6 +271,10 @@ def cli(argv: list[str] | None = None) -> None:
         description="Run the vehicle demo or TLS-managed vehicle."
     )
     parser.add_argument("--secure", action="store_true")
+    parser.add_argument(
+        "--expert-management", action="store_true",
+        help="use the expert TLS management protocol and allow two sessions",
+    )
     parser.add_argument("--cert-dir", type=Path)
     parser.add_argument("--credentials-file", type=Path)
     parser.add_argument("--bind-host", type=_host_argument, default="127.0.0.1")
@@ -266,6 +287,8 @@ def cli(argv: list[str] | None = None) -> None:
     parser.add_argument("--event-log", type=Path, help="write vehicle events to a new CSV file")
     args = parser.parse_args(argv)
 
+    if args.expert_management and not args.secure:
+        parser.error("--expert-management requires --secure")
     if args.secure: # 命令中带 --secure
         if args.cert_dir is None or args.credentials_file is None:
             parser.error("--secure requires --cert-dir and --credentials-file")
@@ -283,7 +306,8 @@ def cli(argv: list[str] | None = None) -> None:
                 if not (args.cert_dir / name).is_file():
                     parser.error(f"missing certificate file: {args.cert_dir / name}")
             trusted = load_trusted_credentials(args.credentials_file)
-            management = management_listener(
+            listener = expert_management_listener if args.expert_management else management_listener
+            management = listener(
                 args.cert_dir,
                 trusted,
                 address=(args.bind_host, args.management_port),

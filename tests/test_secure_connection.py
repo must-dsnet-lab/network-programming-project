@@ -4,8 +4,10 @@ import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
 
+from rover.desktop.expert_management_client import ExpertManagementClient
 from rover.desktop.management_client import ManagementClient
-from rover.desktop.secure_connection import connect_management
+from rover.desktop.secure_connection import connect_expert_management, connect_management
+from rover.protocol.expert_management_codec import encode_expert_management
 from rover.protocol.management_codec import (
     AuthenticationResult,
     SessionOpened,
@@ -103,6 +105,28 @@ class TestSecureConnection(unittest.TestCase):
         )
         self.assertEqual(self.messages()[0]["client_id"], "desktop-a")
         self.assertEqual(self.messages()[0]["credential"], "test-secret-a")
+        self.assertTrue(self.tls.closed)
+        self.assertTrue(self.raw.closed)
+
+    def test_expert_connection_uses_verified_tls_and_authenticates_with_version_two(self):
+        self.tls = MemorySocket(
+            encode_expert_management("authentication_result", 1, accepted=True),
+            encode_expert_management("session_opened", 2, session_id="expert-session-a"),
+        )
+        self.context.wrap_socket.return_value = self.tls
+        with connect_expert_management(
+            ("127.0.0.1", 19177),
+            ca_file=Path("public-ca.pem"),
+            server_hostname="localhost",
+            client_id="desktop-a",
+            credential="test-secret-a",
+        ) as client:
+            self.assertIsInstance(client, ExpertManagementClient)
+            self.assertEqual(client.open_session(), "expert-session-a")
+
+        self.context_factory.assert_called_once_with(cafile="public-ca.pem")
+        self.context.wrap_socket.assert_called_once_with(self.raw, server_hostname="localhost")
+        self.assertEqual([message["version"] for message in self.messages()], [2, 2])
         self.assertTrue(self.tls.closed)
         self.assertTrue(self.raw.closed)
 
