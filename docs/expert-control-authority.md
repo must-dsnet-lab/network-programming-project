@@ -113,7 +113,7 @@ Windows 本机预检使用 Python 3.12.10，基线 `544b247` 加 `feat/expert-co
 
 ## 5. P2 双 TLS 本机联调
 
-`--secure --expert-management` 启用管理 v2。本阶段支持两个桌面端各自认证、建立管理会话和查询授权状态。连接线程分别处理 TLS 和读写，车端主循环每轮最多处理一个排队请求，并清理已断开的连接实例。查询回复包含管理会话数、排队耗时和仿真节拍间隔。授权申请、使能、交接和专家 UDP 仍按 P3/P4 接入，本阶段的专家车端保持零速并持续发送遥测。
+`--secure --expert-management` 启用管理 v2。P2 支持两个桌面端各自认证、建立管理会话和查询授权状态。连接线程分别处理 TLS 和读写，车端主循环每轮最多处理一个排队请求，并清理已断开的连接实例。查询回复包含管理会话数、排队耗时和仿真节拍间隔。本节记录 P2 版本的双连接验收。实际控制权与起步在 P3 复现。
 
 | 项目 | P2 行为 |
 | --- | --- |
@@ -143,6 +143,42 @@ Windows 本机预检使用 Python 3.12.10，基线 `544b247` 加 `feat/expert-co
 ```text
 P2 online sessions: A=2 B=2, distinct session IDs
 P2 A closed: B=1, B session unchanged
+```
+
+## 6. P3 零速交接
+
+P3 将 P1 的裁决接入正式车端主循环。P2 的两条 TLS 连接可同时请求，只有当前持有者可使能、申请窗口或指定交接对象。交接先清掉旧目标、控制密钥、窗口和序号。车端在仿真步进确认零速后才向在线候选授予新代次，新持有者需使能并应用目标。
+
+管理动作使用管理 v2。P3 运动沿用已验证的 UDP v2 格式，依靠车端当前会话、启停状态、新密钥、短窗和序号进行准入。P4 再把代次写入 UDP 报文。专家模式下当前持有者可请求急停，UDP 看门狗触发时同样撤销控制权。处于锁存且车端已观察到零速、无有效目标时，原型的已认证活跃可信账号可明确请求复位。复位回到 `idle`，重新申请授权后才能使能。
+
+### 6.1 本机复现
+
+在 Windows 项目根目录使用两个 PowerShell 窗口。沿用 P2 实验 CA 和账号配置。先启动车端，并用新文件保存车端事件：
+
+```powershell
+$p3Log = Join-Path 'local' ('p3-handoff-' + [guid]::NewGuid().ToString('N') + '.csv')
+.\.venv\Scripts\python.exe -X utf8 -B -m rover.vehicle.app --secure --expert-management --cert-dir '.\local\certs' --credentials-file '.\local\trusted_clients.json' --event-log $p3Log
+```
+
+另一个窗口运行 [交接示例](../examples/demo_expert_handoff.py)，按提示输入登录凭据。默认以 `desktop-a` 建立两条独立会话，也可以加 `--client-id-b desktop-b` 使用另一账号。
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B -m examples.demo_expert_handoff
+```
+
+预期看到 A 行驶、转让受理、B 接权时速度为零和未使能、B 显式使能后行驶并归还。证书若放在其他目录，同时调整车端的 `--cert-dir` 和示例的 `--ca-file`。如果改过车端端口或遥测地址，示例支持 `--port`、`--control-port`、`--telemetry-bind-host` 和 `--telemetry-port`。
+
+### 6.2 本机证据
+
+2026-11-23，Windows 本机回环，基线 `46a08b2` 加 P3 工作区改动。正式车端进程与两个使用独立测试账号的 TLS 客户端完成交接。车端 CSV 顺序记录了 `stopping` 代次 1 时 1.0 m/s、`held` 代次 2 时 0.0 m/s，以及 B 使能后 1.0 m/s。另一次使能后保持无有效控制报文，验证看门狗撤权锁存，显式复位后仍无人持有。原始车端事件和终端日志归档在本地 `local/p3-tests/`。该证据对应 Windows 本机联调，高级与专家的物理验收按集中试验计划记录。
+
+P3 专项 48 项、Windows 离屏全量回归 453 项通过。专项覆盖同时申请只授予一端、归零前候选端断开、旧持有者迟到关闭、旧材料清理、窗口签发与急停复位。
+
+```powershell
+$env:PYTHONPATH = 'src'
+.\.venv\Scripts\python.exe -X utf8 -B -m unittest -q tests.test_control_authority tests.test_expert_control tests.test_expert_management_runtime tests.test_expert_management_client tests.test_expert_handoff_demo
+$env:QT_QPA_PLATFORM = 'offscreen'
+.\.venv\Scripts\python.exe -X utf8 -B -m unittest discover -s tests -t . -q
 ```
 
 ### 5.2 本机证据

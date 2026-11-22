@@ -58,7 +58,7 @@ class ControlAuthority:
     def set_enabled(
         self, session: ControlSession, generation: AuthorityGeneration, enabled: bool
     ) -> tuple[ControlAuthority, str | None]:
-        rejection = self._holder_rejection(session, generation)
+        rejection = self.holder_rejection(session, generation)
         if rejection is not None:
             return self, rejection
         phase = AuthorityPhase.CONTROLLING if enabled else AuthorityPhase.HELD
@@ -67,7 +67,7 @@ class ControlAuthority:
     def release(
         self, session: ControlSession, generation: AuthorityGeneration
     ) -> tuple[ControlAuthority, str | None]:
-        rejection = self._holder_rejection(session, generation)
+        rejection = self.holder_rejection(session, generation)
         if rejection is not None:
             return self, rejection
         return self._begin_stopping(), None
@@ -79,7 +79,7 @@ class ControlAuthority:
         recipient: ControlSession,
     ) -> tuple[ControlAuthority, str | None]:
         """Begin transfer to a recipient resolved from a live session by the caller."""
-        rejection = self._holder_rejection(session, generation)
+        rejection = self.holder_rejection(session, generation)
         if rejection is not None:
             return self, rejection
         if session.connection_id == recipient.connection_id:
@@ -121,7 +121,7 @@ class ControlAuthority:
             return replace(self, phase=AuthorityPhase.IDLE)
         return self
 
-    def _holder_rejection(
+    def holder_rejection(
         self, session: ControlSession, generation: AuthorityGeneration
     ) -> str | None:
         if self.phase is AuthorityPhase.FAULT_LATCHED:

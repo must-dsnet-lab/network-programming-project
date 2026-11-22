@@ -1,5 +1,6 @@
 """Exercise the expert runtime over loopback TCP, with TLS wrapped by a fixture."""
 
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 import socket
@@ -9,6 +10,7 @@ from time import monotonic
 import unittest
 from unittest.mock import Mock, patch
 
+from rover.core.vehicle_model import VehicleState
 from rover.desktop.expert_management_client import ExpertManagementClient
 from rover.protocol.expert_management_codec import (
     decode_expert_management,
@@ -26,7 +28,7 @@ class LoopbackTestSocket(socket.socket):
 
 class TestExpertManagementRuntime(unittest.TestCase):
     @contextmanager
-    def listener(self, *, pump=True, operation_timeout_s=1.0):
+    def listener(self, *, pump=True, operation_timeout_s=1.0, reported_vehicle=None):
         context = Mock()
 
         def wrap_socket(raw, **_):
@@ -49,6 +51,8 @@ class TestExpertManagementRuntime(unittest.TestCase):
                     guard = ControlGuardState()
                     while not stop.is_set():
                         guard = process_one(guard)
+                        if reported_vehicle is not None:
+                            guard = process_one.observe_vehicle(guard, reported_vehicle())
                         stop.wait(0.002)
 
                 simulation = Thread(target=run_simulation)
@@ -100,6 +104,95 @@ class TestExpertManagementRuntime(unittest.TestCase):
             with self.connect(listener.address), self.connect(listener.address) as ready:
                 client, session = self.open(ready)
                 self.assertEqual(client.query_authority(session)["online_sessions"], 1)
+
+    def wait_for_status(self, client, session, condition):
+        deadline = monotonic() + 1.0
+        while True:
+            status = client.query_authority(session)
+            if condition(status):
+                return status
+            if monotonic() >= deadline:
+                self.fail(f"authority status did not reach the expected state: {status}")
+
+    def test_simultaneous_acquisition_grants_only_one_connection(self):
+        with (
+            self.listener() as listener,
+            self.connect(listener.address) as first,
+            self.connect(listener.address) as second,
+            ThreadPoolExecutor(max_workers=2) as executor,
+        ):
+            a, session_a = self.open(first)
+            b, session_b = self.open(second)
+            requested = (
+                executor.submit(a.acquire_authority, session_a),
+                executor.submit(b.acquire_authority, session_b),
+            )
+            replies = [request.result(timeout=2.0) for request in requested]
+            self.assertEqual(sum(reply["accepted"] for reply in replies), 1)
+            self.assertEqual(
+                [reply["reason"] for reply in replies if not reply["accepted"]],
+                ["authority_busy"],
+            )
+
+    def test_handoff_waits_for_vehicle_observation_and_rejects_old_holder(self):
+        parked = Event()
+
+        def report():
+            return VehicleState(speed_mps=0.0 if parked.is_set() else 1.0)
+
+        with (
+            self.listener(reported_vehicle=report) as listener,
+            self.connect(listener.address) as first,
+            self.connect(listener.address) as second,
+        ):
+            a, session_a = self.open(first)
+            b, session_b = self.open(second)
+            old_generation = a.acquire_authority(session_a)["generation"]
+            self.assertEqual(
+                a.query_authority(session_a)["target_session_ids"], [session_b]
+            )
+            self.assertTrue(a.transfer_authority(session_a, old_generation, session_b)["accepted"])
+
+            waiting = b.query_authority(session_b)
+            self.assertEqual(waiting["phase"], "stopping")
+            self.assertFalse(waiting["owns_authority"])
+            self.assertNotIn("generation", waiting)
+            parked.set()
+            acquired = self.wait_for_status(b, session_b, lambda status: status["owns_authority"])
+            self.assertEqual(acquired["phase"], "held")
+            self.assertNotEqual(acquired["generation"], old_generation)
+            denied = a.set_authority_enabled(session_a, old_generation, True)
+            self.assertEqual(denied["reason"], "not_authority_holder")
+            first.shutdown(socket.SHUT_RDWR)
+            still_owned = self.wait_for_status(
+                b, session_b, lambda status: status["online_sessions"] == 1
+            )
+            self.assertTrue(still_owned["owns_authority"])
+            self.assertEqual(still_owned["generation"], acquired["generation"])
+
+    def test_recipient_disconnect_before_vehicle_stops_cancels_handoff(self):
+        parked = Event()
+
+        def report():
+            return VehicleState(speed_mps=0.0 if parked.is_set() else 1.0)
+
+        with (
+            self.listener(reported_vehicle=report) as listener,
+            self.connect(listener.address) as first,
+            self.connect(listener.address) as second,
+        ):
+            a, session_a = self.open(first)
+            _, session_b = self.open(second)
+            generation = a.acquire_authority(session_a)["generation"]
+            self.assertTrue(a.transfer_authority(session_a, generation, session_b)["accepted"])
+            second.shutdown(socket.SHUT_RDWR)
+            still_stopping = self.wait_for_status(
+                a, session_a, lambda status: status["online_sessions"] == 1
+            )
+            self.assertEqual(still_stopping["phase"], "stopping")
+            parked.set()
+            idle = self.wait_for_status(a, session_a, lambda status: status["phase"] == "idle")
+            self.assertFalse(idle["owns_authority"])
 
     def test_duplicate_request_is_rejected_and_connection_stays_usable(self):
         with self.listener() as listener, self.connect(listener.address) as stream:

@@ -9,6 +9,7 @@ from threading import Lock
 from time import monotonic
 from uuid import uuid4
 
+from rover.core.vehicle_model import VehicleState
 from rover.protocol.expert_management_codec import (
     decode_expert_management,
     encode_expert_management,
@@ -16,18 +17,18 @@ from rover.protocol.expert_management_codec import (
 from rover.transport.parallel_tls_server import parallel_tls_server
 from rover.transport.tcp_transport import iter_records, send_record
 from rover.vehicle.control_authority import ControlAuthority, ControlSession
-from rover.vehicle.control_guard import ControlGuardState
+from rover.vehicle.control_guard import ControlGuardState, update_control_guard
+from rover.vehicle.expert_control import EXPERT_CONTROL_ACTIONS, ExpertVehicleControl
 from rover.vehicle.management_session import verify_client_credential
 
 type _Reply = tuple[str, dict[str, object]]
-type _Operation = Callable[[float], _Reply]
-
+type _Operation = Callable[[ControlGuardState, float, float], tuple[ControlGuardState, _Reply]]
 
 def _error(reason: str) -> _Reply:
     return "management_error", {"reason": reason}
 
 
-class _ExpertManagementRuntime:
+class ExpertManagementRuntime:
     def __init__(self, trusted: dict[str, bytes], operation_timeout_s: float):
         self.address: tuple[str, int]
         self._trusted = trusted
@@ -37,7 +38,7 @@ class _ExpertManagementRuntime:
         self._stopped = False
         self._closed_connections: list[str] = []
         self._sessions: dict[str, ControlSession] = {}
-        self._authority = ControlAuthority()
+        self._control = ExpertVehicleControl()
         self._previous_tick_s: float | None = None
         self._tick_interval_ms = 0.0
 
@@ -58,18 +59,30 @@ class _ExpertManagementRuntime:
             # An operation already started on the simulation thread has one outcome.
             return future.result()
 
-    def __call__(self, guard: ControlGuardState) -> ControlGuardState:
-        now_s = monotonic()
-        if self._previous_tick_s is not None:
-            self._tick_interval_ms = (now_s - self._previous_tick_s) * 1000.0
-        self._previous_tick_s = now_s
+    @property
+    def authority(self) -> ControlAuthority:
+        return self._control.authority
 
+    def _apply_closed_connections(self, guard: ControlGuardState) -> ControlGuardState:
         with self._admission:
             closed, self._closed_connections = self._closed_connections, []
         for connection_id in closed:
             session = self._sessions.pop(connection_id, None)
             if session is not None:
-                self._authority = self._authority.disconnect(session)
+                guard = self._control.disconnect(guard, session)
+        return guard
+
+    def observe_vehicle(self, guard: ControlGuardState, vehicle: VehicleState) -> ControlGuardState:
+        guard = self._apply_closed_connections(self._control.sync_fault(guard))
+        return self._control.observe_vehicle(guard, vehicle)
+
+    def __call__(self, guard: ControlGuardState) -> ControlGuardState:
+        now_s = monotonic()
+        if self._previous_tick_s is not None:
+            self._tick_interval_ms = (now_s - self._previous_tick_s) * 1000.0
+        self._previous_tick_s = now_s
+        guard = self._control.sync_fault(update_control_guard(guard, now_s))
+        guard = self._apply_closed_connections(guard)
 
         try:
             operation, future, queued_at_s = self._pending.get_nowait()
@@ -77,7 +90,8 @@ class _ExpertManagementRuntime:
             return guard
         if future.set_running_or_notify_cancel():
             try:
-                reply = operation((monotonic() - queued_at_s) * 1000.0)
+                started_at_s = monotonic()
+                guard, reply = operation(guard, started_at_s, (started_at_s - queued_at_s) * 1000.0)
             except Exception as error:
                 future.set_exception(error)
             else:
@@ -86,35 +100,63 @@ class _ExpertManagementRuntime:
 
     def _dispatch(
         self,
+        guard: ControlGuardState,
         client_id: str,
         connection_id: str,
         message: dict[str, object],
+        now_s: float,
         queue_wait_ms: float,
-    ) -> _Reply:
+    ) -> tuple[ControlGuardState, _Reply]:
         message_type = message["type"]
         session = self._sessions.get(connection_id)
         if message_type == "open_session":
             if session is None:
                 session = ControlSession(client_id, connection_id, uuid4().hex)
                 self._sessions[connection_id] = session
-            return "session_opened", {"session_id": session.session_id}
-        if message_type != "query_authority":
-            return _error("unsupported_message_type")
+            return guard, ("session_opened", {"session_id": session.session_id})
+        if message_type != "query_authority" and message_type not in EXPERT_CONTROL_ACTIONS:
+            return guard, _error("unsupported_message_type")
         session_id = message.get("session_id")
         if not isinstance(session_id, str) or not session_id:
-            return _error("invalid_request")
+            return guard, _error("invalid_request")
         if session is None or session_id != session.session_id:
-            return _error("invalid_session")
-        grant = self._authority.grant
-        return "query_authority_result", {
+            return guard, _error("invalid_session")
+
+        if message_type == "query_authority":
+            return guard, ("query_authority_result", self._status(session, queue_wait_ms))
+
+        recipient = None
+        if message_type == "transfer_authority":
+            target_id = message.get("target_session_id")
+            recipient = next(
+                (candidate for candidate in self._sessions.values() if candidate.session_id == target_id),
+                None,
+            )
+        guard, fields = self._control.dispatch(
+            guard, session, message, recipient=recipient, now_s=now_s
+        )
+        return guard, (f"{message_type}_result", fields)
+
+    def _status(self, session: ControlSession, queue_wait_ms: float) -> dict[str, object]:
+        authority = self.authority
+        grant = authority.grant
+        result: dict[str, object] = {
             "accepted": True,
             "reason": None,
-            "phase": self._authority.phase.value,
+            "phase": authority.phase.value,
             "owns_authority": grant is not None and grant.session == session,
             "online_sessions": len(self._sessions),
             "queue_wait_ms": round(queue_wait_ms, 3),
             "tick_interval_ms": round(self._tick_interval_ms, 3),
         }
+        if grant is not None and grant.session == session:
+            result["generation"] = {
+                "epoch": grant.generation.epoch, "number": grant.generation.number
+            }
+            result["target_session_ids"] = [
+                candidate.session_id for candidate in self._sessions.values() if candidate != session
+            ]
+        return result
 
     def serve(self, tls: SSLSocket) -> None:
         def send_reply(request_id: int, reply: _Reply) -> None:
@@ -154,9 +196,10 @@ class _ExpertManagementRuntime:
                     send_reply(request_id, _error(reason))
                     continue
                 last_request_id = request_id
-                reply = self._submit(
-                    lambda wait_ms: self._dispatch(client_id, connection_id, message, wait_ms)
-                )
+                def dispatch(guard, now_s, wait_ms):
+                    return self._dispatch(guard, client_id, connection_id, message, now_s, wait_ms)
+
+                reply = self._submit(dispatch)
                 opened_session = opened_session or reply[0] == "session_opened"
                 send_reply(request_id, reply)
         except CancelledError:
@@ -184,10 +227,10 @@ def expert_management_listener(
     address: tuple[str, int] = ("127.0.0.1", 19177),
     *,
     operation_timeout_s: float = 1.0,
-) -> Iterator[_ExpertManagementRuntime]:
+) -> Iterator[ExpertManagementRuntime]:
     if not isfinite(operation_timeout_s) or operation_timeout_s <= 0:
         raise ValueError("operation_timeout_s must be positive and finite")
-    runtime = _ExpertManagementRuntime(trusted_credentials, operation_timeout_s)
+    runtime = ExpertManagementRuntime(trusted_credentials, operation_timeout_s)
     with parallel_tls_server(cert_dir, address, runtime.serve) as bound_address:
         runtime.address = bound_address
         try:
