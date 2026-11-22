@@ -106,6 +106,19 @@ class TestExpertDesktopControl(unittest.TestCase):
             window.poll_telemetry()
         self.assertIsNotNone(window.last_received_s)
 
+    def test_product_observer_uses_user_edition_account_labels(self):
+        self.set_status(phase="idle")
+        self.worker.status.return_value.authority.account_role = "observer"
+        window = DesktopConsole(
+            secure_worker=self.worker, expert_mode=True, register_expert_telemetry=True, operator_id="desk-a",
+        )
+        self.addCleanup(dispose_widget, window)
+
+        self.assertEqual(window.windowTitle(), "虚拟小车 · 用户版")
+        self.assertEqual(window.operator_label.text(), "当前账号：desk-a · 观察员（只读）")
+        self.assertIn("停止接收遥测", window.disconnect_button.toolTip())
+        self.assertEqual(self.window.windowTitle(), "虚拟小车 · 专家控制台")
+
     def test_renewal_pending_leaves_local_stop_available(self):
         self.report_telemetry()
         self.set_status(phase="controlling", allowed=("set_authority_enabled", "renew_authority"),

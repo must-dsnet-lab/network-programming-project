@@ -23,14 +23,13 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QPlainTextEdit,
     QPushButton,
-    QSpinBox,
     QTableWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
 
-from rover.desktop.appearance import CONSOLE_STYLE, desktop_font
+from rover.desktop.appearance import CONSOLE_STYLE, PortSpinBox, desktop_font
 from rover.vehicle.accounts import AccountStore
 from rover.vehicle.app import main as vehicle_main
 from rover.vehicle.expert_management_runtime import ExpertManagementRuntime, expert_management_listener
@@ -163,8 +162,8 @@ class VehicleAdminWindow(QWidget):
         settings_form.addRow("账号数据库", self._path_row(self.account_db, db_picker))
 
         self.bind_host = QLineEdit(config.bind_host)
-        self.management_port = self._port_field(config.management_port)
-        self.control_port = self._port_field(config.control_port)
+        self.management_port = PortSpinBox(config.management_port)
+        self.control_port = PortSpinBox(config.control_port)
         endpoints = QHBoxLayout()
         endpoints.addWidget(self.bind_host, 1)
         endpoints.addWidget(QLabel("管理 TCP"))
@@ -241,13 +240,6 @@ class VehicleAdminWindow(QWidget):
         row.addWidget(field, 1)
         row.addWidget(picker)
         return row
-
-    @staticmethod
-    def _port_field(value: int) -> QSpinBox:
-        field = QSpinBox()
-        field.setRange(1, 65535)
-        field.setValue(value)
-        return field
 
     def _choose_cert_dir(self) -> None:
         path = QFileDialog.getExistingDirectory(self, "选择证书目录", self.cert_dir.text())

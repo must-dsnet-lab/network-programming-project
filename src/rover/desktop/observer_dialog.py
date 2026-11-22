@@ -16,12 +16,15 @@ from PySide6.QtWidgets import (
 from rover.desktop.appearance import CONSOLE_STYLE, STATUS_COLORS, desktop_font
 
 
+TITLE = "只读观察（手动遥测）"
+
+
 class TelemetryObserverDialog(QDialog):
     def __init__(self, address: tuple[str, int], parent: QWidget | None = None):
         super().__init__(parent)
         self.address: tuple[str, int] | None = None
         self.setObjectName("observerDialog")
-        self.setWindowTitle("只读观察")
+        self.setWindowTitle(TITLE)
         self.setMinimumWidth(360)
         self.setFont(desktop_font(14))
         self.setStyleSheet(CONSOLE_STYLE + """
@@ -36,10 +39,15 @@ class TelemetryObserverDialog(QDialog):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(10)
-        title = QLabel("只读观察")
+        title = QLabel(TITLE)
         title.setFont(desktop_font(21, bold=True))
         layout.addWidget(title)
-        layout.addWidget(QLabel("填写车端发送遥测时使用的本机接收地址和端口。"))
+        instructions = QLabel(
+            "本机地址和端口应与车端预设的遥测目的地对应。"
+            "观察用户版车端，请返回启动页，从「连接车端」登录。"
+        )
+        instructions.setWordWrap(True)
+        layout.addWidget(instructions)
 
         host, port = address
         self.host_input = QLineEdit(host)

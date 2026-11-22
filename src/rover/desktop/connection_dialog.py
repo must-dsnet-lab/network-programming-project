@@ -17,13 +17,12 @@ from PySide6.QtWidgets import (
     QLabel,
     QLineEdit,
     QPushButton,
-    QSpinBox,
     QVBoxLayout,
     QWidget,
 )
 
 from rover.desktop import secure_connection
-from rover.desktop.appearance import CONSOLE_STYLE, desktop_font
+from rover.desktop.appearance import CONSOLE_STYLE, PortSpinBox, desktop_font
 from rover.desktop.connection_profile import DesktopConnectionSettings
 
 
@@ -33,10 +32,10 @@ _FORM_STYLE = """
                 margin-top: 10px; padding: 7px 9px 5px; color: #24312c; }
     QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 4px;
                        background: #f1f3f0; color: #246553; }
-    QLineEdit, QComboBox, QSpinBox { background: #ffffff; color: #24312c;
-                                   border: 1px solid #cbd6cf; border-radius: 4px;
-                                   padding: 4px 6px; min-height: 18px; }
-    QLineEdit:focus, QComboBox:focus, QSpinBox:focus { border-color: #287d67; }
+    QLineEdit, QComboBox { background: #ffffff; color: #24312c;
+                          border: 1px solid #cbd6cf; border-radius: 4px;
+                          padding: 4px 6px; min-height: 18px; }
+    QLineEdit:focus, QComboBox:focus { border-color: #287d67; }
     QCheckBox { color: #24312c; }
     QLabel#connectionError { color: #8a481a; background: #fff4eb; padding: 7px;
                             border-left: 2px solid #dbaf8d; }
@@ -118,8 +117,8 @@ class ConnectionDialog(QDialog):
         self.mode_input.addItem("用户版（自动遥测）", "product")
         self.mode_input.setCurrentIndex(self.mode_input.findData(settings.mode))
         self.vehicle_host_input = QLineEdit(settings.vehicle_host)
-        self.management_port_input = self._port(settings.management_port)
-        self.control_port_input = self._port(settings.control_port)
+        self.management_port_input = PortSpinBox(settings.management_port)
+        self.control_port_input = PortSpinBox(settings.control_port)
         self.server_name_input = QLineEdit(settings.server_name)
         self.server_name_input.setPlaceholderText("留空时自动填写")
         self.server_name_input.setToolTip("用于核对车端证书上的 DNS 名称或 IPv4 地址。")
@@ -134,7 +133,7 @@ class ConnectionDialog(QDialog):
         self._telemetry_group = telemetry.parentWidget()
         self._telemetry_group.setObjectName("telemetrySettings")
         self.telemetry_bind_host_input = QLineEdit(settings.telemetry_bind_host)
-        self.telemetry_port_input = self._port(settings.telemetry_port)
+        self.telemetry_port_input = PortSpinBox(settings.telemetry_port)
         telemetry.addRow("本机地址", self._paired_fields(
             self.telemetry_bind_host_input, "遥测本机地址", "UDP 端口", self.telemetry_port_input,
         ))
@@ -204,13 +203,6 @@ class ConnectionDialog(QDialog):
         form.setContentsMargins(10, 8, 10, 10)
         layout.addWidget(group)
         return form
-
-    @staticmethod
-    def _port(value: int) -> QSpinBox:
-        field = QSpinBox()
-        field.setRange(1, 65535)
-        field.setValue(value)
-        return field
 
     @staticmethod
     def _paired_fields(first: QWidget, first_name: str, second_name: str, second: QWidget) -> QHBoxLayout:
