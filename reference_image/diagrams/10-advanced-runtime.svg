@@ -1,0 +1,416 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" width="3000" height="2320" viewBox="0 0 3000 2320" role="img" aria-labelledby="title desc">
+<title id="title">图 10 · 高级版核心函数调用与交接</title>
+<desc id="desc">桌面 Qt 主线程、桌面控制线程、TLS 与 UDP 网络、车端 TLS 线程和车端仿真线程之间的函数调用和数据流。</desc>
+<rect x="0" y="0" width="3000" height="2320" rx="0" fill="#f4f7fb" stroke="none" stroke-width="1.4"/>
+<text x="48" y="49" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#4b5f76" text-anchor="start">图 10   /   虚拟小车 · 高级版</text>
+<text x="48" y="111" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="53" font-weight="700" fill="#192b44" text-anchor="start">核心函数调用与交接</text>
+<text x="662" y="109" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#4b5f76" text-anchor="start">74dbee0  /  --secure</text>
+<polyline points="1165,84 1204,84" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1204.00,84.00 1195.00,88.00 1195.00,80.00" fill="#1e62a7"/>
+<text x="1217" y="90" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#1e62a7" text-anchor="start">TLS 管理</text>
+<polyline points="1383,84 1422,84" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1422.00,84.00 1413.00,88.00 1413.00,80.00" fill="#a65325"/>
+<text x="1435" y="90" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#a65325" text-anchor="start">UDP 控制</text>
+<polyline points="1601,84 1640,84" fill="none" stroke="#0b7468" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1640.00,84.00 1631.00,88.00 1631.00,80.00" fill="#0b7468"/>
+<text x="1653" y="90" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#0b7468" text-anchor="start">UDP 遥测</text>
+<polyline points="1819,84 1858,84" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1858.00,84.00 1849.00,88.00 1849.00,80.00" fill="#644e95"/>
+<text x="1871" y="90" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#644e95" text-anchor="start">车端单步</text>
+<polyline points="2037,84 2076,84" fill="none" stroke="#9a4050" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2076.00,84.00 2067.00,88.00 2067.00,80.00" fill="#9a4050"/>
+<text x="2089" y="90" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#9a4050" text-anchor="start">停车与复位</text>
+<polyline points="2352,61 2403,61" fill="none" stroke="#4b5f76" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2403.00,61.00 2394.00,65.00 2394.00,57.00" fill="#4b5f76"/>
+<text x="2415" y="67" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">调用、数据或本轮执行方向</text>
+<polyline points="2352,97 2403,97" fill="none" stroke="#4b5f76" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="2403.00,97.00 2394.00,101.00 2394.00,93.00" fill="#4b5f76"/>
+<text x="2415" y="103" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">调度、返回或下一轮</text>
+<text x="2821" y="67" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#1e62a7" text-anchor="start">项目目录 ↗</text>
+<a href="../../docs/runtime-reference.md#project-tree" xlink:href="../../docs/runtime-reference.md#project-tree" aria-label="项目目录 ↗"><rect x="2819" y="43" width="128" height="32" fill="#ffffff" fill-opacity="0" pointer-events="all"/></a>
+<text x="2821" y="103" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#1e62a7" text-anchor="start">实验工具 ↗</text>
+<a href="../../docs/runtime-reference.md#experiment-tools" xlink:href="../../docs/runtime-reference.md#experiment-tools" aria-label="实验工具 ↗"><rect x="2819" y="79" width="128" height="32" fill="#ffffff" fill-opacity="0" pointer-events="all"/></a>
+<rect x="48" y="166" width="460" height="2070" rx="14" fill="#ffffff" stroke="#d3dce8" stroke-width="1.6"/>
+<rect x="49" y="167" width="458" height="65" rx="13" fill="#edf2f8" stroke="none" stroke-width="1.4"/>
+<text x="67" y="190" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">桌面进程</text>
+<text x="67" y="219" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="29" font-weight="700" fill="#192b44" text-anchor="start">Qt 主线程</text>
+<text x="378" y="189" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#1e62a7" text-anchor="start">调用索引 ↗</text>
+<a href="../../docs/runtime-reference.md#desktop-entry" xlink:href="../../docs/runtime-reference.md#desktop-entry" aria-label="调用索引 ↗"><rect x="376" y="167" width="121" height="30" fill="#ffffff" fill-opacity="0" pointer-events="all"/></a>
+<rect x="532" y="166" width="584" height="2070" rx="14" fill="#ffffff" stroke="#d3dce8" stroke-width="1.6"/>
+<rect x="533" y="167" width="582" height="65" rx="13" fill="#edf2f8" stroke="none" stroke-width="1.4"/>
+<text x="551" y="190" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">桌面进程</text>
+<text x="551" y="219" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="29" font-weight="700" fill="#192b44" text-anchor="start">安全控制线程</text>
+<text x="986" y="189" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#1e62a7" text-anchor="start">调用索引 ↗</text>
+<a href="../../docs/runtime-reference.md#udp-control" xlink:href="../../docs/runtime-reference.md#udp-control" aria-label="调用索引 ↗"><rect x="984" y="167" width="121" height="30" fill="#ffffff" fill-opacity="0" pointer-events="all"/></a>
+<rect x="1140" y="166" width="204" height="2070" rx="14" fill="#ffffff" stroke="#d3dce8" stroke-width="1.6"/>
+<rect x="1141" y="167" width="202" height="65" rx="13" fill="#edf5ff" stroke="none" stroke-width="1.4"/>
+<text x="1159" y="190" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">数据网</text>
+<text x="1159" y="219" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="29" font-weight="700" fill="#1e62a7" text-anchor="start">TCP / UDP</text>
+<text x="1257" y="189" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#1e62a7" text-anchor="start">索引 ↗</text>
+<a href="../../docs/runtime-reference.md#udp-telemetry" xlink:href="../../docs/runtime-reference.md#udp-telemetry" aria-label="索引 ↗"><rect x="1255" y="167" width="78" height="30" fill="#ffffff" fill-opacity="0" pointer-events="all"/></a>
+<rect x="1368" y="166" width="676" height="2070" rx="14" fill="#ffffff" stroke="#d3dce8" stroke-width="1.6"/>
+<rect x="1369" y="167" width="674" height="65" rx="13" fill="#edf5ff" stroke="none" stroke-width="1.4"/>
+<text x="1387" y="190" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">车端进程</text>
+<text x="1387" y="219" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="29" font-weight="700" fill="#1e62a7" text-anchor="start">management-tls 线程</text>
+<text x="1914" y="189" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#1e62a7" text-anchor="start">调用索引 ↗</text>
+<a href="../../docs/runtime-reference.md#tls-management" xlink:href="../../docs/runtime-reference.md#tls-management" aria-label="调用索引 ↗"><rect x="1912" y="167" width="121" height="30" fill="#ffffff" fill-opacity="0" pointer-events="all"/></a>
+<rect x="2068" y="166" width="884" height="2070" rx="14" fill="#ffffff" stroke="#d3dce8" stroke-width="1.6"/>
+<rect x="2069" y="167" width="882" height="65" rx="13" fill="#f1edfa" stroke="none" stroke-width="1.4"/>
+<text x="2087" y="190" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">车端进程</text>
+<text x="2087" y="219" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="29" font-weight="700" fill="#644e95" text-anchor="start">仿真主线程</text>
+<text x="2822" y="189" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#1e62a7" text-anchor="start">调用索引 ↗</text>
+<a href="../../docs/runtime-reference.md#vehicle-tick" xlink:href="../../docs/runtime-reference.md#vehicle-tick" aria-label="调用索引 ↗"><rect x="2820" y="167" width="121" height="30" fill="#ffffff" fill-opacity="0" pointer-events="all"/></a>
+<rect x="1368" y="1851" width="676" height="385" rx="14" fill="#e9f7f3" stroke="#0b7468" stroke-width="1.7"/>
+<text x="1392" y="1892" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#0b7468" text-anchor="start">独立观察进程  /  UDP</text>
+<text x="1882" y="1892" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#1e62a7" text-anchor="start">调用索引 ↗</text>
+<a href="../../docs/runtime-reference.md#telemetry-observer" xlink:href="../../docs/runtime-reference.md#telemetry-observer" aria-label="调用索引 ↗"><rect x="1880" y="1868" width="135" height="32" fill="#ffffff" fill-opacity="0" pointer-events="all"/></a>
+<polyline points="273,300 273,328" fill="none" stroke="#192b44" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="273.00,328.00 269.00,319.00 277.00,319.00" fill="#192b44"/>
+<polyline points="273,376 273,409" fill="none" stroke="#192b44" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="273.00,409.00 269.00,400.00 277.00,400.00" fill="#192b44"/>
+<polyline points="497,352 568,352" fill="none" stroke="#192b44" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="568.00,352.00 559.00,356.00 559.00,348.00" fill="#192b44"/>
+<polyline points="825,376 825,409" fill="none" stroke="#192b44" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="825.00,409.00 821.00,400.00 829.00,400.00" fill="#192b44"/>
+<polyline points="825,457 825,513" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="825.00,513.00 821.00,504.00 829.00,504.00" fill="#1e62a7"/>
+<polyline points="568,433 548,433 548,1164 568,1164" fill="none" stroke="#192b44" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="568.00,1164.00 559.00,1168.00 559.00,1160.00" fill="#192b44"/>
+<polyline points="81,433 65,433 65,1078 81,1078" fill="none" stroke="#192b44" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="81.00,1078.00 72.00,1082.00 72.00,1074.00" fill="#192b44"/>
+<polyline points="65,1078 65,1837 81,1837" fill="none" stroke="#192b44" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="81.00,1837.00 72.00,1841.00 72.00,1833.00" fill="#192b44"/>
+<polyline points="65,599 81,599" fill="none" stroke="#192b44" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="81.00,599.00 72.00,603.00 72.00,595.00" fill="#192b44"/>
+<polyline points="65,779 81,779" fill="none" stroke="#192b44" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="81.00,779.00 72.00,783.00 72.00,775.00" fill="#192b44"/>
+<polyline points="2449,300 2449,328" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2449.00,328.00 2445.00,319.00 2453.00,319.00" fill="#644e95"/>
+<polyline points="2200,352 1988,352" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1988.00,352.00 1997.00,348.00 1997.00,356.00" fill="#1e62a7"/>
+<text x="2003" y="338" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#1e62a7" text-anchor="start">with management</text>
+<polyline points="1626,376 1626,409" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="1626.00,409.00 1622.00,400.00 1630.00,400.00" fill="#1e62a7"/>
+<polyline points="1626,457 1626,513" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1626.00,513.00 1622.00,504.00 1630.00,504.00" fill="#1e62a7"/>
+<polyline points="2425,376 2425,452" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2425.00,452.00 2421.00,443.00 2429.00,443.00" fill="#644e95"/>
+<polyline points="2425,500 2425,1078" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2425.00,1078.00 2421.00,1069.00 2429.00,1069.00" fill="#644e95"/>
+<rect x="81" y="252" width="416" height="48" rx="9" fill="#edf2f8" stroke="#192b44" stroke-width="1.9"/>
+<text x="94" y="285" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#192b44" text-anchor="start">rover.desktop.app.main()</text>
+<rect x="81" y="328" width="416" height="48" rx="9" fill="#edf2f8" stroke="#192b44" stroke-width="1.9"/>
+<text x="94" y="361" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#192b44" text-anchor="start">DesktopConsole.__init__()</text>
+<rect x="81" y="409" width="416" height="48" rx="9" fill="#edf2f8" stroke="#192b44" stroke-width="1.9"/>
+<text x="94" y="442" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#192b44" text-anchor="start">QApplication.exec()</text>
+<rect x="81" y="575" width="416" height="67" rx="9" fill="#edf2f8" stroke="#192b44" stroke-width="1.9"/>
+<text x="94" y="608" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#192b44" text-anchor="start">DesktopConsole.poll_secure_status()</text>
+<text x="94" y="631" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">worker.status() → 按钮、操作员与事件</text>
+<rect x="81" y="755" width="416" height="67" rx="9" fill="#edf2f8" stroke="#192b44" stroke-width="1.9"/>
+<text x="94" y="788" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#192b44" text-anchor="start">DesktopConsole.closeEvent()</text>
+<text x="94" y="811" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">worker.close()  /  wait_closed(0)</text>
+<rect x="568" y="328" width="520" height="48" rx="9" fill="#edf2f8" stroke="#192b44" stroke-width="1.9"/>
+<text x="581" y="361" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#192b44" text-anchor="start">SecureControlWorker.start()</text>
+<rect x="568" y="409" width="520" height="48" rx="9" fill="#edf2f8" stroke="#192b44" stroke-width="1.9"/>
+<text x="581" y="442" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#192b44" text-anchor="start">SecureControlWorker._run()</text>
+<rect x="1392" y="328" width="596" height="48" rx="9" fill="#edf5ff" stroke="#1e62a7" stroke-width="1.9"/>
+<text x="1405" y="361" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#1e62a7" text-anchor="start">management_listener()</text>
+<rect x="1392" y="409" width="596" height="67" rx="9" fill="#edf5ff" stroke="#1e62a7" stroke-width="1.9"/>
+<text x="1405" y="442" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#1e62a7" text-anchor="start">run_worker()</text>
+<text x="1405" y="465" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">accept()  →  wrap_socket(server_side=True)</text>
+<rect x="2200" y="252" width="498" height="48" rx="9" fill="#f1edfa" stroke="#644e95" stroke-width="1.9"/>
+<text x="2213" y="285" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#644e95" text-anchor="start">rover.vehicle.app.cli()</text>
+<rect x="2200" y="328" width="498" height="48" rx="9" fill="#f1edfa" stroke="#644e95" stroke-width="1.9"/>
+<text x="2213" y="361" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#644e95" text-anchor="start">rover.vehicle.app.main()</text>
+<rect x="2225" y="452" width="404" height="48" rx="9" fill="#f1edfa" stroke="#644e95" stroke-width="1.9"/>
+<text x="2238" y="485" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#644e95" text-anchor="start">while True</text>
+<text x="2455" y="532" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#644e95" text-anchor="start">起始时间 · monotonic()</text>
+<polyline points="825,580 825,606" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="825.00,606.00 821.00,597.00 829.00,597.00" fill="#1e62a7"/>
+<polyline points="825,818 825,850" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="825.00,850.00 821.00,841.00 829.00,841.00" fill="#1e62a7"/>
+<polyline points="1088,936 1131,936 1131,874 1349,874 1349,537 1392,537" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1392.00,537.00 1383.00,541.00 1383.00,533.00" fill="#1e62a7"/>
+<polyline points="1088,630 1098,630 1098,860 1088,860" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1088.00,860.00 1097.00,856.00 1097.00,864.00" fill="#1e62a7"/>
+<polyline points="1680,561 1680,592" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1680.00,592.00 1676.00,583.00 1684.00,583.00" fill="#1e62a7"/>
+<polyline points="1680,659 1680,689" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1680.00,689.00 1676.00,680.00 1684.00,680.00" fill="#1e62a7"/>
+<polyline points="1680,825 1680,853" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1680.00,853.00 1676.00,844.00 1684.00,844.00" fill="#1e62a7"/>
+<polyline points="1680,901 1680,927" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1680.00,927.00 1676.00,918.00 1684.00,918.00" fill="#1e62a7"/>
+<polyline points="1680,1063 1680,1078" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1680.00,1078.00 1676.00,1069.00 1684.00,1069.00" fill="#1e62a7"/>
+<polyline points="1988,1102 2200,1102" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="2200.00,1102.00 2191.00,1106.00 2191.00,1098.00" fill="#1e62a7"/>
+<polyline points="1459,1126 1459,1208" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="1459.00,1208.00 1455.00,1199.00 1463.00,1199.00" fill="#1e62a7"/>
+<polyline points="1392,1232 1270,1232 1270,982 1088,982" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="1088.00,982.00 1097.00,978.00 1097.00,986.00" fill="#1e62a7"/>
+<polyline points="825,898 825,911" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="825.00,911.00 821.00,902.00 829.00,902.00" fill="#1e62a7"/>
+<polyline points="825,960 825,974" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="825.00,974.00 821.00,965.00 829.00,965.00" fill="#1e62a7"/>
+<polyline points="1988,746 2019,746 2019,1232 1988,1232" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1988.00,1232.00 1997.00,1228.00 1997.00,1236.00" fill="#1e62a7"/>
+<polyline points="2480,1102 2499,1102 2499,1095 2518,1095" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2518.00,1095.00 2509.00,1099.00 2509.00,1091.00" fill="#644e95"/>
+<polyline points="2717,1071 2717,1036" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2717.00,1036.00 2721.00,1045.00 2713.00,1045.00" fill="#644e95"/>
+<polyline points="2717,1119 2717,1151" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2717.00,1151.00 2713.00,1142.00 2721.00,1142.00" fill="#644e95"/>
+<polyline points="2518,1175 1988,1175 1988,1115" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="1988.00,1115.00 1992.00,1124.00 1984.00,1124.00" fill="#1e62a7"/>
+<rect x="568" y="513" width="520" height="67" rx="9" fill="#edf5ff" stroke="#1e62a7" stroke-width="1.9"/>
+<text x="581" y="546" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#1e62a7" text-anchor="start">connect_management()</text>
+<text x="581" y="569" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">create_connection() → wrap_socket()</text>
+<rect x="568" y="606" width="520" height="48" rx="9" fill="#edf5ff" stroke="#1e62a7" stroke-width="1.9"/>
+<text x="581" y="639" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#1e62a7" text-anchor="start">ManagementClient.authenticate()</text>
+<rect x="568" y="682" width="520" height="136" rx="8" fill="#ffffff" stroke="#1e62a7" stroke-width="1.7"/>
+<rect x="569" y="683" width="518" height="42" rx="8" fill="#edf5ff" stroke="none" stroke-width="1.4"/>
+<text x="581" y="712" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#1e62a7" text-anchor="start">SecureControlSession.open() 等入口</text>
+<text x="581" y="747" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#192b44" text-anchor="start">open_session()</text>
+<text x="581" y="776" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#192b44" text-anchor="start">issue_control_window()</text>
+<text x="581" y="805" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#192b44" text-anchor="start">enable_session()</text>
+<text x="867" y="747" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#192b44" text-anchor="start">emergency_stop()</text>
+<text x="867" y="776" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#192b44" text-anchor="start">reset_control()</text>
+<rect x="568" y="850" width="520" height="48" rx="9" fill="#edf5ff" stroke="#1e62a7" stroke-width="1.9"/>
+<text x="581" y="883" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#1e62a7" text-anchor="start">ManagementClient._exchange()</text>
+<rect x="568" y="912" width="520" height="48" rx="9" fill="#edf5ff" stroke="#1e62a7" stroke-width="1.9"/>
+<text x="581" y="945" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#1e62a7" text-anchor="start">send_record()  →  encode_record()</text>
+<rect x="568" y="974" width="520" height="67" rx="9" fill="#edf5ff" stroke="#1e62a7" stroke-width="1.9"/>
+<text x="581" y="1007" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#1e62a7" text-anchor="start">iter_records()  →  decode(reply)</text>
+<text x="581" y="1030" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">校对响应 request_id</text>
+<rect x="1392" y="513" width="596" height="48" rx="9" fill="#edf5ff" stroke="#1e62a7" stroke-width="1.9"/>
+<text x="1405" y="546" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#1e62a7" text-anchor="start">serve_management_connection()</text>
+<rect x="1392" y="592" width="596" height="67" rx="9" fill="#edf5ff" stroke="#1e62a7" stroke-width="1.9"/>
+<text x="1405" y="625" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#1e62a7" text-anchor="start">iter_records()</text>
+<text x="1405" y="648" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">recv()  →  TcpRecordBuffer.feed()</text>
+<rect x="1392" y="689" width="596" height="136" rx="8" fill="#ffffff" stroke="#1e62a7" stroke-width="1.7"/>
+<rect x="1393" y="690" width="594" height="42" rx="8" fill="#edf5ff" stroke="none" stroke-width="1.4"/>
+<text x="1405" y="719" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#1e62a7" text-anchor="start">第一条记录</text>
+<text x="1405" y="754" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#192b44" text-anchor="start">decode_authenticate_request()</text>
+<text x="1405" y="783" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#192b44" text-anchor="start">verify_client_credential()</text>
+<text x="1405" y="812" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#192b44" text-anchor="start">encode_authentication_result()</text>
+<text x="1697" y="847" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#1e62a7" text-anchor="start">凭据通过</text>
+<rect x="1392" y="853" width="596" height="48" rx="9" fill="#edf5ff" stroke="#1e62a7" stroke-width="1.9"/>
+<text x="1405" y="886" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#1e62a7" text-anchor="start">decode_session_request()</text>
+<rect x="1392" y="927" width="614" height="136" rx="8" fill="#ffffff" stroke="#1e62a7" stroke-width="1.7"/>
+<rect x="1393" y="928" width="612" height="42" rx="8" fill="#edf5ff" stroke="none" stroke-width="1.4"/>
+<text x="1405" y="957" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#1e62a7" text-anchor="start">按请求选回调  /  finally 关闭</text>
+<text x="1405" y="992" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#192b44" text-anchor="start">on_open_session()</text>
+<text x="1405" y="1021" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#192b44" text-anchor="start">on_enable_session()</text>
+<text x="1405" y="1050" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#192b44" text-anchor="start">on_issue_control_window()</text>
+<text x="1730" y="992" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#192b44" text-anchor="start">on_emergency_stop()</text>
+<text x="1730" y="1021" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#192b44" text-anchor="start">on_reset_control()</text>
+<text x="1730" y="1050" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#192b44" text-anchor="start">on_close_connection()</text>
+<rect x="1392" y="1078" width="596" height="48" rx="9" fill="#edf5ff" stroke="#1e62a7" stroke-width="1.9"/>
+<text x="1405" y="1111" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#1e62a7" text-anchor="start">submit(operation)  →  pending.put_nowait()</text>
+<rect x="1392" y="1208" width="596" height="67" rx="9" fill="#edf5ff" stroke="#1e62a7" stroke-width="1.9"/>
+<text x="1405" y="1241" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#1e62a7" text-anchor="start">send_record()  ←  encode_*_result()</text>
+<text x="1405" y="1264" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">管理回复也包含 encode_session_opened()</text>
+<rect x="2200" y="1078" width="280" height="48" rx="9" fill="#f1edfa" stroke="#644e95" stroke-width="1.9"/>
+<text x="2213" y="1111" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#644e95" text-anchor="start">process_one(guard)</text>
+<rect x="2476" y="813" width="445" height="223" rx="8" fill="#ffffff" stroke="#644e95" stroke-width="1.7"/>
+<rect x="2477" y="814" width="443" height="42" rx="8" fill="#f1edfa" stroke="none" stroke-width="1.4"/>
+<text x="2489" y="843" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#644e95" text-anchor="start">车端会话处理函数</text>
+<text x="2489" y="878" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#192b44" text-anchor="start">handle_open_session()</text>
+<text x="2489" y="907" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#192b44" text-anchor="start">handle_enable_session()</text>
+<text x="2489" y="936" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#192b44" text-anchor="start">handle_issue_control_window()</text>
+<text x="2489" y="965" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#192b44" text-anchor="start">handle_emergency_stop()</text>
+<text x="2489" y="994" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#192b44" text-anchor="start">handle_reset_control()</text>
+<text x="2489" y="1023" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#192b44" text-anchor="start">handle_connection_closed()</text>
+<rect x="2518" y="1071" width="403" height="48" rx="9" fill="#f1edfa" stroke="#644e95" stroke-width="1.9"/>
+<text x="2531" y="1104" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#644e95" text-anchor="start">operation(guard)</text>
+<rect x="2518" y="1151" width="403" height="48" rx="9" fill="#f1edfa" stroke="#644e95" stroke-width="1.9"/>
+<text x="2531" y="1184" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#644e95" text-anchor="start">future.set_result(reply)</text>
+<text x="2150" y="1086" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#1e62a7" text-anchor="start">Queue</text>
+<text x="2033" y="1166" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#1e62a7" text-anchor="start">result.result()</text>
+<text x="1157" y="860" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#1e62a7" text-anchor="start">TLS / TCP 19177</text>
+<text x="1157" y="966" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#1e62a7" text-anchor="start">TLS 回复</text>
+<text x="1535" y="1174" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#1e62a7" text-anchor="start">取出已完成的 Future</text>
+<polyline points="497,1078 568,1078" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="568.00,1078.00 559.00,1082.00 559.00,1074.00" fill="#a65325"/>
+<polyline points="825,1102 825,1140" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="825.00,1140.00 821.00,1131.00 829.00,1131.00" fill="#a65325"/>
+<polyline points="810,1188 810,1215 693,1215 693,1255" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="693.00,1255.00 689.00,1246.00 697.00,1246.00" fill="#a65325"/>
+<polyline points="834,1188 834,1215 951,1215 951,1255" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="951.00,1255.00 947.00,1246.00 955.00,1246.00" fill="#a65325"/>
+<polyline points="693,1303 693,1316" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="693.00,1316.00 689.00,1307.00 697.00,1307.00" fill="#a65325"/>
+<polyline points="831,1445 834,1445 834,1279 841,1279" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="841.00,1279.00 832.00,1283.00 832.00,1275.00" fill="#a65325"/>
+<polyline points="951,1303 951,1452" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="951.00,1452.00 947.00,1443.00 955.00,1443.00" fill="#a65325"/>
+<polyline points="809,1500 809,1524 705,1524 705,1542" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="705.00,1542.00 701.00,1533.00 709.00,1533.00" fill="#a65325"/>
+<polyline points="705,1590 705,1621" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="705.00,1621.00 701.00,1612.00 709.00,1612.00" fill="#a65325"/>
+<polyline points="919,1566 952,1566" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="952.00,1566.00 943.00,1570.00 943.00,1562.00" fill="#a65325"/>
+<polyline points="1088,1566 2200,1566" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2200.00,1566.00 2191.00,1570.00 2191.00,1562.00" fill="#a65325"/>
+<polyline points="568,1380 564,1380 564,770 568,770" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="568.00,770.00 559.00,774.00 559.00,766.00" fill="#1e62a7"/>
+<polyline points="1075,1270 1110,1270 1110,790 1088,790" fill="none" stroke="#1e62a7" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1088.00,790.00 1097.00,786.00 1097.00,794.00" fill="#1e62a7"/>
+<polyline points="497,1208 514,1208 514,1090 568,1090" fill="none" stroke="#9a4050" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="568.00,1090.00 559.00,1094.00 559.00,1086.00" fill="#9a4050"/>
+<polyline points="497,1395 507,1395 507,1557 497,1557" fill="none" stroke="#9a4050" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="497.00,1557.00 506.00,1553.00 506.00,1561.00" fill="#9a4050"/>
+<polyline points="497,1478 507,1478" fill="none" stroke="#9a4050" stroke-width="3.3" stroke-linejoin="round"/>
+<polyline points="497,1568 555,1568 555,1200 568,1200" fill="none" stroke="#9a4050" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="568.00,1200.00 559.00,1204.00 559.00,1196.00" fill="#9a4050"/>
+<polyline points="1088,1164 1121,1164 1121,813 1088,813" fill="none" stroke="#9a4050" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1088.00,813.00 1097.00,809.00 1097.00,817.00" fill="#9a4050"/>
+<rect x="81" y="1054" width="416" height="48" rx="9" fill="#fdf2e9" stroke="#a65325" stroke-width="1.9"/>
+<text x="94" y="1087" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#a65325" text-anchor="start">DesktopConsole.start_control()</text>
+<rect x="568" y="1054" width="520" height="48" rx="9" fill="#fdf2e9" stroke="#a65325" stroke-width="1.9"/>
+<text x="581" y="1087" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#a65325" text-anchor="start">SecureControlWorker.apply_target()</text>
+<rect x="568" y="1140" width="520" height="67" rx="9" fill="#fdf2e9" stroke="#a65325" stroke-width="1.9"/>
+<text x="581" y="1173" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#a65325" text-anchor="start">SecureControlWorker._run_loop()</text>
+<text x="581" y="1196" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">读取目标与 generation，调用 _perform_action()</text>
+<text x="834" y="1130" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#a65325" text-anchor="start">Condition.notify_all()</text>
+<text x="600" y="1241" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#a65325" text-anchor="start">首次发送</text>
+<text x="953" y="1241" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#a65325" text-anchor="start">周期发送</text>
+<rect x="568" y="1255" width="253" height="48" rx="9" fill="#fdf2e9" stroke="#a65325" stroke-width="1.9"/>
+<text x="581" y="1288" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#a65325" text-anchor="start">session.start()</text>
+<rect x="841" y="1255" width="234" height="48" rx="9" fill="#fdf2e9" stroke="#a65325" stroke-width="1.9"/>
+<text x="854" y="1288" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#a65325" text-anchor="start">session.send()</text>
+<rect x="568" y="1316" width="263" height="136" rx="8" fill="#ffffff" stroke="#a65325" stroke-width="1.7"/>
+<rect x="569" y="1317" width="261" height="42" rx="8" fill="#fdf2e9" stroke="none" stroke-width="1.4"/>
+<text x="581" y="1346" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#a65325" text-anchor="start">首次发包的调用顺序</text>
+<text x="581" y="1381" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#192b44" text-anchor="start">open()</text>
+<text x="581" y="1410" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#192b44" text-anchor="start">_renew_window()</text>
+<text x="581" y="1439" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#192b44" text-anchor="start">enable_session()</text>
+<text x="961" y="1393" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="400" fill="#a65325" text-anchor="start">按需续窗</text>
+<text x="961" y="1419" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="400" fill="#a65325" text-anchor="start">_send_gate()</text>
+<rect x="568" y="1452" width="520" height="48" rx="9" fill="#fdf2e9" stroke="#a65325" stroke-width="1.9"/>
+<text x="581" y="1485" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#a65325" text-anchor="start">send_windowed_control_command()</text>
+<rect x="568" y="1542" width="351" height="48" rx="9" fill="#fdf2e9" stroke="#a65325" stroke-width="1.9"/>
+<text x="581" y="1575" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#a65325" text-anchor="start">encode_windowed_command()</text>
+<rect x="568" y="1621" width="351" height="48" rx="9" fill="#fdf2e9" stroke="#a65325" stroke-width="1.9"/>
+<text x="581" y="1654" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#a65325" text-anchor="start">compute_control_mac()</text>
+<rect x="952" y="1542" width="136" height="48" rx="9" fill="#fdf2e9" stroke="#a65325" stroke-width="1.9"/>
+<text x="965" y="1575" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#a65325" text-anchor="start">sendto()</text>
+<text x="1157" y="1549" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#a65325" text-anchor="start">UDP 9999</text>
+<text x="1434" y="1549" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#a65325" text-anchor="start">ControlCommand v2</text>
+<rect x="81" y="1184" width="416" height="67" rx="9" fill="#fbedf0" stroke="#9a4050" stroke-width="1.9"/>
+<text x="94" y="1217" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#9a4050" text-anchor="start">stop_motion()</text>
+<text x="94" y="1240" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">apply_target()  ·  speed = 0</text>
+<rect x="81" y="1277" width="416" height="67" rx="9" fill="#fbedf0" stroke="#9a4050" stroke-width="1.9"/>
+<text x="94" y="1310" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#9a4050" text-anchor="start">stop_control()</text>
+<text x="94" y="1333" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">worker.stop_sending()</text>
+<rect x="81" y="1371" width="416" height="48" rx="9" fill="#fbedf0" stroke="#9a4050" stroke-width="1.9"/>
+<text x="94" y="1404" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#9a4050" text-anchor="start">request_emergency_stop()</text>
+<rect x="81" y="1454" width="416" height="48" rx="9" fill="#fbedf0" stroke="#9a4050" stroke-width="1.9"/>
+<text x="94" y="1487" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#9a4050" text-anchor="start">request_reset()</text>
+<rect x="81" y="1533" width="416" height="48" rx="9" fill="#fbedf0" stroke="#9a4050" stroke-width="1.9"/>
+<text x="94" y="1566" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="700" fill="#9a4050" text-anchor="start">SecureControlWorker._queue_action()</text>
+<text x="81" y="1620" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#1e62a7" text-anchor="start">停车与恢复 ↗</text>
+<a href="../../docs/runtime-reference.md#fault-and-recovery" xlink:href="../../docs/runtime-reference.md#fault-and-recovery" aria-label="停车与恢复 ↗"><rect x="79" y="1596" width="154" height="32" fill="#ffffff" fill-opacity="0" pointer-events="all"/></a>
+<polyline points="2425,1126 2425,1326" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2425.00,1326.00 2421.00,1317.00 2429.00,1317.00" fill="#644e95"/>
+<polyline points="2425,1393 2425,1542" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2425.00,1542.00 2421.00,1533.00 2429.00,1533.00" fill="#644e95"/>
+<polyline points="2425,1590 2425,1730" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2425.00,1730.00 2421.00,1721.00 2429.00,1721.00" fill="#644e95"/>
+<polyline points="2745,1566 2801,1566 2801,1601" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2801.00,1601.00 2797.00,1592.00 2805.00,1592.00" fill="#a65325"/>
+<polyline points="2801,1649 2801,1663" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2801.00,1663.00 2797.00,1654.00 2805.00,1654.00" fill="#a65325"/>
+<polyline points="2518,1687 2425,1687" fill="none" stroke="#a65325" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="2425.00,1687.00 2434.00,1683.00 2434.00,1691.00" fill="#a65325"/>
+<text x="2433" y="1676" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="19" font-weight="400" fill="#a65325" text-anchor="start">校验成功</text>
+<text x="2199" y="1652" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="400" fill="#644e95" text-anchor="start">收包后再检查超时</text>
+<polyline points="2425,1797 2425,1824" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2425.00,1824.00 2421.00,1815.00 2429.00,1815.00" fill="#644e95"/>
+<polyline points="2505,1848 2522,1848" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2522.00,1848.00 2513.00,1852.00 2513.00,1844.00" fill="#644e95"/>
+<polyline points="2425,1872 2425,1909" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2425.00,1909.00 2421.00,1900.00 2429.00,1900.00" fill="#644e95"/>
+<polyline points="2200,1848 2110,1848 2110,2095 2200,2095" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="2200.00,2095.00 2191.00,2099.00 2191.00,2091.00" fill="#644e95"/>
+<polyline points="2425,1957 2425,2003" fill="none" stroke="#0b7468" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2425.00,2003.00 2421.00,1994.00 2429.00,1994.00" fill="#0b7468"/>
+<polyline points="2535,2027 2551,2027" fill="none" stroke="#0b7468" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2551.00,2027.00 2542.00,2031.00 2542.00,2023.00" fill="#0b7468"/>
+<polyline points="2425,2051 2425,2071" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2425.00,2071.00 2421.00,2062.00 2429.00,2062.00" fill="#644e95"/>
+<polyline points="2425,2119 2425,2171" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="2425.00,2171.00 2421.00,2162.00 2429.00,2162.00" fill="#644e95"/>
+<polyline points="2650,2195 2931,2195 2931,476 2629,476" fill="none" stroke="#644e95" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="2629.00,476.00 2638.00,472.00 2638.00,480.00" fill="#644e95"/>
+<rect x="2200" y="1326" width="450" height="67" rx="9" fill="#f1edfa" stroke="#644e95" stroke-width="1.9"/>
+<text x="2213" y="1359" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#644e95" text-anchor="start">update_control_guard()</text>
+<text x="2213" y="1382" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">超时锁存 / 撤销使能及当前控制目标</text>
+<text x="2189" y="1308" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#644e95" text-anchor="start">看门狗检查</text>
+<rect x="2200" y="1542" width="545" height="48" rx="9" fill="#fdf2e9" stroke="#a65325" stroke-width="1.9"/>
+<text x="2213" y="1575" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#a65325" text-anchor="start">try_receive_windowed_control_command()</text>
+<rect x="2518" y="1601" width="403" height="48" rx="9" fill="#fdf2e9" stroke="#a65325" stroke-width="1.9"/>
+<text x="2531" y="1634" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#a65325" text-anchor="start">decode_windowed_command()</text>
+<rect x="2518" y="1663" width="403" height="48" rx="9" fill="#fdf2e9" stroke="#a65325" stroke-width="1.9"/>
+<text x="2531" y="1696" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#a65325" text-anchor="start">verify_control_mac()</text>
+<rect x="2200" y="1730" width="715" height="67" rx="9" fill="#f1edfa" stroke="#644e95" stroke-width="1.9"/>
+<text x="2213" y="1763" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#644e95" text-anchor="start">update_windowed_command_guard_with_reason()</text>
+<text x="2213" y="1786" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">control_window_rejection_reason() → _apply_session_command()</text>
+<text x="2444" y="1815" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="400" fill="#644e95" text-anchor="start">guard.last_accepted</text>
+<rect x="2200" y="1824" width="305" height="48" rx="9" fill="#f1edfa" stroke="#644e95" stroke-width="1.9"/>
+<text x="2213" y="1857" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#644e95" text-anchor="start">step_vehicle()</text>
+<rect x="2200" y="1909" width="315" height="48" rx="9" fill="#e9f7f3" stroke="#0b7468" stroke-width="1.9"/>
+<text x="2213" y="1942" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#0b7468" text-anchor="start">TelemetrySnapshot</text>
+<rect x="2522" y="1824" width="400" height="136" rx="8" fill="#ffffff" stroke="#644e95" stroke-width="1.7"/>
+<rect x="2523" y="1825" width="398" height="42" rx="8" fill="#f1edfa" stroke="none" stroke-width="1.4"/>
+<text x="2535" y="1854" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="700" fill="#644e95" text-anchor="start">step_vehicle() 的内部调用顺序</text>
+<text x="2535" y="1889" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#192b44" text-anchor="start">target_for_tick()</text>
+<text x="2535" y="1918" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#192b44" text-anchor="start">apply_target()</text>
+<text x="2535" y="1947" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#192b44" text-anchor="start">advance()</text>
+<text x="2228" y="1897" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#0b7468" text-anchor="start">达到遥测发送时刻</text>
+<text x="2125" y="2079" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="400" fill="#644e95" text-anchor="start">未到时</text>
+<rect x="2200" y="2003" width="335" height="48" rx="9" fill="#e9f7f3" stroke="#0b7468" stroke-width="1.9"/>
+<text x="2213" y="2036" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#0b7468" text-anchor="start">send_telemetry()</text>
+<rect x="2551" y="2003" width="370" height="48" rx="9" fill="#e9f7f3" stroke="#0b7468" stroke-width="1.9"/>
+<text x="2564" y="2036" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#0b7468" text-anchor="start">encode_telemetry()</text>
+<rect x="2200" y="2071" width="450" height="67" rx="9" fill="#f1edfa" stroke="#644e95" stroke-width="1.9"/>
+<text x="2213" y="2104" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#644e95" text-anchor="start">record()  /  print()</text>
+<text x="2213" y="2127" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">可选 CSV 记录  /  状态输出</text>
+<rect x="2200" y="2171" width="450" height="48" rx="9" fill="#f1edfa" stroke="#644e95" stroke-width="1.9"/>
+<text x="2213" y="2204" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#644e95" text-anchor="start">sleep(max(0.0, dt_s - work_s))</text>
+<text x="2669" y="2183" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#644e95" text-anchor="start">下一轮</text>
+<polyline points="2200,2027 1509,2027 1509,1905 497,1905" fill="none" stroke="#0b7468" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="497.00,1905.00 506.00,1901.00 506.00,1909.00" fill="#0b7468"/>
+<polyline points="1509,2027 1509,2071" fill="none" stroke="#0b7468" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1509.00,2071.00 1505.00,2062.00 1513.00,2062.00" fill="#0b7468"/>
+<polyline points="275,1861 275,1881" fill="none" stroke="#0b7468" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="275.00,1881.00 271.00,1872.00 279.00,1872.00" fill="#0b7468"/>
+<polyline points="275,1929 275,1955" fill="none" stroke="#0b7468" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="275.00,1955.00 271.00,1946.00 279.00,1946.00" fill="#0b7468"/>
+<polyline points="275,2003 275,2030" fill="none" stroke="#0b7468" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="275.00,2030.00 271.00,2021.00 279.00,2021.00" fill="#0b7468"/>
+<polyline points="275,2078 275,2107" fill="none" stroke="#0b7468" stroke-width="3.3" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="275.00,2107.00 271.00,2098.00 279.00,2098.00" fill="#0b7468"/>
+<polyline points="1679,2119 1679,2151" fill="none" stroke="#0b7468" stroke-width="3.3" stroke-linejoin="round"/>
+<polygon points="1679.00,2151.00 1675.00,2142.00 1683.00,2142.00" fill="#0b7468"/>
+<rect x="81" y="1813" width="416" height="48" rx="9" fill="#e9f7f3" stroke="#0b7468" stroke-width="1.9"/>
+<text x="94" y="1846" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#0b7468" text-anchor="start">DesktopConsole.poll_telemetry()</text>
+<rect x="81" y="1881" width="416" height="48" rx="9" fill="#e9f7f3" stroke="#0b7468" stroke-width="1.9"/>
+<text x="94" y="1914" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#0b7468" text-anchor="start">try_receive_telemetry()</text>
+<rect x="81" y="1955" width="416" height="48" rx="9" fill="#e9f7f3" stroke="#0b7468" stroke-width="1.9"/>
+<text x="94" y="1988" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#0b7468" text-anchor="start">decode_telemetry()</text>
+<rect x="81" y="2030" width="416" height="48" rx="9" fill="#e9f7f3" stroke="#0b7468" stroke-width="1.9"/>
+<text x="94" y="2063" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#0b7468" text-anchor="start">VehicleMap.set_state()</text>
+<rect x="81" y="2107" width="416" height="48" rx="9" fill="#e9f7f3" stroke="#0b7468" stroke-width="1.9"/>
+<text x="94" y="2140" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="26" font-weight="700" fill="#0b7468" text-anchor="start">VehicleMap.paintEvent()</text>
+<rect x="1392" y="2071" width="596" height="48" rx="9" fill="#e9f7f3" stroke="#0b7468" stroke-width="1.9"/>
+<text x="1405" y="2104" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#0b7468" text-anchor="start">demo_udp_telemetry_receiver.main()</text>
+<rect x="1392" y="2151" width="596" height="48" rx="9" fill="#e9f7f3" stroke="#0b7468" stroke-width="1.9"/>
+<text x="1405" y="2184" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="700" fill="#0b7468" text-anchor="start">try_receive_telemetry()  →  print()</text>
+<text x="1158" y="1889" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#0b7468" text-anchor="start">UDP 10000</text>
+<text x="1528" y="2056" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#0b7468" text-anchor="start">UDP 10001 · 可选观察端</text>
+<text x="1718" y="2012" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#0b7468" text-anchor="start">sendto(packet, address)</text>
+<circle cx="1509" cy="2027" r="5" fill="#0b7468"/>
+<text x="48" y="2278" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b5f76" text-anchor="start">端口为默认示例值。SVG 的调用索引可跳转到运行参考。</text>
+</svg>
