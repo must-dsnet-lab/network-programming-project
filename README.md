@@ -662,11 +662,19 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 
 **账号与会话。** Windows 默认账号库为 `%LOCALAPPDATA%\RoverVehicle\accounts.sqlite3`，实际路径以车端管理窗口为准。注册和角色存入 SQLite，关闭并重新启动车端后继续使用同一路径即可登录。角色变化会使旧会话退出，账号在重新登录后使用新角色。车端当前最多接受六个同时在线的已登录会话。
 
-**遥测从哪里来。** 每个桌面登录后从系统分到自己的 UDP 接收端口。桌面先通过 TLS 取得短期登记凭证，再从同一个 UDP 套接字发登记包。车端按实际收到的来源 IP 和端口回传遥测。车端表里的「已发送」表示车端 UDP 发送调用成功，桌面的「遥测可用」用于核对实际收到数据。点选会话可看近期事件。断开会清除原遥测登记，重连建立新会话和端点。
+**遥测从哪里来。** 创建窗口时，桌面先打开 UDP 接收套接字，由系统分配端口。TLS 登录并建立会话后，桌面取得短期登记凭证，再从同一个 UDP 套接字发登记包。车端按实际收到的来源 IP 和端口回传遥测。车端表里的「已发送」表示车端 UDP 发送调用成功，桌面的「遥测可用」用于核对实际收到数据。点选会话可看近期事件。断开会清除原遥测登记，重连后新会话重新登记端点。
 
 要观察用户版车端，在桌面启动页选择「连接车端」，用观察员账号登录「用户版（自动遥测）」。启动页的「只读观察（手动遥测）」用于接收预设目标的固定遥测。Windows 桌面会独占自己的 UDP 监听端口，监听地址与已有窗口重叠时会提示监听失败。
 
 **多候选交接。** 注册三个操作者 A、B、C 和一个观察员，并确认四条会话均收到遥测。A 申请控制权并应用目标，再点「交接」选择 C。车端确认零速后授予 C，C 显式应用才起步。只有一名候选人时，交接按钮会直接发起交接。观察员可跟随车辆状态和轨迹，交接资格由车端根据角色和遥测登记裁决。
+
+<a id="user-edition-runtime-map"></a>
+
+#### 图 13 二维用户版运行关系
+
+[![图 13：用户版 TLS 登录、UDP 自动登记和遥测分发，及角色、交接和断开清理](reference_image/diagrams/13-user-edition-runtime.png)](reference_image/diagrams/13-user-edition-runtime.svg)
+
+点击图片可放大。观察员和操作者共用登录及遥测路径，车端按会话分别登记端点、分发遥测和裁决控制资格。 [图 13 生成源](reference_image/diagrams/render_user_edition_runtime.py)
 
 源码复现可用 `python -m rover.vehicle.admin_app` 和 `python -m rover.desktop.app --launcher`。Windows 打包使用同一脚本分别执行两次：
 
@@ -691,6 +699,14 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 | 急停、控制超时或断开 | 按车端既有保护规则停车，急停和看门狗超时锁存。重新连接或显式复位后维持静止，需按模式重新申请并应用 |
 
 **输入和准入。** `drive_input` 中的 `throttle` 和 `brake` 为 `0–1`，`steering` 为 `−1–1`，其中正值向左。车端对驾驶输入和 `speed_mps`／`heading_rad` 数值目标分别解码，混用两种字段会被拒绝。高级和专家可沿用数值控制。用户版由 TLS 状态的 `drive_input_supported` 字段声明驾驶能力，界面只向已登录操作者显示驾驶选项。沿用 HMAC、短窗、序号与授权代次检查，回传平面位置、朝向、实测速度和保护状态。 [控制报文](src/rover/protocol/control_codec.py) · [驾驶模型](src/rover/core/driving.py)
+
+<a id="two-dimensional-driving-flow"></a>
+
+#### 图 14 二维驾驶运行链路
+
+[![图 14：驾驶输入经过本地或安全 UDP 控制、车端保护和固定步长运动，再以遥测回到桌面](reference_image/diagrams/14-2d-driving-flow.png)](reference_image/diagrams/14-2d-driving-flow.svg)
+
+点击图片可放大。沿主线可查看摇杆和踏板输入如何驱动车辆加速、滑行与制动，沿保护分支可核对故障停车和恢复条件。 [图 14 生成源](reference_image/diagrams/render_2d_driving_flow.py)
 
 **固定输入复现（Windows PowerShell）**
 
@@ -1848,13 +1864,15 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 
 #### 9.3.2 SVG导图与生成源
 
-图 4–12 的 Python 生成源、SVG 和高清 PNG 保存在 `reference_image/diagrams/`。图 6 的 `LABELS`、`FIELDS` 和布局常量集中保存文字、字段及尺寸。
+图 4–14 的 Python 生成源、SVG 和高清 PNG 保存在 `reference_image/diagrams/`。图 6 的 `LABELS`、`FIELDS` 和布局常量集中保存文字、字段及尺寸。
 
 | 后续阶段图 | 正文或数据入口 | 可编辑生成源 |
 | --- | --- | --- |
 | 图 10 高级版核心运行结构 | [总图与函数索引](#advanced-runtime-map) | [render_advanced_runtime.py](reference_image/diagrams/render_advanced_runtime.py) |
 | 图 11 专家控制权时序 | [零速交接、续期与停车](#expert-authority-flow) | [render_expert_authority_flow.py](reference_image/diagrams/render_expert_authority_flow.py) |
 | 图 12 P7 看门狗时间对照 | [图与测量结果](docs/expert-control-authority.md#102-本机结果) · [公开汇总数据](reference_image/diagrams/p7-watchdog-samples.csv) | [render_watchdog_comparison.py](reference_image/diagrams/render_watchdog_comparison.py) |
+| 图 13 二维用户版运行关系 | [角色、自动遥测和管理](#user-edition-runtime-map) | [render_user_edition_runtime.py](reference_image/diagrams/render_user_edition_runtime.py) |
+| 图 14 二维驾驶运行链路 | [操纵、运动和保护](#two-dimensional-driving-flow) | [render_2d_driving_flow.py](reference_image/diagrams/render_2d_driving_flow.py) |
 使用项目已有PySide6，在仓库根目录运行：
 
 ```powershell
@@ -1867,9 +1885,11 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 .\.venv\Scripts\python.exe reference_image/diagrams/render_advanced_runtime.py
 .\.venv\Scripts\python.exe reference_image/diagrams/render_expert_authority_flow.py
 .\.venv\Scripts\python.exe reference_image/diagrams/render_watchdog_comparison.py
+.\.venv\Scripts\python.exe reference_image/diagrams/render_user_edition_runtime.py
+.\.venv\Scripts\python.exe reference_image/diagrams/render_2d_driving_flow.py
 ```
 
-各命令生成对应的 SVG 和 PNG，默认输出到生成源所在目录。图 5–12 复用图 4 的绘图工具。README 使用相对链接，移动资源时同步更新引用。U5 的数据曲线及独立生成命令见 [4.9](#desktop-2d-driving)。
+各命令生成对应的 SVG 和 PNG，默认输出到生成源所在目录。图 5–14 复用图 4 的绘图工具。README 使用相对链接，移动资源时同步更新引用。U5 的数据曲线及独立生成命令见 [4.9](#desktop-2d-driving)。
 
 图 5 保留早期协议分层阶段的状态。新增能力应同步更新相应阶段的图、正文和复现入口，并标明所对应的版本和验证范围。
 
