@@ -27,7 +27,10 @@ class TestExpertDesktopControl(unittest.TestCase):
         socket_patch = patch("rover.desktop.app.socket.socket", return_value=FakeSocket([]))
         socket_patch.start()
         self.addCleanup(socket_patch.stop)
-        self.window = DesktopConsole(secure_worker=self.worker, expert_mode=True, operator_id="desk-a")
+        self.window = DesktopConsole(
+            secure_worker=self.worker, expert_mode=True, operator_id="desk-a",
+            telemetry_address=("127.0.0.1", 10002),
+        )
         self.addCleanup(dispose_widget, self.window)
 
     def set_status(self, *, phase, allowed=(), owns=False, number=None, holder=None,
@@ -142,9 +145,28 @@ class TestExpertDesktopControl(unittest.TestCase):
         self.set_status(phase="idle", allowed=("acquire_authority",), last_result=reset)
         self.window.poll_secure_status()
         self.assertFalse(self.window.acquire_authority_button.isEnabled())
+        self.assertIn("等待本窗口收到未锁存遥测", self.window.control_status.text())
+        self.assertIn("127.0.0.1:10002", self.window.control_status.text())
+        self.assertIn("车端遥测目的地", self.window.control_status.text())
+        self.report_telemetry(fault=True)
+        self.assertFalse(self.window.acquire_authority_button.isEnabled())
+
         self.report_telemetry(fault=False)
         self.assertTrue(self.window.acquire_authority_button.isEnabled())
         self.assertFalse(self.window.start_button.isEnabled())
+        self.assertIn("请先申请控制权", self.window.control_status.text())
+
+        self.set_status(phase="controlling", holder="desk-b", number=4, last_result=reset)
+        self.window.poll_secure_status()
+        self.assertFalse(self.window.acquire_authority_button.isEnabled())
+        self.assertIn("等待当前持有者归还或交接", self.window.control_status.text())
+
+        self.set_status(phase="held", owns=True, holder="desk-a", number=5,
+                        allowed=("set_authority_enabled",))
+        self.window.poll_secure_status()
+        self.assertTrue(self.window.start_button.isEnabled())
+        self.assertIn("开始／应用", self.window.control_status.text())
+        self.worker.apply_target.assert_not_called()
 
 
 class TestExpertDesktopCli(unittest.TestCase):
