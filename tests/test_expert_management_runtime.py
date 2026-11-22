@@ -1,6 +1,6 @@
 """Exercise the expert runtime over loopback TCP, with TLS wrapped by a fixture."""
 
-from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import Future, ThreadPoolExecutor
 from contextlib import contextmanager
 from pathlib import Path
 import socket
@@ -18,7 +18,7 @@ from rover.protocol.expert_management_codec import (
 )
 from rover.transport.tcp_transport import iter_records, send_record
 from rover.vehicle.control_guard import ControlGuardState
-from rover.vehicle.expert_management_runtime import expert_management_listener
+from rover.vehicle.expert_management_runtime import ExpertManagementRuntime, expert_management_listener
 
 
 class LoopbackTestSocket(socket.socket):
@@ -27,6 +27,42 @@ class LoopbackTestSocket(socket.socket):
 
 
 class TestExpertManagementRuntime(unittest.TestCase):
+    def test_queued_renewal_uses_processing_time_at_lease_deadline(self):
+        runtime = ExpertManagementRuntime({}, operation_timeout_s=1.0)
+        guard = ControlGuardState()
+        guard, (_, opened) = runtime._dispatch(
+            guard, "desktop-a", "connection-a", {"type": "open_session"}, 1.0, 0.0,
+        )
+        session_id = opened["session_id"]
+        guard, (_, acquired) = runtime._dispatch(
+            guard, "desktop-a", "connection-a",
+            {"type": "acquire_authority", "session_id": session_id}, 1.0, 0.0,
+        )
+        guard, (_, status) = runtime._dispatch(
+            guard, "desktop-a", "connection-a",
+            {"type": "query_authority", "session_id": session_id}, 3.0, 0.0,
+        )
+        self.assertEqual(status["lease_remaining_s"], 1.0)
+
+        def renew(guard, now_s, wait_ms):
+            return runtime._dispatch(
+                guard, "desktop-a", "connection-a",
+                {"type": "renew_authority", "session_id": session_id,
+                 "generation": acquired["generation"]}, now_s, wait_ms,
+            )
+
+        reply = Future()
+        runtime._pending.put_nowait((renew, reply, 3.9))
+        with patch("rover.vehicle.expert_management_runtime.monotonic", side_effect=[3.99, 4.0]):
+            guard = runtime(guard)
+
+        message_type, result = reply.result(timeout=0)
+        self.assertEqual(message_type, "renew_authority_result")
+        self.assertFalse(result["accepted"])
+        self.assertEqual(result["reason"], "lease_expired")
+        self.assertFalse(guard.fault_latched)
+        self.assertIsNone(runtime.authority.grant)
+
     @contextmanager
     def listener(self, *, pump=True, operation_timeout_s=1.0, reported_vehicle=None):
         context = Mock()

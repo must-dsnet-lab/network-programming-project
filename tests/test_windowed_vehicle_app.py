@@ -55,15 +55,15 @@ class TestWindowedVehicleApp(unittest.TestCase):
             return state
 
         if authority is not None:
-            expert = MagicMock(spec=app.ExpertManagementRuntime, side_effect=process)
-            expert.authority = authority
-            expert.observe_vehicle.side_effect = lambda guard, state: guard
+            expert = app.ExpertManagementRuntime({}, operation_timeout_s=1.0)
+            expert._control.authority = authority
             management = nullcontext(expert)
         else:
             management = nullcontext(process) if managed else None
 
-        times = [100.0, 100.01, 100.02, 100.03, 100.04, 100.05, 100.06]
+        times = [100.0, 100.01, 100.02, 100.03, 100.04, 100.05, 100.06, 100.07]
         with (
+            patch.object(app.ExpertManagementRuntime, "__call__", side_effect=process),
             patch.object(app.socket, "socket", side_effect=[control, telemetry]),
             patch.object(
                 app,
@@ -124,6 +124,31 @@ class TestWindowedVehicleApp(unittest.TestCase):
 
         self.assertEqual(expert.speed_mps, 1.0)
         self.assertEqual(advanced.speed_mps, 0.0)
+
+    def test_lease_expires_between_management_and_udp_admission(self):
+        authority = self._enabled_expert_authority()
+        grant = replace(authority.grant, lease_expires_at_s=100.03)
+        authority = replace(authority, grant=grant)
+        command = ControlCommand(
+            "session-a", 0, ControlTarget(1.0, 0.0), "window-a",
+            generation=grant.generation,
+        )
+        with TemporaryDirectory() as temporary:
+            event_log = Path(temporary) / "events.csv"
+            state = self._run_one_tick(
+                encode_expert_command(command, b"k" * 32),
+                window=ControlWindow("window-a", 100.0, 100.25),
+                authority=authority,
+                event_log=event_log,
+            )
+            with event_log.open(encoding="utf-8", newline="") as stream:
+                events = {row["event"]: row for row in csv.DictReader(stream)}
+
+        self.assertEqual(state.speed_mps, 0.0)
+        self.assertNotIn("control_accepted", events)
+        self.assertEqual(events["authority_lease_expired"]["fault_latched"], "false")
+        self.assertEqual(events["authority_lease_expired"]["elapsed_s"], "0.030000")
+        self.assertEqual(events["control_rejected"]["detail"], "vehicle_stopping")
 
     def test_wrong_missing_or_expired_window_cannot_move_vehicle(self):
         command = ControlCommand(

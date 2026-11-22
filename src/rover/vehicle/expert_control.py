@@ -1,11 +1,13 @@
 """Apply expert authority decisions and existing UDP guard state together."""
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from secrets import token_bytes
 from uuid import uuid4
 
 from rover.core.vehicle_model import VehicleState
-from rover.vehicle.control_authority import AuthorityGeneration, AuthorityPhase, ControlAuthority, ControlSession
+from rover.vehicle.control_authority import (
+    AuthorityGeneration, AuthorityGrant, AuthorityPhase, ControlAuthority, ControlSession,
+)
 from rover.vehicle.control_guard import (
     ControlGuardState,
     enable_control_session,
@@ -18,7 +20,16 @@ from rover.vehicle.control_window import issue_control_window
 EXPERT_CONTROL_ACTIONS = frozenset((
     "acquire_authority", "set_authority_enabled", "issue_control_window",
     "release_authority", "transfer_authority", "emergency_stop", "reset_control",
+    "renew_authority",
 ))
+EXPERT_AUTHORITY_LEASE_S = 3.0
+
+
+@dataclass(frozen=True)
+class AuthorityLeaseExpiry:
+    grant: AuthorityGrant
+    deadline_s: float
+    revoked_at_s: float
 
 
 def _read_generation(value: object) -> AuthorityGeneration | None:
@@ -39,7 +50,25 @@ class ExpertVehicleControl:
 
     def __init__(self) -> None:
         self.authority = ControlAuthority()
+        self.last_lease_expiry: AuthorityLeaseExpiry | None = None
         self._last_speed_mps: float | None = None
+
+    def _set_lease(self, authority: ControlAuthority, now_s: float) -> None:
+        grant = authority.grant
+        if grant is not None:
+            grant = replace(grant, lease_expires_at_s=now_s + EXPERT_AUTHORITY_LEASE_S)
+            authority = replace(authority, grant=grant)
+        self.authority = authority
+
+    def advance_time(self, guard: ControlGuardState, now_s: float) -> ControlGuardState:
+        guard = self.sync_fault(update_control_guard(guard, now_s))
+        grant = self.authority.grant
+        if grant is None or grant.lease_expires_at_s is None or now_s < grant.lease_expires_at_s:
+            return guard
+
+        self.authority = self.authority.lease_expired(grant.generation)
+        self.last_lease_expiry = AuthorityLeaseExpiry(grant, grant.lease_expires_at_s, now_s)
+        return _revoke_motion(guard)
 
     def _reply(self, guard: ControlGuardState, reason: str | None = None, **fields: object):
         return guard, {
@@ -58,8 +87,7 @@ class ExpertVehicleControl:
         recipient: ControlSession | None,
         now_s: float,
     ) -> tuple[ControlGuardState, dict[str, object]]:
-        # Apply the existing watchdog before any request can enable or renew a window.
-        guard = self.sync_fault(update_control_guard(guard, now_s))
+        guard = self.advance_time(guard, now_s)
         action = message.get("type")
         if not isinstance(action, str) or action not in EXPERT_CONTROL_ACTIONS:
             return self._reply(guard, "unsupported_message_type")
@@ -75,10 +103,12 @@ class ExpertVehicleControl:
                 return self._reply(guard, reason)
             grant = authority.grant
             assert grant is not None
-            self.authority = authority
-            return self._reply(_revoke_motion(guard), generation={
-                "epoch": grant.generation.epoch, "number": grant.generation.number,
-            })
+            self._set_lease(authority, now_s)
+            return self._reply(
+                _revoke_motion(guard),
+                generation={"epoch": grant.generation.epoch, "number": grant.generation.number},
+                lease_remaining_s=EXPERT_AUTHORITY_LEASE_S,
+            )
 
         if action == "reset_control":
             if not guard.fault_latched:
@@ -91,6 +121,21 @@ class ExpertVehicleControl:
         generation = _read_generation(message.get("generation"))
         if generation is None:
             return self._reply(guard, "invalid_request")
+
+        if action == "renew_authority":
+            expired = self.last_lease_expiry
+            if (
+                self.authority.phase is not AuthorityPhase.FAULT_LATCHED
+                and expired is not None
+                and expired.grant.session == session
+                and expired.grant.generation == generation
+            ):
+                return self._reply(guard, "lease_expired")
+            reason = self.authority.holder_rejection(session, generation)
+            if reason is not None:
+                return self._reply(guard, reason)
+            self._set_lease(self.authority, now_s)
+            return self._reply(guard, lease_remaining_s=EXPERT_AUTHORITY_LEASE_S)
 
         if action == "set_authority_enabled":
             enabled = message.get("enabled")
@@ -158,10 +203,12 @@ class ExpertVehicleControl:
             return _revoke_motion(replace(guard, fault_latched=True))
         return guard
 
-    def observe_vehicle(self, guard: ControlGuardState, vehicle: VehicleState) -> ControlGuardState:
+    def observe_vehicle(
+        self, guard: ControlGuardState, vehicle: VehicleState, *, now_s: float,
+    ) -> ControlGuardState:
         self._last_speed_mps = vehicle.speed_mps
         guard = self.sync_fault(guard)
         if vehicle.speed_mps == 0.0 and self.authority.phase is AuthorityPhase.STOPPING:
             generation = AuthorityGeneration(self.authority.epoch, self.authority.last_generation)
-            self.authority = self.authority.motion_stopped(generation)
+            self._set_lease(self.authority.motion_stopped(generation), now_s)
         return guard

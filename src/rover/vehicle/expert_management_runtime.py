@@ -17,8 +17,10 @@ from rover.protocol.expert_management_codec import (
 from rover.transport.parallel_tls_server import parallel_tls_server
 from rover.transport.tcp_transport import iter_records, send_record
 from rover.vehicle.control_authority import ControlAuthority, ControlSession
-from rover.vehicle.control_guard import ControlGuardState, update_control_guard
-from rover.vehicle.expert_control import EXPERT_CONTROL_ACTIONS, ExpertVehicleControl
+from rover.vehicle.control_guard import ControlGuardState
+from rover.vehicle.expert_control import (
+    EXPERT_CONTROL_ACTIONS, AuthorityLeaseExpiry, ExpertVehicleControl,
+)
 from rover.vehicle.management_session import verify_client_credential
 
 type _Reply = tuple[str, dict[str, object]]
@@ -63,6 +65,13 @@ class ExpertManagementRuntime:
     def authority(self) -> ControlAuthority:
         return self._control.authority
 
+    @property
+    def last_lease_expiry(self) -> AuthorityLeaseExpiry | None:
+        return self._control.last_lease_expiry
+
+    def advance_time(self, guard: ControlGuardState, now_s: float) -> ControlGuardState:
+        return self._control.advance_time(guard, now_s)
+
     def _apply_closed_connections(self, guard: ControlGuardState) -> ControlGuardState:
         with self._admission:
             closed, self._closed_connections = self._closed_connections, []
@@ -72,16 +81,20 @@ class ExpertManagementRuntime:
                 guard = self._control.disconnect(guard, session)
         return guard
 
-    def observe_vehicle(self, guard: ControlGuardState, vehicle: VehicleState) -> ControlGuardState:
+    def observe_vehicle(
+        self, guard: ControlGuardState, vehicle: VehicleState, *, now_s: float | None = None,
+    ) -> ControlGuardState:
         guard = self._apply_closed_connections(self._control.sync_fault(guard))
-        return self._control.observe_vehicle(guard, vehicle)
+        return self._control.observe_vehicle(
+            guard, vehicle, now_s=monotonic() if now_s is None else now_s,
+        )
 
     def __call__(self, guard: ControlGuardState) -> ControlGuardState:
         now_s = monotonic()
         if self._previous_tick_s is not None:
             self._tick_interval_ms = (now_s - self._previous_tick_s) * 1000.0
         self._previous_tick_s = now_s
-        guard = self._control.sync_fault(update_control_guard(guard, now_s))
+        guard = self.advance_time(guard, now_s)
         guard = self._apply_closed_connections(guard)
 
         try:
@@ -91,6 +104,7 @@ class ExpertManagementRuntime:
         if future.set_running_or_notify_cancel():
             try:
                 started_at_s = monotonic()
+                guard = self.advance_time(guard, started_at_s)
                 guard, reply = operation(guard, started_at_s, (started_at_s - queued_at_s) * 1000.0)
             except Exception as error:
                 future.set_exception(error)
@@ -123,7 +137,7 @@ class ExpertManagementRuntime:
             return guard, _error("invalid_session")
 
         if message_type == "query_authority":
-            return guard, ("query_authority_result", self._status(session, queue_wait_ms))
+            return guard, ("query_authority_result", self._status(session, now_s, queue_wait_ms))
 
         recipient = None
         if message_type == "transfer_authority":
@@ -137,7 +151,7 @@ class ExpertManagementRuntime:
         )
         return guard, (f"{message_type}_result", fields)
 
-    def _status(self, session: ControlSession, queue_wait_ms: float) -> dict[str, object]:
+    def _status(self, session: ControlSession, now_s: float, queue_wait_ms: float) -> dict[str, object]:
         authority = self.authority
         grant = authority.grant
         result: dict[str, object] = {
@@ -153,6 +167,8 @@ class ExpertManagementRuntime:
             result["generation"] = {
                 "epoch": grant.generation.epoch, "number": grant.generation.number
             }
+            if grant.lease_expires_at_s is not None:
+                result["lease_remaining_s"] = max(0.0, grant.lease_expires_at_s - now_s)
             result["target_session_ids"] = [
                 candidate.session_id for candidate in self._sessions.values() if candidate != session
             ]

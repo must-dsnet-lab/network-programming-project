@@ -74,12 +74,28 @@ class ExpertManagementClient:
                 self._invalid_reply("target_session_ids must be a list of session IDs")
             if targets and not owns_authority:
                 self._invalid_reply("transfer targets require ownership")
+        if "lease_remaining_s" in reply:
+            if not owns_authority:
+                self._invalid_reply("lease_remaining_s requires ownership")
+            if not _nonnegative_number(reply["lease_remaining_s"]):
+                self._invalid_reply("lease_remaining_s must be a finite, non-negative number")
         return reply
 
     def acquire_authority(self, session_id: str) -> dict[str, object]:
         reply = self._action("acquire_authority", session_id)
-        if reply["accepted"] and not _valid_generation(reply.get("generation")):
-            self._invalid_reply("invalid authority generation")
+        if reply["accepted"]:
+            if not _valid_generation(reply.get("generation")):
+                self._invalid_reply("invalid authority generation")
+            if "lease_remaining_s" in reply and not _positive_number(reply["lease_remaining_s"]):
+                self._invalid_reply("lease_remaining_s must be a finite, positive number")
+        return reply
+
+    def renew_authority(
+        self, session_id: str, generation: dict[str, object]
+    ) -> dict[str, object]:
+        reply = self._action("renew_authority", session_id, generation=generation)
+        if reply["accepted"] and not _positive_number(reply.get("lease_remaining_s")):
+            self._invalid_reply("lease_remaining_s must be a finite, positive number")
         return reply
 
     def set_authority_enabled(
@@ -103,8 +119,7 @@ class ExpertManagementClient:
         if reply["accepted"]:
             if not _nonblank_text(reply.get("window_id")):
                 self._invalid_reply("window_id must be a non-blank string")
-            lifetime = reply.get("lifetime_s")
-            if not _nonnegative_number(lifetime) or lifetime == 0:
+            if not _positive_number(reply.get("lifetime_s")):
                 self._invalid_reply("lifetime_s must be a finite, positive number")
         return reply
 
@@ -190,6 +205,10 @@ def _nonnegative_number(value: object) -> bool:
     if type(value) is int:
         return value >= 0
     return type(value) is float and isfinite(value) and value >= 0
+
+
+def _positive_number(value: object) -> bool:
+    return _nonnegative_number(value) and value != 0
 
 
 def _nonblank_text(value: object) -> bool:

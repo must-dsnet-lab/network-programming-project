@@ -15,6 +15,7 @@ from rover.vehicle.control_guard import (
     update_windowed_command_guard_with_reason,
 )
 from rover.vehicle.management_runtime import management_listener
+from rover.vehicle.expert_control import EXPERT_AUTHORITY_LEASE_S
 from rover.vehicle.expert_management_runtime import ExpertManagementRuntime, expert_management_listener
 from rover.protocol.control_codec import ControlMacVerificationError, ControlProtocolVersionError
 from rover.protocol.telemetry_codec import TelemetrySnapshot
@@ -82,14 +83,38 @@ def main(
                 ))
 
         last_authority = expert.authority if expert is not None else None
+        last_lease_expiry = None
 
         def record_authority_change(at_s: float) -> None:
-            nonlocal last_authority
-            if expert is not None and expert.authority != last_authority:
-                last_authority = expert.authority
+            nonlocal last_authority, last_lease_expiry
+            if expert is None or writer is None:
+                return
+
+            expiry = expert.last_lease_expiry
+            if expiry is not None and expiry != last_lease_expiry:
+                last_lease_expiry = expiry
+                record(
+                    expiry.revoked_at_s, "authority_lease_expired",
+                    detail=(f"generation={expiry.grant.generation.number} "
+                            f"deadline_elapsed_s={expiry.deadline_s - started_at_s:.6f}"),
+                )
+
+            authority = expert.authority
+            previous = last_authority
+            last_authority = authority
+            grant = authority.grant
+            if grant is not None and grant != previous.grant and grant.lease_expires_at_s is not None:
+                renewed = previous.grant is not None and previous.grant.generation == grant.generation
+                record(
+                    grant.lease_expires_at_s - EXPERT_AUTHORITY_LEASE_S,
+                    "authority_lease_renewed" if renewed else "authority_lease_started",
+                    detail=(f"generation={grant.generation.number} "
+                            f"deadline_elapsed_s={grant.lease_expires_at_s - started_at_s:.6f}"),
+                )
+            if (authority.phase, authority.last_generation) != (previous.phase, previous.last_generation):
                 record(
                     at_s, "authority",
-                    detail=f"phase={last_authority.phase.value} generation={last_authority.last_generation}",
+                    detail=f"phase={authority.phase.value} generation={authority.last_generation}",
                 )
 
         last_recorded_state = (state.speed_mps, guard.fault_latched)
@@ -103,23 +128,13 @@ def main(
             while True:
                 # 1. 记录本轮起点，先检查保护状态
                 tick_started_s = monotonic()
-                session_change = ""
+                previous_session_id = guard.session_id
                 if process_management is not None: # 如果没有后台管理，就继续沿用物理引擎
-                    # process_management(guard)调用之前备份原来的guard.sesion_id
-                    previous_session_id = guard.session_id
                     # process_management(guard) 每轮最多处理一个管理请求，队列空就直接返回。
                     # 仿真循环保存 guard，TLS 线程等待结果
                     guard = process_management(guard)
-                    record_authority_change(tick_started_s)
-                    if guard.session_id != previous_session_id:
-
-                        print(f"Management session: {guard.session_id}", flush=True)
-                        if guard.session_id is None:
-                            session_change = "closed"
-                        elif previous_session_id is None:
-                            session_change = "opened"
-                        else:
-                            session_change = "replaced"
+                    if expert is not None:
+                        record_authority_change(monotonic())
                 guard = update_control_guard(guard, tick_started_s)
 
                 # 2. 每轮最多尝试接收一个控制报文
@@ -150,6 +165,8 @@ def main(
                     guard = update_control_guard(guard, now_s, incoming)
                 else:
                     if expert is not None:
+                        guard = expert.advance_time(guard, now_s)
+                        record_authority_change(now_s)
                         guard, guard_rejection = update_expert_command_guard_with_reason(
                             guard, now_s, incoming, authority=expert.authority,
                         )
@@ -161,10 +178,22 @@ def main(
                         rejection_reason = guard_rejection
 
                 # 4. 每轮只推进车辆一次
+                admitted_seq = guard.last_seq
                 state = step_vehicle(state, guard.last_accepted, now_s, dt_s)
                 if expert is not None:
-                    guard = expert.observe_vehicle(guard, state)
-                    record_authority_change(monotonic())
+                    observed_at_s = monotonic()
+                    guard = expert.observe_vehicle(guard, state, now_s=observed_at_s)
+                    record_authority_change(observed_at_s)
+
+                session_change = ""
+                if guard.session_id != previous_session_id:
+                    print(f"Management session: {guard.session_id}", flush=True)
+                    if guard.session_id is None:
+                        session_change = "closed"
+                    elif previous_session_id is None:
+                        session_change = "opened"
+                    else:
+                        session_change = "replaced"
 
                 # 5. 更新车辆后，按发送期限采样并回传
                 telemetry_now_s = monotonic()
@@ -205,7 +234,7 @@ def main(
                     if session_change:
                         record(now_s, "session", detail=session_change)
                     if event == "accepted":
-                        record(guard.last_accepted.accepted_at_s, "control_accepted", seq=guard.last_seq)
+                        record(now_s, "control_accepted", seq=admitted_seq)
                     elif rejection_reason is not None:
                         rejected_seq = incoming.seq if incoming is not None else None
                         record(now_s, "control_rejected", seq=rejected_seq, detail=rejection_reason)

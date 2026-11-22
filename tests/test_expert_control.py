@@ -57,8 +57,10 @@ class TestExpertVehicleControl(unittest.TestCase):
         self.assertIsNone(reason)
         return packet
 
-    def observe(self, speed_mps):
-        self.guard = self.control.observe_vehicle(self.guard, VehicleState(speed_mps=speed_mps))
+    def observe(self, speed_mps, *, now_s=1.3):
+        self.guard = self.control.observe_vehicle(
+            self.guard, VehicleState(speed_mps=speed_mps), now_s=now_s,
+        )
 
     def assert_revoked(self):
         self.assertFalse(self.guard.enabled)
@@ -69,6 +71,95 @@ class TestExpertVehicleControl(unittest.TestCase):
         self.assertFalse(reply["accepted"])
         self.assertEqual(reply["reason"], reason)
         self.assertNotIn("control_key", reply)
+
+    def test_only_current_holder_can_renew_before_the_deadline(self):
+        generation = self.acquire(self.a)
+        deadline = self.control.authority.grant.lease_expires_at_s
+        self.assertEqual(deadline, 4.0)
+
+        self.assert_rejected(
+            self.dispatch(self.b, "renew_authority", generation=generation, now_s=3.5),
+            "not_authority_holder",
+        )
+        self.assert_rejected(
+            self.dispatch(self.a, "renew_authority", generation={**generation, "number": 99}, now_s=3.5),
+            "stale_generation",
+        )
+        self.assertEqual(self.control.authority.grant.lease_expires_at_s, deadline)
+
+        reply = self.dispatch(self.a, "renew_authority", generation=generation, now_s=3.75)
+        self.assertTrue(reply["accepted"])
+        self.assertEqual(reply["lease_remaining_s"], 3.0)
+        self.assertEqual(self.control.authority.grant.lease_expires_at_s, 6.75)
+        self.guard = self.control.advance_time(self.guard, 4.0)
+        self.assertEqual(self.control.authority.grant.generation, AuthorityGeneration(**generation))
+        self.assertFalse(self.guard.enabled)
+
+    def test_renew_at_deadline_revokes_and_late_retry_cannot_restore_grant(self):
+        generation = self.acquire(self.a)
+        for now_s in (4.0, 4.01):
+            with self.subTest(now_s=now_s):
+                self.assert_rejected(
+                    self.dispatch(self.a, "renew_authority", generation=generation, now_s=now_s),
+                    "lease_expired",
+                )
+                self.assertIsNone(self.control.authority.grant)
+                self.assertFalse(self.guard.fault_latched)
+        self.observe(0.0, now_s=4.02)
+        reacquired = self.dispatch(self.a, "acquire_authority", now_s=4.03)
+        self.assertTrue(reacquired["accepted"])
+        self.assertGreater(reacquired["generation"]["number"], generation["number"])
+        self.assert_rejected(
+            self.dispatch(self.a, "renew_authority", generation=generation, now_s=4.04),
+            "lease_expired",
+        )
+        self.assertFalse(self.guard.enabled)
+
+    def test_accepted_control_and_window_do_not_extend_lease(self):
+        generation = self.acquire(self.a)
+        self.assertTrue(self.dispatch(
+            self.a, "set_authority_enabled", generation=generation, enabled=True, now_s=3.8,
+        )["accepted"])
+        window = self.dispatch(self.a, "issue_control_window", generation=generation, now_s=3.8)
+        command = ControlCommand(
+            self.a.session_id, 0, ControlTarget(1.0, 0.0), window["window_id"],
+            generation=AuthorityGeneration(**generation),
+        )
+        self.guard, rejection = update_expert_command_guard_with_reason(
+            self.guard, 3.9, command, authority=self.control.authority,
+        )
+        self.assertIsNone(rejection)
+        self.assertIsNotNone(self.guard.last_accepted)
+
+        self.guard = self.control.advance_time(self.guard, 4.0)
+        self.assert_revoked()
+        self.assertFalse(self.guard.fault_latched)
+        self.assertEqual(self.control.authority.phase, "stopping")
+        self.assertEqual(self.control.last_lease_expiry.revoked_at_s, 4.0)
+
+    def test_watchdog_takes_precedence_when_both_deadlines_are_due(self):
+        generation = self.acquire(self.a)
+        self.assertTrue(self.dispatch(
+            self.a, "set_authority_enabled", generation=generation, enabled=True, now_s=3.5,
+        )["accepted"])
+        self.guard = self.control.advance_time(self.guard, 4.0)
+        self.assertTrue(self.guard.fault_latched)
+        self.assert_revoked()
+        self.assertEqual(self.control.authority.phase, "fault_latched")
+        self.assertIsNone(self.control.last_lease_expiry)
+
+    def test_transferred_lease_starts_when_vehicle_observes_zero(self):
+        generation = self.acquire(self.a)
+        self.assertTrue(self.dispatch(
+            self.a, "transfer_authority", generation=generation, recipient=self.b, now_s=3.9,
+        )["accepted"])
+        self.observe(0.5, now_s=4.25)
+        self.assertIsNone(self.control.authority.grant)
+        self.observe(0.0, now_s=5.0)
+        grant = self.control.authority.grant
+        self.assertEqual(grant.session, self.b)
+        self.assertEqual(grant.lease_expires_at_s, 8.0)
+        self.assertFalse(self.guard.enabled)
 
     def test_only_the_holder_with_current_generation_can_enable_or_get_window(self):
         generation = self.acquire(self.a)
