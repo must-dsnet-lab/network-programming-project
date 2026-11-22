@@ -69,7 +69,7 @@ Project/
 └── local/                            本地证书、凭据及原始实验记录
 ~~~
 
-[桌面入口](../src/rover/desktop/app.py#L453) · [车端入口](../src/rover/vehicle/app.py#L252) · [观察端入口](../examples/demo_udp_telemetry_receiver.py#L8)
+[桌面入口](../src/rover/desktop/app.py#L577) · [车端入口](../src/rover/vehicle/app.py#L252) · [观察端入口](../examples/demo_udp_telemetry_receiver.py#L8)
 
 </details>
 
@@ -97,7 +97,7 @@ start_button.clicked ⇢ DesktopConsole.start_control()
 └── poll_secure_status() → 刷新工作线程状态和按钮
 ~~~
 
-[DesktopConsole](../src/rover/desktop/app.py#L35) · [start_control](../src/rover/desktop/app.py#L189) · [poll_secure_status](../src/rover/desktop/app.py#L277)
+[DesktopConsole](../src/rover/desktop/app.py#L39) · [start_control](../src/rover/desktop/app.py#L295) · [poll_secure_status](../src/rover/desktop/app.py#L387)
 
 </details>
 
@@ -321,7 +321,7 @@ QTimer.timeout ⇢ DesktopConsole.poll_telemetry()
 └── 刷新最近快照读数及遥测状态
 ~~~
 
-[遥测轮询](../src/rover/desktop/app.py#L363) · [地图绘制](../src/rover/desktop/desktop_map.py) · [轨迹](../src/rover/desktop/trajectory.py)
+[遥测轮询](../src/rover/desktop/app.py#L491) · [地图绘制](../src/rover/desktop/desktop_map.py) · [轨迹](../src/rover/desktop/trajectory.py)
 
 </details>
 
@@ -358,7 +358,7 @@ demo_udp_telemetry_receiver.main()
 | TLS 连接结束 | `serve_management_connection()` 的 `finally` → `on_close_connection()` ⇢ `handle_connection_closed()` → 拥有当前会话时执行 `close_control_session()`，保留原有锁存 |
 | 车端进程退出 | `vehicle.app.main()` 的 `finally` → 有活动会话时 `close_control_session()` → 退出管理上下文 → 设置停止事件、取消待办 Future、`worker.join()` |
 
-[Qt 操作入口](../src/rover/desktop/app.py#L231) · [后台动作](../src/rover/desktop/control_worker.py#L157) · [车端看门狗](../src/rover/vehicle/control_guard.py#L26) · [车端会话](../src/rover/vehicle/management_session.py)
+[Qt 操作入口](../src/rover/desktop/app.py#L337) · [后台动作](../src/rover/desktop/control_worker.py#L157) · [车端看门狗](../src/rover/vehicle/control_guard.py#L26) · [车端会话](../src/rover/vehicle/management_session.py)
 
 </details>
 

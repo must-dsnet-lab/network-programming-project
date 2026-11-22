@@ -143,7 +143,8 @@ class TestDesktopControl(unittest.TestCase):
 
     def test_failed_periodic_send_preserves_telemetry(self):
         self.apply_inputs(1.5, 90.0)
-        before_values = self.window.values.text()
+        readings = [self.window.speed_value, *self.window.pose_values, self.window.protection_value]
+        before_values = [label.text() for label in readings]
         before_status = self.window.status.text()
         before_state = self.window.map.state
 
@@ -159,7 +160,7 @@ class TestDesktopControl(unittest.TestCase):
         self.assertFalse(self.window.sock.closed)
         self.assertIn("发送失败", self.window.control_status.text())
 
-        self.assertEqual(self.window.values.text(), before_values)
+        self.assertEqual([label.text() for label in readings], before_values)
         self.assertEqual(self.window.status.text(), before_status)
         self.assertIs(self.window.map.state, before_state)
 
@@ -306,6 +307,26 @@ class TestSecureDesktopControl(unittest.TestCase):
         self.assertIn("TLS lost", self.window.control_status.text())
         self.assertTrue(self.window.timer.isActive())
         self.assertFalse(self.window.sock.closed)
+
+    def test_stale_readings_are_preserved_and_labeled_as_the_last_report(self):
+        vehicle = VehicleState(x_m=3, y_m=-1, heading_rad=0.25, speed_mps=1.25)
+        peer = ("127.0.0.1", 9999)
+        self.poll_telemetry_at(10.0, (TelemetrySnapshot(vehicle, False), peer))
+        self.assertEqual(self.window.speed_value.text(), "1.25")
+        self.assertTrue(self.window.map.telemetry_fresh)
+
+        self.poll_telemetry_at(11.0)
+        self.assertEqual(self.window.speed_caption.text(), "最后上报速度")
+        self.assertEqual(self.window.protection_value.text(), "未锁存")
+        self.assertEqual(self.window.speed_value.text(), "1.25")
+        self.assertFalse(self.window.map.telemetry_fresh)
+        self.assertEqual(self.window.map.state, vehicle)
+
+        self.poll_telemetry_at(11.5, self.telemetry_packet(fault_latched=True))
+        self.assertEqual(self.window.speed_caption.text(), "实测速度")
+        self.assertEqual(self.window.protection_value.text(), "已锁存")
+        self.assertTrue(self.window.map.telemetry_fresh)
+        self.assertIsNone(self.window.current_target)
 
     def test_telemetry_expiry_stops_secure_control_once_at_timeout(self):
         self.poll_telemetry_at(10.0, self.telemetry_packet())
