@@ -2,6 +2,8 @@
 
 虚拟小车网络遥控 · 网络编程小组项目（MUST）。
 
+[协议待办](#protocol-checklist) · [体验待办](#experience-checklist) · [团队开发规范](docs/development-standards.md)
+
 ## 项目总览
 
 ### 功能与交付
@@ -35,6 +37,44 @@
 
 图中按实现和验证状态标记进展。A01—A10用于拆解组内实现与验证，最终评定依据教师评分标准。实验数据和待补项见[高级版验收记录](#advanced-acceptance-status)。
 
+[详细开发路线](docs/development-roadmap.md) · [AI 与贡献者入口](AGENTS.md) · [图 10 核心函数运行结构](reference_image/diagrams/10-advanced-runtime.svg) · [展开模块与函数关系](docs/runtime-reference.md) · [新增验收记录](docs/verification.md)
+
+### 后续待办
+
+对应任务交付、达到验收条件并留下证据后，在 PR 中把本页对应条目标记为完成。数据和待补项见[高级版验收记录](#advanced-acceptance-status)。
+
+<a id="protocol-checklist"></a>
+
+#### 协议路线 · 高级向专家推进
+
+先完成物理双机高级验收。专家路线的接口和用例可提前设计，正式实现接在高级验收之后。 [协议任务依赖与验收](docs/development-roadmap.md#protocol-delivery)
+
+- [ ] A01 完成两台物理电脑的局域网联调，验证 TLS 认证、UDP 控制、车端运动和遥测回传。 [双机验收要求](docs/development-roadmap.md#advanced-protocol-acceptance)
+- [ ] A08/A09 保持车端运行，实际断网并验证停车。网络恢复后确认车辆保持静止，再重建会话，若已锁存则显式复位，再次使能并明确应用目标后验证重新运动。 [断网与恢复验收](docs/development-roadmap.md#advanced-protocol-acceptance)
+
+- [ ] P1 定义控制权状态机、管理消息与拒绝结果。
+- [ ] P2 支持两条 TLS 管理连接同时在线，保持车端串行裁决。
+- [ ] P3 实现独占控制权和零速显式交接。
+- [ ] P4 将授权代次接入 UDP 准入，验证旧授权失效。
+- [ ] P5 实现租约续期、到期撤销与停车。
+- [ ] P6 发布控制权状态，接入双端操作与反馈。
+- [ ] P7 完成机制对照、双端实测和回归留证。
+
+<a id="experience-checklist"></a>
+
+#### 体验路线 · 桌面 GUI 优先
+
+先改善现有桌面操作，再逐步加入操纵、物理和三维显示。 [体验实施顺序与验收](docs/development-roadmap.md#experience-delivery)
+
+- [ ] U1 优化桌面 GUI 布局、控制操作、状态提示和地图使用。
+- [ ] U2 增加图形化连接配置，常规操作可免命令行。
+- [ ] U3 跑通二维启动与只读观察，验证最小 Windows EXE。
+- [ ] U4 接入方向摇杆、油门与刹车，定义回中、失焦和断开行为。
+- [ ] U5 在二维车端验证加速、滑行、制动与转向模型。
+- [ ] U6 建立真实三维坐标与遥测，验证高度变化和兼容性。
+- [ ] U7 接入三维场景和车体，保留二维视图。
+- [ ] U8 完成驾驶反馈、场景验收和发布包复验。
+
 ### 章节导航
 
 本页按开发顺序保留各阶段示例，当前完整桌面操作可直接看[4.1启动](#quick-start)和[4.3数值控制](#desktop-control-acceptance)。
@@ -46,8 +86,11 @@
 | [2. 车辆运动与UDP控制](#motion-control) | 离线运动 → 单包UDP控制 → 持续运行与本地保护 |
 | [3. 遥测回传](#telemetry) | 三终端运行、状态观察与图2 |
 | [4. 桌面控制台](#desktop-console) | 启动与状态 → 地图/轨迹/坐标 → 数值控制与验收 → 实现要点 |
-| [5. 网络分层、控制信封与管理传输](#network-layers) | 分层职责、车端准入、会话状态、管理JSON与TCP |
-| [6. 项目配置与文档维护](#project-maintenance) | 包配置、Git协作、目录迁移、导图维护与TDD开发方式 |
+| [5. 协议分层、TCP 分帧与 TLS 会话](#network-layers) | 控制信封 → 管理编解码与分帧 → TLS 与线程交接 |
+| [6. 安全控制、管理动作与保护恢复](#secure-control-evolution) | HMAC、有效窗口 → 管理请求、急停 → 复位与运行时 |
+| [7. 正式入口、桌面整合与跨系统联调](#secure-desktop-integration) | 正式启动 → 安全桌面 → VMware 与只读观察 |
+| [8. 网络故障实验与高级验收](#fault-experiment-sequence) | 断流、丢包、延迟、乱序与重复 → 诊断 → 计时与证据 |
+| [9. 项目配置与文档维护](#project-maintenance) | 包配置、Git协作、目录迁移、导图维护与TDD开发方式 |
 
 <a id="environment"></a>
 
@@ -75,7 +118,7 @@ py -3.12 -m venv .venv
 .\.venv\Scripts\python.exe -m unittest discover -s tests -t . -v
 ```
 
-观察端版本 `1d0ec91` 全量回归 345 项通过（1.130 秒），车端专项 16 项通过（0.133 秒）。局域网配置版本 `ead59ba` 全量回归 342 项通过（1.184 秒），桌面接口专项 17 项通过（0.084 秒）。上一个安全桌面基线的 36 个测试模块共 339 项通过（1.114 秒）。桌面急停与复位接线经历21项中的4项预期失败，补全后专项21项通过（0.232秒），并完成本机联调。基础安全桌面提交2100a51的基线为335项，后台提交c784bb1为330项（1.115秒），桌面安全发包为324项（1.300秒），桌面安全连接入口为316项（1.243秒）。正式车端PR #21已合并为5314264，合并后310项通过（0.970秒）。此前管理运行时301项、正式复位298项、急停288项、管理客户端276项及窗口控制269项的实测记录分别保留。开发方式及RED/GREEN实例见[6.4 测试驱动开发与阶段验收](#development-method)。
+观察端版本 `1d0ec91` 全量回归 345 项通过（1.130 秒），车端专项 16 项通过（0.133 秒）。局域网配置版本 `ead59ba` 全量回归 342 项通过（1.184 秒），桌面接口专项 17 项通过（0.084 秒）。上一个安全桌面基线的 36 个测试模块共 339 项通过（1.114 秒）。桌面急停与复位接线经历21项中的4项预期失败，补全后专项21项通过（0.232秒），并完成本机联调。基础安全桌面提交2100a51的基线为335项，后台提交c784bb1为330项（1.115秒），桌面安全发包为324项（1.300秒），桌面安全连接入口为316项（1.243秒）。正式车端PR #21已合并为5314264，合并后310项通过（0.970秒）。此前管理运行时301项、正式复位298项、急停288项、管理客户端276项及窗口控制269项的实测记录分别保留。开发方式及RED/GREEN实例见[9.4 测试驱动开发与阶段验收](#development-method)。
 
 历史基线：2026-11-19助手完整回归21个测试模块、214项通过，包括控制编解码40项、认证控制编解码9项、HMAC计算与核对6项、管理消息编解码26项、会话密钥8项、UDP控制收发15项、TCP应用记录15项、TCP传输7项、控制保护28项、桌面控制8项。Qt使用离屏模式，Socket使用本机回环；原始记录保留供对照。
 
@@ -292,7 +335,7 @@ C向B的`127.0.0.1:9999`发控制；B使用另一个Socket向A的`127.0.0.1:1000
 - 遥测目标周期为`0.05 s`，终端A日志限速，不能用显示行数推算发送频率；遥测发送失败不停止车端保护循环。
 
 无包`None`不代表全零状态；坏报文已被取出并抛出`ValueError`，程序可以继续处理后续报文。
-命令行接收器没有过期提示，桌面窗口的过期提示见第5节。
+命令行接收器没有过期提示，桌面窗口的过期提示见[4.1 启动与状态显示](#quick-start)。
 
 <a id="three-terminal-flow"></a>
 
@@ -360,7 +403,7 @@ A看到的`peer`属于车端遥测Socket，与C的控制来源端口不同。
 约1秒无合法遥测后提示“遥测过期”，保留最后车辆、轨迹和读数；它们此时仅代表最后收到的状态。
 
 `status`表示遥测情况，`fault_latched`来自车端保护，`control_status`表示本地发送情况，三者独立。
-本节的默认教学模式使用本机回环地址。安全模式的地址配置见[5.19 虚拟局域网联调](#vmware-lan-acceptance)。
+本节的默认教学模式使用本机回环地址。安全模式的地址配置见[7.3.1 虚拟局域网联调](#vmware-lan-acceptance)。
 
 ### 4.2 地图、轨迹与坐标
 
@@ -497,11 +540,13 @@ flowchart TB
 
 <a id="network-layers"></a>
 
-## 5. 网络分层、控制信封与管理传输
+## 5. 协议分层、TCP 分帧与 TLS 会话
 
-### 5.1 分层职责
+### 5.1 分层、控制信封与基础保护
 
-#### 5.1.1 图5：各层实际用了什么
+#### 5.1.1 分层职责
+
+##### 图5：各层实际用了什么
 
 OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信结构。
 高级与专家属于项目验收阶段，分层图用于对照不同网络功能的职责。
@@ -512,11 +557,11 @@ OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信�
 
 [可缩放SVG](reference_image/diagrams/05-network-layers.svg) · [高清PNG](reference_image/diagrams/05-network-layers.png)
 
-### 5.2 控制信封与车端准入
+#### 5.1.2 控制信封与车端准入
 
 `ControlCommand(session_id, seq, target)`复用现有`control_codec.py`，把会话标识、报文序号与运动目标组合起来。
 
-#### 5.2.1 报文格式与编解码
+##### 报文格式与编解码
 
 最近通过的控制编解码基线为40项（旧格式19项、新格式21项），涵盖合法编解码、倒车往返、两端元数据/运动值校验、两端1200字节边界、解析前拒绝超限、严格版本类型及新旧格式互拒；完整项目回归已通过。
 
@@ -542,7 +587,7 @@ OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信�
 
 <a id="control-admission"></a>
 
-#### 5.2.2 车端准入与超时保护
+##### 车端准入与超时保护
 
 `control_guard.py`新增`update_command_guard()`，对解码后的`ControlCommand`判断是否接受；它不收包，也不推进车辆位置。
 
@@ -568,7 +613,7 @@ OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信�
 
 <a id="control-session-lifecycle"></a>
 
-#### 5.2.3 会话登记、使能与关闭
+##### 会话登记、使能与关闭
 
 以下是供可信管理上下文调用的内部纯状态接口，不收发报文，也不完成认证；`session_id`匹配只表示与当前登记一致。
 `open_control_session()`只登记调用方提供的ID，不负责生成或传输。当前测试使用`session-a/b`等固定样例；自动生成、管理回复及桌面保存仍待正式管理链路接入。
@@ -587,7 +632,7 @@ OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信�
 控制保护模块28项测试按职责独立组织：旧目标入口3项、控制信封准入8项、内部会话状态17项。覆盖序号0及跳号、未使能/错会话/重复乱序拒绝、无包未到期、故障优先、登记/使能/关闭的拒绝与幂等、首包到期、接受后切换计时起点、缺失起点，以及关闭A后重新使能B的完整状态链路。
 对应源码：[准入与保护](src/rover/vehicle/control_guard.py)、[保护测试](tests/test_control_guard.py)、[有效目标选择](src/rover/vehicle/control_watchdog.py)。
 
-#### 5.2.4 运行模式与报文准入
+##### 运行模式与报文准入
 
 车端根据运行模式选择相应的报文接收与处理入口。
 
@@ -600,11 +645,11 @@ OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信�
 
 本机双终端已实测 TLS 认证、申请会话、使能后发送 UDP 的`seq=0～9`，遥测确认速度达到 1.0 m/s。最后一条指令在 4.125 s 被接受，4.625 s 停车并锁存故障，间隔 0.500 s。再次使能被拒绝，连接断开后会话登记清空。
 
-### 5.3 管理消息与本机TCP
+### 5.2 管理消息与本机TCP
 
 <a id="management-message-codec"></a>
 
-#### 5.3.1 管理请求与回复编解码
+#### 5.2.1 管理请求与回复编解码
 
 `management_codec.py`已完成`open_session`请求和`session_opened`成功回复的JSON编解码，17项模块测试通过，覆盖消息头、必填字段、ID格式、编解码两端4096字节正文上限，以及畸形输入拒绝和后续独立调用。大小限制按完整JSON正文的UTF-8字节计算，不含应用记录的4字节长度头；解码时先检查长度，再解析正文。这些函数已用于本机TCP管理演示，负责数据格式。正式会话生成、登记及认证由后续管理逻辑完成。
 
@@ -619,7 +664,7 @@ OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信�
 
 <a id="encapsulation-and-framing"></a>
 
-#### 5.3.2 图6：上层定义消息，下层负责承载
+#### 5.2.2 图6：上层定义消息，下层负责承载
 
 老师课堂中的HTTP → TCP → IPv4 → Ethernet示意，展示了逐层封装：下层将来自上层的字节放入自己的Data/Payload，再添加本层需要的信息。图6用本项目的管理JSON替代HTTP；各层有自己的头部，应用消息、TCP段、IP包和链路帧之间没有固定的一一对应关系。
 
@@ -639,7 +684,7 @@ TCP向应用提供有序字节流，一次读取可能只有半条消息，也�
 
 <a id="tcp-record-receive"></a>
 
-#### 5.3.3 图7：TCP接收端怎样拼出一条记录
+#### 5.2.3 图7：TCP接收端怎样拼出一条记录
 
 [![TCP读取、应用记录组装、装配期限与EOF](reference_image/diagrams/07-tcp-record-receive.svg)](reference_image/diagrams/07-tcp-record-receive.svg)
 
@@ -653,7 +698,7 @@ TCP向应用提供有序字节流，一次读取可能只有半条消息，也�
 
 <a id="protocol-regression"></a>
 
-#### 5.3.4 A03 协议边界回归
+#### 5.2.4 A03 协议边界回归
 
 管理 JSON 正文上限为 4096 字节，TCP 管理记录另有 4 字节长度头。控制和遥测 UDP 消息分别限制为 1200 字节。2026-11-22 在 `7232cd2` 基线上的工作区复跑 8 个协议相关测试模块，**118 项通过**。覆盖合法边界、非法字段与编码、分段读取、截断和组帧超时，以及有效的管理请求与回复在本机 TCP 上往返。
 
@@ -665,9 +710,11 @@ TCP向应用提供有序字节流，一次读取可能只有半条消息，也�
 
 <a id="tls-certificates"></a>
 
-### 5.4 TLS握手与证书校验
+### 5.3 TLS 握手、认证与会话
 
-#### 5.4.1 证书文件与常见缩写
+#### 5.3.1 证书、握手与身份认证
+
+##### 证书文件与常见缩写
 
 车端使用`server.pem`（服务器证书）和`server.key`（服务器私钥）参与握手。桌面端用`ca.pem`验证车端证书的签发链，并核对证书中的服务名称`localhost`。
 
@@ -682,7 +729,7 @@ TCP向应用提供有序字节流，一次读取可能只有半条消息，也�
 
 参考：[TLS 1.3](https://www.rfc-editor.org/rfc/rfc8446.html) · [OpenSSL 工具包](https://openssl-library.org/) · [PEM 文本编码](https://www.rfc-editor.org/rfc/rfc7468.html#section-1) · [X.509 证书与 SAN](https://www.rfc-editor.org/rfc/rfc5280.html#section-4.2.1.6) · [证书签名请求](https://www.rfc-editor.org/rfc/rfc2986.html#section-1)
 
-#### 5.4.2 本机证书校验
+##### 本机证书校验
 
 X.509 是这里使用的证书标准。用`openssl x509`查看证书时，`subject`表示证书属于谁，`issuer`表示谁签发了证书。`ca.pem`的主题和签发者都是`Local TLS Lab CA`，并带有`CA:TRUE`。`server.pem`的签发者是该 CA，证书的 SAN 包含`DNS:localhost`。
 
@@ -694,29 +741,31 @@ X.509 是这里使用的证书标准。用`openssl x509`查看证书时，`subje
 
 这三次使用同一张服务器证书，分别检验证书校验成功、名称不匹配和找不到可信签发链的结果。[OpenSSL 证书验证命令](https://docs.openssl.org/3.5/man1/openssl-verify/)
 
-#### 5.4.3 本机TCP连接与TLS握手
+##### 本机TCP连接与TLS握手
 
 两端先用`accept()`和`create_connection()`得到普通的TCP Socket。随后`SSLContext.wrap_socket()`按各自的配置把该连接交给TLS处理。默认在握手成功后返回`SSLSocket`，随后通过它读写的应用数据由TLS加密传输。[Python `SSLContext.wrap_socket()` 文档](https://docs.python.org/3.12/library/ssl.html#ssl.SSLContext.wrap_socket)
 
 双终端在`127.0.0.1:19177`实测，同一张服务器证书和同一个`ca.pem`下，预期名称为`localhost`时协商到`TLSv1.3`。改成`wrong.localhost`后，桌面端仍打印`TCP connected`，随后在握手中报`Hostname mismatch`，车端也收到握手错误。
 
-#### 5.4.4 通过TLS收发管理消息
+##### 通过TLS收发管理消息
 
 握手成功后，双终端把`SSLSocket`交给已有的`send_record()`和`iter_records()`。实测桌面发出`OpenSessionRequest(request_id=7)`，车端解码后在同一连接回复`SessionOpened(request_id=7, session_id='demo-session')`。`demo-session`是固定演示值。客户端凭据、授权和真实会话绑定由后续管理逻辑处理。
 
-#### 5.4.5 在TLS连接上核对客户端凭据
+##### 在TLS连接上核对客户端凭据
 
 车端根据桌面端提交的`client_id`查询本地配置，再通过`verify_client_credential()`比较提交的凭据与该客户端的配置值。函数调用`hmac.compare_digest()`进行比较。HMAC 是 **Hash-based Message Authentication Code**（基于哈希的消息认证码），这里使用的是该模块的比较函数，真正的 HMAC 报文校验留到 UDP 控制章节。
 
 本机回环练习使用同一张服务器证书、同一个`localhost`和客户端 ID。两次均协商到 TLS 1.3，车端对正确凭据回复`authenticated`，对错误凭据回复`rejected`。练习用一条临时 JSON 记录传递凭据，回送验证结果后结束连接。控制会话的分配与连接绑定属于后续接入步骤。
 
-#### 5.4.6 认证通过后在同一连接申请会话
+#### 5.3.2 会话登记与请求对应
+
+##### 认证通过后在同一连接申请会话
 
 车端验证凭据后，在当前连接的处理代码里保留通过验证的`client_id`。桌面端收到`authenticated`后才发送`open_session`。双方沿用同一个`SSLSocket`以及各自已有的`iter_records()`迭代器，继续收发后续记录。车端也独立检查认证结果，只有通过验证才读取会话申请。
 
 本机回环验证中，正确凭据使车端收到来自`desktop-a`的`OpenSessionRequest(request_id=7)`，桌面端收到对应的`SessionOpened(request_id=7, session_id='demo-session')`。错误凭据仍完成 TLS 握手，收到`rejected`后结束操作。`demo-session`是固定演示值，实际会话分配与状态登记属于后续接入步骤。
 
-#### 5.4.7 生成、登记与关闭控制会话
+##### 生成、登记与关闭控制会话
 
 UUID 全称为 **Universally Unique Identifier**（通用唯一标识符）。实验中，车端在认证通过且读到会话申请后调用`uuid4().hex`，生成由 32 个小写十六进制字符组成的会话 ID。[Python 3.12 UUID 文档](https://docs.python.org/3.12/library/uuid.html#uuid.uuid4)
 
@@ -724,19 +773,21 @@ UUID 全称为 **Universally Unique Identifier**（通用唯一标识符）。�
 
 本机回环验证中，两次独立的成功申请各自生成了不同的 ID，每次的车端登记和桌面回复一致。错误凭据被拒绝后没有创建会话。实验使用脚本自己的内存状态，接入正式车端循环及多连接管理仍待完成。
 
-#### 5.4.8 连接上下文与重复申请
+##### 连接上下文与重复申请
 
 车端认证通过后创建`AuthenticatedConnection`，其中`client_id`是已验证的身份，`session_id`初始为`None`。每次读取到`open_session`，车端用`handle_open_session()`返回的`guard`和`connection`继续处理下一条记录。首次申请把新 ID 同时写入两份状态。同一条连接再次申请时，原会话与控制状态继续有效，回复回显本次的`request_id`。
 
 连接结束时，`finally`用`handle_connection_closed()`撤销当前连接仍持有的会话，处理完就丢弃该连接上下文。本机回环实验中，同一条 TLS 连接上的请求 7 和 8 得到相同的会话 ID，车端全程未使能，连接结束后登记清空。错误凭据在进入这段连接处理前被拒绝。
 
-#### 5.4.9 认证请求与回复的对应关系
+##### 认证请求与回复的对应关系
 
 双终端实验改用管理消息编解码器传递认证。桌面端发送`AuthenticateRequest`，其中包含`request_id`、`client_id`和凭据。车端解码后核对凭据，并用`AuthenticationResult`回显请求编号和布尔型`accepted`。桌面端先核对回复编号，再根据认证结果决定是否在同一条 TLS 连接上发送`open_session`。
 
 本机回环验证中，正确凭据收到编号 6 的`accepted=True`，随后请求 7 和 8 拿到同一个会话 ID。错误凭据收到编号 6 的`accepted=False`。回复编号不匹配时，桌面端在发起会话申请前终止流程。
 
-#### 5.4.10 连接处理函数与状态回调
+#### 5.3.3 车端管理线程与仿真交接
+
+##### 连接处理函数与状态回调
 
 双终端实验把已完成握手的`SSLSocket`和两个回调交给`serve_management_connection()`。连接处理函数读取认证与会话申请，发送回复，并在认证通过后的连接处理结束时调用关闭回调。
 
@@ -744,13 +795,13 @@ UUID 全称为 **Universally Unique Identifier**（通用唯一标识符）。�
 
 本机回环验证中，正确凭据通过回调为请求 7 和 8 返回同一个会话 ID，连接结束后登记清空。错误凭据收到`accepted=False`，此时未调用会话申请或关闭回调。
 
-#### 5.4.11 管理线程与仿真循环之间传递请求
+##### 管理线程与仿真循环之间传递请求
 
 独立实验用`Queue`（线程安全队列）传递连接上下文、申请和一个`Future`（待完成的结果）。模拟网络线程把三者放入队列后等待结果。仿真每轮最多调用一次`get_nowait()`取请求。队列为空时立即继续；有请求时由仿真更新`guard`，再用`Future.set_result()`把连接上下文和回复交回网络线程。
 
 实验先运行一次空队列的仿真，再提交请求 7。下一轮由仿真登记会话，网络线程得到同一个会话 ID，登记时保持未使能。实验调度用的`Event.wait()`放在仿真单轮函数外。
 
-#### 5.4.12 图8：TLS 管理会话如何进入车端仿真
+##### 图8：TLS 管理会话如何进入车端仿真
 
 本机联调通过实验启动脚本进入`app.py`，由 TLS 工作线程收发管理消息，由仿真主线程更新`guard`。同一车端进程已实测顺序处理两条 TLS 连接。每条连接的请求 7 和 8 共用会话 ID，桌面端退出后登记清空，后一次连接取得新 ID。
 
@@ -758,26 +809,32 @@ UUID 全称为 **Universally Unique Identifier**（通用唯一标识符）。�
 
 [PNG 大图](reference_image/diagrams/08-tls-management.png) · [图源](reference_image/diagrams/render_tls_management.py)
 
-#### 5.4.13 会话使能与首包超时验收
+##### 会话使能与首包超时验收
 
 桌面端通过认证并取得会话 ID 后，在同一条 TLS 连接发送`enable_session`。车端仿真线程核对会话归属及故障状态，回复`session_enable_result`。同一会话重复使能会沿用首次使能时间。
 
 本机实测错误会话 ID 的请求 8 被拒绝，合法请求 9 与重复请求 10 均成功。实验没有发送首条控制报文，随后遥测报告`speed=0.0m/s fault_latched=True`，再次使能的请求 11 被拒绝，连接结束后车端撤销登记。车端启动脚本与验收客户端默认使用实验脚本同级的`certs`目录，联调已验证可省略证书路径参数。
 
-### 5.5 当前接入范围与协议升级
+<a id="secure-control-evolution"></a>
+
+## 6. 安全控制、管理动作与保护恢复
+
+### 6.1 UDP 安全控制与指令有效期
+
+#### 6.1.1 当前接入范围与协议升级
 
 控制信封、准入及会话登记、使能和关闭的内部状态操作已完成独立单元验证。
 
 TLS 认证、会话申请、使能和撤销已在本机接入车端仿真。默认 UDP 模式已复验收包、达到 2.0 m/s 和超时停车锁存。TLS 管理模式已接入会话密钥分发、HMAC UDP `ControlCommand`与严格准入，完成坏包拒绝、运动、停发超时锁存及断开撤销的本机闭环。车端通过项目内 `rover.vehicle.app --secure` 正式入口读取本地配置并启动。本阶段的桌面实验客户端位于仓库外的 `项目准备/TLS实验`。普通模式的桌面控制台使用 `control_target` 和 `vehicle_state` 消息。
 
-车端有效窗口、急停和故障复位已接入并完成本机验收，管理运行时及正式启动参数已纳入项目包。后续的安全桌面整合见 [5.17 本机验收](#secure-desktop-local-acceptance)，宿主机与虚拟机的实测见 [5.19 虚拟局域网联调](#vmware-lan-acceptance)。
+车端有效窗口、急停和故障复位已接入并完成本机验收，管理运行时及正式启动参数已纳入项目包。后续的安全桌面整合见 [7.2.4 本机验收](#secure-desktop-local-acceptance)，宿主机与虚拟机的实测见 [7.3.1 虚拟局域网联调](#vmware-lan-acceptance)。
 
 普通TCP教学仅验证传输；新链路的正式会话控制须完成对应身份、权限与会话校验。管理I/O不得阻塞车端更新和超时检查。
 
 新增不兼容的必填字段或授权语义时，应明确调整消息类型或协议版本，并让校验与HMAC覆盖新内容。
 TLS只保护对应的TCP管理连接，不自动保护UDP；HMAC校验真实性/完整性，不提供加密保密性。
 
-### 5.6 HMAC 校验
+#### 6.1.2 HMAC 校验
 
 HMAC 全称为 **Hash-based Message Authentication Code**（基于哈希的消息认证码）。本阶段采用 HMAC-SHA256，其中 SHA-256 是 **Secure Hash Algorithm**（安全散列算法）的 256 位版本。收发双方用共享密钥和相同的报文字节计算认证码，接收方核对认证码后再做控制准入。[Python HMAC 文档](https://docs.python.org/3.12/library/hmac.html)
 
@@ -827,7 +884,7 @@ UDP 控制通道：使用 K 和 payload 计算、核对 HMAC
 
 UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话、使能、序号和有效窗口负责控制准入。
 
-### 5.7 车端短期有效窗口
+#### 6.1.3 车端短期有效窗口
 
 有效窗口用于限制已认证指令的可接受期限。HMAC 正确、序号较新，只能分别证明持钥方与相对顺序；一份在网络中滞留的高序号报文仍需要期限检查。
 
@@ -853,7 +910,7 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 会话先创建、再签发窗口，是建立流程的依赖；每条指令的检查顺序则由保护和状态更新规则决定。会话与窗口的只读检查可以调整先后。当前窗口放在 `update_command_guard()` 之前，是因为后者在准入通过时会返回已经更新目标、接受时间及序号的新状态；先通过窗口门槛，能直接避免采用过期指令的接受状态。必须保证每轮超时保护不被提前返回跳过，且到期锁存优先于接受新包，全部准入条件通过后才保存新的接受记录。
 
-#### 5.7.1 窗口申请、签发与续期
+##### 窗口申请、签发与续期
 
 窗口管理消息继续使用管理协议版本1；UDP窗口控制报文使用版本2，两者分别演进。桌面端在已认证的TLS连接上申请窗口，车端依据该连接绑定的会话决定是否签发。
 
@@ -872,7 +929,7 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 该TLS实验仅发送窗口申请，没有发送使能请求；107项自动回归仍包含已有使能测试。`IssueControlWindowRequest/ControlWindowResult`与`EnableSessionRequest/SessionEnableResult`同时保留，分别负责窗口签发和控制使能。获得窗口不修改`guard.enabled`；实际控制需要各项准入条件同时成立。
 
-#### 5.7.2 窗口版UDP与主循环接线（已实测）
+##### 窗口版UDP与主循环接线（已实测）
 
 新增窗口版UDP收发入口，管理模式主循环改用版本2解码和`update_windowed_command_guard()`，普通UDP演示继续使用`ControlTarget`与`update_control_guard()`。版本1历史入口供旧测试和示例使用，版本2管理模式拒绝降级报文。
 
@@ -886,7 +943,9 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 实验中的`request_id`只关联管理申请和回复，数值不决定执行先后；当前实现不要求递增。脚本沿用使能请求8、9、10，并在其间插入窗口申请12，因此实际发送顺序是8、12、9、10、13。12是请求编号，真正的窗口ID是UUID字符串。控制指令另有`seq`；每两条控制指令续窗一次，在seq2、4、6、8前用`20 + seq`分配窗口申请编号22、24、26、28，分别供seq2～3、4～5、6～7、8～9使用。未发起的编号没有对应回复，不代表消息丢失。
 
-### 5.8 管理客户端与自动请求编号
+### 6.2 管理客户端、请求编号与急停
+
+#### 6.2.1 管理客户端与自动请求编号
 
 `ManagementClient`包装一条已经完成证书校验的TLS连接，提供`authenticate()`、`open_session()`、`enable_session()`和`issue_control_window()`。四种请求共用从1开始的递增编号，并复用同一条记录接收流；每次回复必须匹配原请求的类型和编号。该编号规则属于客户端策略，管理协议仍接受合法的非负请求编号。
 
@@ -898,7 +957,7 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 用户已完成接入：RED为7项、11处FAIL；全量276项通过（0.307秒）。实际TLS会话为`8dd8e6f58030409492c803809b15ff88`，管理编号1到12连续，合法控制seq0到9全部接受；末条接受6.203秒，停车锁存6.703秒，间隔0.500秒。使能、重复使能、拒绝坏包、续窗、故障后拒绝使能与断开清理均保持正常。窗口检查点已由用户提交为`390ecb5`，管理客户端另行提交。
 
-#### 5.8.1 对象、编解码函数参数与异常
+##### 对象、编解码函数参数与异常
 
 `client = ManagementClient(tls)`创建一个对象并执行`__init__()`，方法中的`self`指向该对象。对象保存原TLS socket、单一记录迭代器、下次请求编号和可用状态；没有复制网络连接。调用`client.enable_session(session_id)`时，对象内部使用这些已保存的成员，因此调用者不必反复传入TLS、records和request_id。
 
@@ -908,7 +967,7 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 `assert seen_motion, "movement telemetry was not observed"`仅在条件为假时抛出带该信息的`AssertionError`；条件为真时继续执行，不打印逗号后的文字。收到运动遥测后`seen_motion`为True，后续停车检查正常运行。
 
-### 5.9 TLS会话急停
+#### 6.2.2 TLS会话急停
 
 急停请求沿现有TLS管理连接与主线程队列处理。新增`EmergencyStopRequest(request_id, session_id)`和`EmergencyStopResult(request_id, accepted)`；`accepted`表示当前会话拥有者的急停请求已被接受。只允许当前绑定连接操作当前会话，缺失/错误/旧会话绑定被拒绝；未使能时也可急停，重复急停保持成功与锁存状态。
 
@@ -920,7 +979,7 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 演示计时口径：上述0.063秒是同一车端日志中“末条运动记录到零速锁存”的间隔，不是“点击或发送急停到停车”的完整端到端响应时间，也不是性能分布统计。PPT可据此展示本次主动急停在看门狗到期前生效，并将故障后的迟到包拒绝作为独立证据。
 
-### 5.10 为什么新增管理动作会涉及多个目录
+#### 6.2.3 为什么新增管理动作会涉及多个目录
 
 `protocol → vehicle → desktop → 外部实验脚本`是当前逐项实现功能时的补齐顺序，不是程序的实际执行顺序。运行时先由桌面端提出请求，经网络到达车端，再由车端处理并回复。源码放在同一仓库，不表示两个进程共享变量，或能直接调用对方进程里的函数。
 
@@ -941,7 +1000,9 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 安全桌面接入后的请求往返、业务分支与实际函数统一画在[图9](#management-request-flow)。图8仍用于逐步阅读认证和会话登记的双终端实验。专家版交接和租约完成后另作升级图。
 
-### 5.11 正式复位与重新建立控制
+### 6.3 复位与管理运行时
+
+#### 6.3.1 正式复位与重新建立控制
 
 新增`ResetControlRequest(request_id, session_id)`与`ResetControlResult(request_id, accepted)`。复位必须由当前绑定会话的拥有者明确请求，并且车端已经锁存故障、未使能、没有有效控制目标；健康状态、未停止状态、旧/错误会话或未绑定连接均拒绝。
 
@@ -957,7 +1018,7 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 管理操作职责导图按用户要求继续延期，待后续同类接口稳定后统一整理，不在此单元新增图。
 
-### 5.12 管理运行时迁入项目包
+#### 6.3.2 管理运行时迁入项目包
 
 `management_listener(cert_dir, trusted_credentials, address)`现位于`src/rover/vehicle/management_runtime.py`。进入上下文后取得`process_one(guard)`，车辆主循环仍每轮最多处理一个管理任务。TLS网络线程负责接收和等待回复，业务状态由仿真主线程更新；异常通过Future返回等待方，处理失败时保留原guard，连接清理撤销其仍拥有的会话。
 
@@ -965,7 +1026,11 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 迁入后双终端再次完成运动、急停、重连仍锁存、明确复位、旧控制包拒绝及新会话恢复运动。故障解除前后位置均0.18米，最终合法零速停车于0.36米且未锁存，退出后会话清空。管理运行时已经进入项目包；正式命令行参数的接入与验证见下一节，桌面整合继续推进。
 
-### 5.13 正式车端启动参数
+<a id="secure-desktop-integration"></a>
+
+## 7. 正式入口、桌面整合与跨系统联调
+
+### 7.1 正式车端启动参数
 
 `python -m rover.vehicle.app`由`cli()`读取命令行参数，再将管理运行时、控制监听地址和遥测目的地址交给`main()`。`--secure`选择TLS管理模式，必须同时提供`--cert-dir`和`--credentials-file`；默认教学模式仍可运行。配置无效或安全模式启动失败时退出，不回退教学模式。可信客户端从非空JSON对象读取，凭据转换为UTF8字节，配置值不写死在应用源码中。
 
@@ -975,7 +1040,7 @@ TCP/UDP首部的端口号字段占16位，可表示0至65535（2的16次方减1�
 
 2026-11-21用户完成启动参数专项9项及全量310项回归，`--help`可显示所有参数；遥测发送绑定也从固定回环改为所选本机接口。启动自动测试使用启动替身与虚拟证书文件核对参数和错误路径；真实证书与网络行为另按下面的双终端过程验收，跨机与GUI接入继续推进。
 
-#### 5.13.1 本地配置与证书准备
+#### 7.1.1 本地配置与证书准备
 
 本地可信配置和证书放在`local/`，由根目录`.gitignore`中的`/local/`排除。`local/trusted_clients.json`是客户端ID到凭据字符串的JSON映射，当前实验配置与客户端使用相同的`desktop-a`身份。它和`ca.key`、`server.key`均保持本地，不加入版本库。
 
@@ -998,7 +1063,7 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 2026-11-21用户实际生成并校验通过。本次服务器证书到期时间为北京时间2027-02-19 02:08:43，CA证书到期时间为北京时间2027-11-21 02:08:43，覆盖本次Pre和最终提交。学习时应掌握生成用途、文件归属、启动读取方式及固定有效期，PowerShell和OpenSSL各选项可按维护需要继续查阅。
 
-#### 5.13.2 正式启动与双终端验收
+#### 7.1.2 正式启动与双终端验收
 
 两终端均在项目根目录运行。车端通过正式模块启动，桌面实验客户端明确传入同一套新CA所在目录：
 
@@ -1012,15 +1077,17 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 用户实测：首次会话seq0到3接受；7.000秒急停后零速锁存于0.18米。重连后使能和窗口仍拒绝；错误会话复位拒绝，明确复位成功，7.125秒位置仍0.18米且故障解除。旧复位请求拒绝，旧控制包两次MAC校验失败；同TLS新会话seq0到3恢复运动，seq4零速停车，7.500秒位置0.36米、未锁存；退出后会话清空。`local`中的配置和私钥匹配忽略规则，车端不再依赖外部`vehicle_tls_demo.py`启动。
 
-#### 5.13.3 跨机配置与后续部署目标
+#### 7.1.3 跨机配置与后续部署目标
 
 证书过期后更新证书材料，准备工具可以继续复用，无需重新编写脚本。当前`new_local_tls.ps1`负责新建整套实验CA与服务器证书，拒绝覆盖已有文件；复用已有CA续签服务器证书的操作尚待扩展。当CA仍有效且服务器身份保持一致时，可由同一CA重新签发服务器证书，客户端继续使用原有公开`ca.pem`；更换CA时再统一更新客户端信任材料。
 
 跨机部署按角色准备材料：车端保存`server.pem`、`server.key`和可信客户端配置；控制端读取项目CA的公开`ca.pem`，配置车端地址及自己的客户端ID/凭据。当前方案不要求每个控制端分别生成CA或申请客户端证书，也无需修改Windows全局信任库；CA私钥保留在签发材料的一处，不分发给控制端。
 
-`new_local_tls.ps1 -ServerIp` 已支持将车端实际 IPv4 加入证书 SAN。桌面安全模式可分别配置车端地址和本机遥测监听地址，并按证书中的车端身份校验。签发、启动与虚拟局域网实测见 [5.19](#vmware-lan-acceptance)。后续部署继续完善连接配置保存和同 CA 续签流程。
+`new_local_tls.ps1 -ServerIp` 已支持将车端实际 IPv4 加入证书 SAN。桌面安全模式可分别配置车端地址和本机遥测监听地址，并按证书中的车端身份校验。签发、启动与虚拟局域网实测见 [7.3.1](#vmware-lan-acceptance)。后续部署继续完善连接配置保存和同 CA 续签流程。
 
-### 5.14 桌面安全连接入口
+### 7.2 桌面安全控制与本机联调
+
+#### 7.2.1 桌面安全连接入口
 
 `desktop/secure_connection.py`中的`connect_management()`把实验脚本反复使用的连接步骤统一起来：
 
@@ -1046,7 +1113,7 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 用户已完成本轮RED/GREEN：6项FAIL（0.005秒）→6项通过（0.005秒），完整316项通过（1.243秒）。六项专项核对成功后的编号延续、认证拒绝、证书失败不发凭据、调用者异常清理、截断认证回复清理，以及缺少CA时不建立TCP。测试替换网络和SSL边界，管理客户端、编解码与TCP分帧真实运行。
 
-#### 5.14.1 本机双终端验收
+##### 本机双终端验收
 
 在项目根目录启动正式车端，等它显示`Management TLS listening on ('127.0.0.1', 19177)`，并保持该终端运行。
 
@@ -1071,7 +1138,7 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 <a id="tls-trust-preflight"></a>
 
-#### 5.14.2 A05 TLS 信任链与凭据预检
+##### A05 TLS 信任链与凭据预检
 
 **Windows 本机回环预检（2026-11-22，基于 `7232cd2` 的工作区）**。正式车端使用临时 CA 签发的证书，桌面端依次使用正常配置、无关 CA、错误主机名和错误账号凭据连接，最后恢复正常配置。
 
@@ -1083,9 +1150,9 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 | 错误凭据 | TLS 握手通过，车端检查凭据 1 次后拒绝打开会话 |
 | 恢复正常配置 | 再次认证并打开新会话 |
 
-车端在该轮记录两次会话打开和关闭，均来自正确配置。原始 CSV 位于 `local/a-tests/a05/loopback-tls-trust-a85ac18c/`。VMware 环境中的正常连接见 [5.19](#vmware-lan-acceptance)。
+车端在该轮记录两次会话打开和关闭，均来自正确配置。原始 CSV 位于 `local/a-tests/a05/loopback-tls-trust-a85ac18c/`。VMware 环境中的正常连接见 [7.3.1](#vmware-lan-acceptance)。
 
-### 5.15 桌面安全控制与窗口续期
+#### 7.2.2 桌面安全控制与窗口续期
 
 `SecureControlSession`将实验脚本里已验证的桌面发包流程整理成可重复调用的代码。它使用已认证的`ManagementClient`处理管理请求，保存当前会话ID、密钥、窗口和下一个UDP序号。
 
@@ -1100,7 +1167,7 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 用户实测为8项预期失败、8项通过、完整324项通过。专项用可控的时间和管理回复检查会话复用、窗口和使能时序、续窗后的签名报文与序号、拒绝或异常后的停发。
 
-### 5.16 桌面后台控制线程
+#### 7.2.3 桌面后台控制线程
 
 `SecureControlWorker`在一个后台线程内创建并持有TLS管理连接、UDP socket和安全控制会话。提交控制目标后约每50毫秒发送一条签名控制指令。空闲时约每2秒通过真实的管理请求确认仍持有同一会话并保持连接。调用方可读取最新状态或发出关闭请求；网络资源由后台线程释放。
 
@@ -1110,7 +1177,7 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 <a id="secure-desktop-local-acceptance"></a>
 
-### 5.17 安全桌面界面的本机验收
+#### 7.2.4 安全桌面界面的本机验收
 
 先在终端A启动车端，再在终端B启动桌面界面。两个终端均在仓库根目录运行。
 
@@ -1137,7 +1204,7 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 <a id="management-request-flow"></a>
 
-### 5.18 图9 管理请求主干与业务分支
+#### 7.2.5 图9 管理请求主干与业务分支
 
 图9先连起TCP连接与TLS证书校验、账号认证，再用向下箭头标出认证通过后车端开始接收会话请求的位置。同一条已认证的连接可执行多次管理请求。主干从桌面发起，经车端网络线程分派和仿真线程裁决，再沿回复路径回到界面。断开后由同一任务队列撤销会话。各业务卡片列出权限和状态规则、两端方法及实际使用的编解码入口，底部对照UDP控制、三种停车方式与各编号的用途。
 
@@ -1145,9 +1212,11 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 [PNG 大图](reference_image/diagrams/09-management-request-flow.png) · [图源](reference_image/diagrams/render_management_request_flow.py)
 
+### 7.3 跨系统联调与遥测观察
+
 <a id="vmware-lan-acceptance"></a>
 
-### 5.19 Windows 宿主机与 Ubuntu 虚拟机联调
+#### 7.3.1 Windows 宿主机与 Ubuntu 虚拟机联调
 
 2026-11-22 使用 `ead59ba` 实测。Windows 桌面进程与 Ubuntu 车端进程运行在同一台物理电脑的两个独立操作系统中，通过 VMware Workstation 的 VMnet8 私有网络通信。VMware 共享目录用于读取项目源码和本地证书配置，网络消息通过各自的虚拟网卡地址收发。本记录覆盖虚拟局域网闭环，两台物理电脑的局域网验收仍待进行。
 
@@ -1184,11 +1253,11 @@ PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./loca
 
 <a id="telemetry-observer-acceptance"></a>
 
-### 5.20 只读观察端与遥测双发
+#### 7.3.2 只读观察端与遥测双发
 
 车端在一个采样周期生成一份 `TelemetrySnapshot`，通过现有的非阻塞 UDP 套接字分别发往控制台和可选观察端。每个目的地址单独处理发送错误。[观察程序](examples/demo_udp_telemetry_receiver.py)只绑定遥测接收端口，无需 TLS 凭据或控制会话。
 
-2026-11-22 沿用 [5.19 的 VMware 拓扑](#vmware-lan-acceptance)。Ubuntu 车端为 `192.168.174.128`。Windows 宿主机 `192.168.174.1` 上的控制台和观察端是两个独立进程，分别监听 UDP `10000` 和 `10001`。保留 5.19 的 Windows 控制台启动命令。Ubuntu 车端增加观察地址，Windows 另开终端运行接收器：
+2026-11-22 沿用 [7.3.1 的 VMware 拓扑](#vmware-lan-acceptance)。Ubuntu 车端为 `192.168.174.128`。Windows 宿主机 `192.168.174.1` 上的控制台和观察端是两个独立进程，分别监听 UDP `10000` 和 `10001`。保留 7.3.1 的 Windows 控制台启动命令。Ubuntu 车端增加观察地址，Windows 另开终端运行接收器：
 
 ```bash
 PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./local/certs-vm --credentials-file ./local/trusted_clients.json --bind-host 192.168.174.128 --telemetry-host 192.168.174.1 --observer-host 192.168.174.1 --observer-port 10001
@@ -1206,9 +1275,15 @@ PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./loca
 
 提交 `b22220a` 加入遥测双发，`1d0ec91` 开放观察端监听参数。车端专项 RED 记录为 5 个失败和 5 个错误，完成接线后复跑 16 项通过，全量 345 项通过。专项覆盖两路发送使用相同的快照字节、任一目的地发送出错时另一处仍尝试发送，以及命令行参数校验。
 
+<a id="fault-experiment-sequence"></a>
+
+## 8. 网络故障实验与高级验收
+
+### 8.1 N0–N5 控制链路实验
+
 <a id="control-outage-lab"></a>
 
-### 5.21 N4/N5 控制断流与恢复实验
+#### 8.1.1 N4/N5 控制断流与恢复实验
 
 在 [VMware 联调拓扑](#vmware-lan-acceptance)上增加一个控制 UDP 转发器。Windows 控制端发往 Ubuntu 的 `10002/UDP`，转发器将同一数据报送到 Ubuntu 车端的 `9999/UDP`。TLS 管理继续直连 `19177/TCP`，车端遥测继续发往控制台 `10000/UDP` 和观察端 `10001/UDP`。
 
@@ -1266,9 +1341,11 @@ PYTHONPATH="$PWD/src" python3 -B -m rover.transport.udp_control_outage --bind-ho
 
 转发器另外记录了两次丢弃数为零的触发，有运动中的有效样本为 1 次。计划要求的重复轮次及物理双机局域网验收仍待完成。
 
-### 5.22 N0–N2 控制链路基线、丢包与延迟
+<a id="loss-delay-baseline"></a>
 
-沿用 §5.21 的 VMware 拓扑。新转发器监听 Ubuntu 的 `10002/UDP`，仅处理来自 Windows 桌面端的控制报文，并将保留的报文原样发往车端 `9999/UDP`。TLS 管理和两路遥测仍然直连。每轮使用一组新日志文件名，下面以 N1 的 5% 档首轮为例。
+#### 8.1.2 N0–N2 控制链路基线、丢包与延迟
+
+沿用 [8.1.1](#control-outage-lab) 的 VMware 拓扑。新转发器监听 Ubuntu 的 `10002/UDP`，仅处理来自 Windows 桌面端的控制报文，并将保留的报文原样发往车端 `9999/UDP`。TLS 管理和两路遥测仍然直连。每轮使用一组新日志文件名，下面以 N1 的 5% 档首轮为例。
 
 **Ubuntu 终端 1** 启动车端，记录有效指令和实际状态。
 
@@ -1282,13 +1359,13 @@ PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./loca
 PYTHONPATH="$PWD/src" python3 -B -m rover.transport.udp_control_faults --bind-host 192.168.174.128 --desktop-host 192.168.174.1 --event-log ./local/n-tests/n1/n1-loss05-relay-01.csv --loss-percent 5 --seed 42
 ```
 
-**Windows 观察端** 按 §5.21 监听 `10001/UDP`。下列命令把逐行遥测写入文件，并抑制终端刷屏。
+**Windows 观察端** 按 [8.1.1](#control-outage-lab) 监听 `10001/UDP`。下列命令把逐行遥测写入文件，并抑制终端刷屏。
 
 ```powershell
 .\.venv\Scripts\python.exe -u -m examples.demo_udp_telemetry_receiver --bind-host 192.168.174.1 --port 10001 | Tee-Object -FilePath '.\local\n-tests\n1\n1-loss05-observer-01.txt' | Out-Null
 ```
 
-**Windows 控制台** 仍使用 §5.21 的桌面启动命令，控制端口保持 `10002`。安全连接就绪且遥测可用后，将目标设为 `1.0 m/s`、`0°`，点击「开始／应用」，观察约 10 秒。若车辆持续运动，点击「正常停车」，确认遥测速度归零后关闭控制台。若车辆提前停下或锁存，记录现象并结束本轮。最后结束三个终端，保留原始日志。
+**Windows 控制台** 仍使用 [8.1.1](#control-outage-lab) 的桌面启动命令，控制端口保持 `10002`。安全连接就绪且遥测可用后，将目标设为 `1.0 m/s`、`0°`，点击「开始／应用」，观察约 10 秒。若车辆持续运动，点击「正常停车」，确认遥测速度归零后关闭控制台。若车辆提前停下或锁存，记录现象并结束本轮。最后结束三个终端，保留原始日志。
 
 | 档位 | 转发器参数 | 核对内容 |
 | --- | --- | --- |
@@ -1320,13 +1397,13 @@ N1 按种子对每个合格控制报文独立抽样。丢包档的实测比例�
 
 100 ms 档最后接受的是 `seq=42`，到锁存经过 519.250 ms。续期导致的旧窗口包晚到与这档接收情况相符。300 ms 档的每条已转发报文仅在中继就停留至少 300.429 ms，超过车端 250 ms 控制窗口的有效期。车端使能后一直没有接受有效指令，看门狗锁存。现有车端 CSV 记录了接受和锁存事件，逐包忽略原因与精确使能时刻未收录。两档观察数据写入了同一原始文件，归档保留原始文件并按遥测源端口区分。
 
-### 5.23 N3 控制报文乱序与重复实验
+#### 8.1.3 N3 控制报文乱序与重复实验
 
-沿用 §5.21 的 VMware 拓扑。Windows 控制台将 UDP 控制报文发往 Ubuntu 的 `192.168.174.128:10002`，转发器再发往车端 `9999/UDP`。Windows 控制台和只读观察端仍在 `192.168.174.1` 分别监听 `10000/UDP` 和 `10001/UDP`。
+沿用 [8.1.1](#control-outage-lab) 的 VMware 拓扑。Windows 控制台将 UDP 控制报文发往 Ubuntu 的 `192.168.174.128:10002`，转发器再发往车端 `9999/UDP`。Windows 控制台和只读观察端仍在 `192.168.174.1` 分别监听 `10000/UDP` 和 `10001/UDP`。
 
 先结束上一轮进程，每轮只选一种转发模式。首测均使用 15% 和种子 `42`。乱序模式只在没有暂留报文时抽样，选中的报文最多暂留 120 ms。下一条合格报文在期限前到达时先发下一条，再发暂留的报文。到期仍没有下一条时，先释放暂留报文。重复模式将选中报文的原始字节连续发送两次。两个百分比参数均可选 `5` 或 `15`，与 N1 的丢包和 N2 的延迟参数互斥。
 
-**Ubuntu 车端与 Windows 两端** 使用 §5.22 的原命令，按档位更换车端 `--event-log` 和 Windows 观察端的 `Tee-Object -FilePath`。控制台保持使用 `--control-port 10002`。
+**Ubuntu 车端与 Windows 两端** 使用 [8.1.2](#loss-delay-baseline) 的原命令，按档位更换车端 `--event-log` 和 Windows 观察端的 `Tee-Object -FilePath`。控制台保持使用 `--control-port 10002`。
 
 | 档位 | Ubuntu 车端日志 | Windows 观察端日志 |
 | --- | --- | --- |
@@ -1358,9 +1435,11 @@ PYTHONPATH="$PWD/src" python3 -B -m rover.transport.udp_control_faults --bind-ho
 
 乱序档中继起始发送顺序为 `packet_index=1, 3, 2`，车端起始接受 `seq=0, 2, 3`。重复档中继起始发送顺序为 `packet_index=1, 2, 2, 3`，车端起始接受 `seq=0, 1, 2`。重复档实测 29 个原包被复制，占 197 个原包的 14.72%。
 
+### 8.2 界面、控制准入与遥测专项
+
 <a id="operator-event-acceptance"></a>
 
-### 5.24 A02 操作员显示与事件日志
+#### 8.2.1 A02 操作员显示与事件日志
 
 A01–A10 的运行记录统一放在 `local/a-tests/`，按验收项使用子目录，例如 `local/a-tests/a02/`。首次运行某项实验时，在各端项目目录创建相应子目录。
 
@@ -1368,7 +1447,7 @@ A01–A10 的运行记录统一放在 `local/a-tests/`，按验收项使用子�
 
 地图下方的只读事件日志保留最近 100 条带时间的状态变化，覆盖连接、控制、遥测可用或过期、故障锁存及解除。状态持续时，行数保持稳定。异常事件采用简短的状态描述。
 
-验收时按 §5.22 的原命令启动安全控制台，沿用 VMware 网络参数。
+验收时按 [8.1.2](#loss-delay-baseline) 的原命令启动安全控制台，沿用 VMware 网络参数。
 
 1. 等待「安全连接就绪」和「遥测可用」，核对操作员账号及对应的带时间事件。
 2. 应用目标后点击「停止发包」，等遥测显示零速和锁存，再点击「显式复位」。核对日志按顺序记录锁存和解除。
@@ -1380,17 +1459,17 @@ Qt 离屏桌面专项 20 项、全量回归 368 项通过。
 
 <a id="control-rejection-evidence"></a>
 
-### 5.25 A07 指令拒绝原因记录
+#### 8.2.2 A07 指令拒绝原因记录
 
 安全模式使用 `--event-log` 时，车端在原有 CSV 中以 `control_rejected` 记录拒绝事件。`detail` 给出实际首先失败的检查，例如 `window_mismatch`、`window_expired`、`sequence_duplicate`、`sequence_out_of_order` 或 `invalid_mac`。只有通过校验和解码的报文才记录序号。拒绝行用于统计，车端继续按既有准入和看门狗规则运行。
 
-用 §5.22 的四个终端复测 100 ms 延迟。转发器使用 `--delay-ms 100`，将车端、中继、观察端的文件名分别改为 `a07-n2-delay100-vehicle-01.csv`、`a07-n2-delay100-relay-01.csv`、`a07-n2-delay100-observer-01.txt`，并放在各端项目的 `local/a-tests/a07/`。应用 `1.0 m/s`、`0°`，观察约 10 秒，若提前锁存则保留现场并结束本轮。按 `control_rejected` 的 `detail` 分组统计，把中继转发数、车端接受数和遥测结果一起核对。
+用 [8.1.2](#loss-delay-baseline) 的四个终端复测 100 ms 延迟。转发器使用 `--delay-ms 100`，将车端、中继、观察端的文件名分别改为 `a07-n2-delay100-vehicle-01.csv`、`a07-n2-delay100-relay-01.csv`、`a07-n2-delay100-observer-01.txt`，并放在各端项目的 `local/a-tests/a07/`。应用 `1.0 m/s`、`0°`，观察约 10 秒，若提前锁存则保留现场并结束本轮。按 `control_rejected` 的 `detail` 分组统计，把中继转发数、车端接受数和遥测结果一起核对。
 
 **A07 VMware 100 ms 复测（2026-11-22）**。中继转发 10 条，车端接受 `seq=0`，随后拒绝 9 条。`seq=1–7` 的首个失败检查均为 `window_mismatch`，`seq=8–9` 记录为 `fault_latched`。距最后一条有效指令 **512.734 ms** 后，车端记录零速锁存，观察端位置为 `x=0.48 m`。随后车端拒绝签发新窗口，控制台显示「安全控制已暂停」。本轮原始文件归档于 A07 目录。
 
 <a id="telemetry-outage-acceptance"></a>
 
-### 5.26 A08 补充实验（控制台遥测单向中断）
+#### 8.2.3 A08 补充实验（控制台遥测单向中断）
 
 沿用 [VMware 虚拟局域网](#vmware-lan-acceptance)。TLS 管理和控制 UDP 仍直达 Ubuntu 车端的 `19177/TCP` 与 `9999/UDP`。车端发给控制台的遥测经 Windows 中继从 `10003/UDP` 转发至 `10000/UDP`。只读观察端继续在 `10001/UDP` 直收车端遥测。
 
@@ -1426,11 +1505,13 @@ $a08Log = Join-Path '.\local\a-tests\a08' ('relay-{0}.csv' -f [guid]::NewGuid().
 
 **VMware 实测（2026-11-22，基于 `7232cd2` 的工作区）**。三次暂停各丢弃 40 条控制台遥测。第 1 次从运动开始，最后一条有效控制指令至零速锁存为 **510.202 ms**，车端停在 `x=2.96 m`。后两次触发时车辆已锁存。只读观察端在中断期间仍收到遥测，控制台恢复接收后仍显示零速、已锁定。显式复位及重新起步已完成本机回环验证，VMware 本轮记录到恢复遥测后仍锁存。
 
+### 8.3 管理计时、数据汇总与验收状态
+
 <a id="management-timing-evidence"></a>
 
-### 5.27 A10 管理往返与主动重连计时
+#### 8.3.1 A10 管理往返与主动重连计时
 
-使用 5.19 的车端证书和地址，关闭控制台并启动车端。
+使用 [7.3.1](#vmware-lan-acceptance) 的车端证书和地址，关闭控制台并启动车端。
 
 ```bash
 mkdir -p ./local/a-tests/a10
@@ -1454,7 +1535,7 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 
 <a id="advanced-acceptance-status"></a>
 
-### 5.28 N0–N5 日志汇总与高级版验收状态
+#### 8.3.2 N0–N5 日志汇总与高级版验收状态
 
 汇总工具读取 `local/n-tests/`，按场景和轮次配对车端、中继 CSV。它统计有效控制包、会话内序号缺口、转发与丢弃次数，以及从最后一条有效指令到首次零速锁存的时间。最大有效指令间隔覆盖会话全程，N1、N3 的表格仍保留运动阶段的统计口径。序号缺口也会受乱序和超窗影响。旧日志没有逐条记录拒绝原因时，汇总显示 `no records`。
 
@@ -1466,20 +1547,22 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 
 | 验收项 | 现有证据 | 待补记录 |
 | --- | --- | --- |
-| A01 局域网遥控 | [VMware 联调](#vmware-lan-acceptance)完成 Windows 宿主机与 Ubuntu 虚拟机间的控制、运动和遥测闭环 | 两台物理电脑的局域网联调及实际断网 |
+| A01 局域网遥控 | [VMware 联调](#vmware-lan-acceptance)完成 Windows 宿主机与 Ubuntu 虚拟机间的控制、运动和遥测闭环 | 两台物理电脑的局域网联调 |
 | A02 可视化控制台 | VMware 在 GUI 上观察到运动和停车，[操作员显示和状态事件](#operator-event-acceptance)已留存 | — |
 | A03 自定义协议 | [协议及传输 118 项回归](#protocol-regression)通过，含真实本机 TCP 请求与回复 | 跨系统正式车端拒绝异常消息后继续服务的现场证据 |
 | A04 通道分工 | VMware 实测 TLS 管理、UDP 控制和 [UDP 遥测双发](#telemetry-observer-acceptance)走独立端点 | — |
 | A05 TLS 与身份校验 | [本机证书与凭据矩阵](#tls-trust-preflight)及 VMware 正常 TLS 联调 | — |
 | A06 异步处理 | VMware 中控制台和只读观察端同时收到车端遥测，[本机管理等待预检](#management-wait-preflight)确认 Qt 响应与两路遥测持续更新 | VMware 跨系统管理请求等待期间的界面与遥测记录 |
 | A07 指令新鲜度 | N3 有中继和车端序号统计，[VMware 100 ms 复测](#control-rejection-evidence)有窗口不匹配和锁存原因记录 | 重复、乱序、过期及旧会话的分场景拒绝原因记录 |
-| A08 车端失联停车 | [N4 控制断流](#control-outage-lab)和[遥测中断停发](#telemetry-outage-acceptance)首轮从末条有效指令到零速锁存分别为 507.562 ms 和 510.202 ms | 控制端进程异常退出及真实断网条件下的停车记录 |
-| A09 重连与主动恢复 | N5 转发恢复后显式复位并重新应用才起步，[本机已验证管理连接主动关闭和重连](#management-close-preflight) | VMware 管理链路突然中断后的检测、停车及重连。遥测恢复后复位起步的 VMware 记录 |
+| A08 车端失联停车 | [N4 控制断流](#control-outage-lab)和[遥测中断停发](#telemetry-outage-acceptance)首轮从末条有效指令到零速锁存分别为 507.562 ms 和 510.202 ms。[Windows 本机回环进程异常退出](docs/verification.md#advanced-acceptance-status) 10 轮均停车，保护未锁存 | 物理双机实际断网后的停车实测 |
+| A09 重连与主动恢复 | N5 转发恢复后显式复位并重新应用才起步，[本机已验证管理连接主动关闭和重连](#management-close-preflight)。[VMware 网卡中断记录](docs/verification.md#advanced-acceptance-status)补充了锁存证据 | 物理双机实际断网后的检测、重连及显式恢复起步 |
 | A10 故障实验与证据 | N0 正常长跑、故障档首轮和[管理计时](#management-timing-evidence)均有原始数据 | 各短场景至少 10 轮，汇总结果并留存演示录像 |
+
+### 8.4 连接恢复与异步响应预检
 
 <a id="management-close-preflight"></a>
 
-### 5.29 A09 管理连接关闭与重新使能
+#### 8.4.1 A09 管理连接关闭与重新使能
 
 车端检测到当前控制会话的 TLS 连接关闭后，清除该会话的控制密钥、窗口、使能与当前目标。车辆在处理关闭事件的仿真步内归零，原有保护锁存状态保留。UDP 单独断流时，车端则由最后一次有效指令的 500 ms 看门狗处理超时。
 
@@ -1489,7 +1572,7 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 
 <a id="management-wait-preflight"></a>
 
-### 5.30 A06 管理请求等待时的异步更新
+#### 8.4.2 A06 管理请求等待时的异步更新
 
 **Windows 本机回环预检（2026-11-22，基于 `7232cd2` 的工作区）**。测试夹具暂缓处理一个已通过身份验证的会话请求，实际观测等待窗口约 **1.254 秒**。正式车端继续推进仿真并向两个独立的 UDP 套接字发送遥测。离屏 Qt 控制台继续处理界面事件，管理连接的等待发生在桌面后台线程。
 
@@ -1503,11 +1586,11 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 
 <a id="project-maintenance"></a>
 
-## 6. 项目配置与文档维护
+## 9. 项目配置与文档维护
 
-### 6.1 项目安装配置
+### 9.1 项目安装配置
 
-#### 6.1.1 为什么现在增加pyproject.toml
+#### 9.1.1 为什么现在增加pyproject.toml
 
 早期所有脚本在根目录，直接运行脚本时Python可以找到同目录的其他模块，因此当时没有项目安装配置。
 本次采用`src/rover`包布局，通过[pyproject.toml](pyproject.toml)声明源码位置、依赖和构建方式，统一两端的导入与启动。
@@ -1525,7 +1608,7 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 `dsnet-rover`是安装名称，`rover`是代码导入名称，`src`是源码存放区。
 例如`from rover.core.vehicle_model import VehicleState`，导入名称不包含`src`。
 
-#### 6.1.2 可编辑安装与依赖清单
+#### 9.1.2 可编辑安装与依赖清单
 
 [1.2 创建环境与安装依赖](#environment-setup)中的`pip install -e .`表示将当前项目以可编辑方式安装到所用Python环境，同时处理项目声明的依赖。
 修改现有源码后，下次运行直接使用修改；调整依赖或安装配置后，应重新执行安装命令。
@@ -1535,13 +1618,13 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 只执行`pip install -r requirements.txt`会安装第三方库，不能替代本项目的包安装。
 当前可编辑安装及wheel构建均依赖Python环境，最终独立Windows EXE仍需单独制作。
 
-#### 6.1.3 空的__init__.py为什么也要提交
+#### 9.1.3 空的__init__.py为什么也要提交
 
 `rover`及五个子包、`tests`、`examples`各有一个空`__init__.py`，共8个。
 它们明确本项目采用的普通Python包边界，支持完整包导入、测试定位和示例模块启动。
 这些是源码文件，应提交；不需要往里面填`main()`，窗口和Socket仍由应用入口创建。
 
-### 6.2 Git协作与目录迁移
+### 9.2 Git协作与目录迁移
 
 | 提交到仓库 | 用途 |
 | --- | --- |
@@ -1561,15 +1644,15 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 
 <a id="diagram-maintenance"></a>
 
-### 6.3 导图维护
+### 9.3 导图维护
 
-#### 6.3.1 Mermaid图
+#### 9.3.1 Mermaid图
 
 图1—图3保留为正文中的可编辑Mermaid代码块。
 函数名加粗，参数/变量分行；节点ID只负责连线，不必与Python变量同名。
 改名或移动图时同步检查正文引用，避免箭头标签挤到边框。
 
-#### 6.3.2 SVG导图与生成源
+#### 9.3.2 SVG导图与生成源
 
 图4的[运动与坐标生成源](reference_image/diagrams/render_vehicle_motion.py)、图5的[网络分层生成源](reference_image/diagrams/render_network_layers.py)、图6的[封装与边界生成源](reference_image/diagrams/render_encapsulation.py)、图7的[TCP接收生成源](reference_image/diagrams/render_tcp_record_receive.py)、图8的[TLS 管理会话生成源](reference_image/diagrams/render_tls_management.py)和图9的[管理请求流程生成源](reference_image/diagrams/render_management_request_flow.py)包含可修改的文字、变量名及布局。图6的`LABELS`、`FIELDS`和布局常量集中保存函数名、字段文字、位置与尺寸。
 使用项目已有PySide6，在仓库根目录运行：
@@ -1593,7 +1676,7 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 
 <a id="development-method"></a>
 
-### 6.4 测试驱动开发与阶段验收
+### 9.4 测试驱动开发与阶段验收
 
 **项目以测试驱动开发（Test-Driven Development，TDD）推进核心协议、安全规则和运行时接入，并结合真实进程联调与独立Git提交逐步验收。** 先把目标行为写成可执行的测试，再根据失败结果补齐实现，以专项和全量回归核对改动。
 
