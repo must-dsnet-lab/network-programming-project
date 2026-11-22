@@ -47,12 +47,12 @@
 
 #### 协议路线 · 高级向专家推进
 
-先完成物理双机高级验收。专家路线的接口和用例可提前设计，正式实现接在高级验收之后。 [协议任务依赖与验收](docs/development-roadmap.md#protocol-delivery)
+物理双机和真实断网由组员在有设备时补测。专家路线先推进可在本机验证的任务，现场验收结果单独记录。 [协议任务依赖与验收](docs/development-roadmap.md#protocol-delivery)
 
 - [ ] A01 完成两台物理电脑的局域网联调，验证 TLS 认证、UDP 控制、车端运动和遥测回传。 [双机验收要求](docs/development-roadmap.md#advanced-protocol-acceptance)
 - [ ] A08/A09 保持车端运行，实际断网并验证停车。网络恢复后确认车辆保持静止，再重建会话，若已锁存则显式复位，再次使能并明确应用目标后验证重新运动。 [断网与恢复验收](docs/development-roadmap.md#advanced-protocol-acceptance)
 
-- [ ] P1 定义控制权状态机、管理消息与拒绝结果。
+- [ ] P1 定义控制权状态机、管理消息与拒绝结果。 [接口草案与本机实测](docs/expert-control-authority.md#41-单终端动手测试)
 - [ ] P2 支持两条 TLS 管理连接同时在线，保持车端串行裁决。
 - [ ] P3 实现独占控制权和零速显式交接。
 - [ ] P4 将授权代次接入 UDP 准入，验证旧授权失效。
