@@ -1,13 +1,16 @@
 import socket
+from collections.abc import Callable
 
 from rover.protocol.control_codec import (
     ControlCommand,
     decode_authenticated_command,
     decode_command,
+    decode_expert_command,
     decode_target,
     decode_windowed_command,
     encode_authenticated_command,
     encode_command,
+    encode_expert_command,
     encode_target,
     encode_windowed_command,
 )
@@ -141,6 +144,32 @@ def try_receive_windowed_control_command(
     *,
     key: bytes | None,
 ) -> tuple[ControlCommand, tuple[str, int]] | None:
+    return _try_receive_keyed_control_command(sock, key, decode_windowed_command)
+
+
+def send_expert_control_command(
+    sock: socket.socket,
+    command: ControlCommand,
+    address: tuple[str, int],
+    *,
+    key: bytes,
+) -> int:
+    return sock.sendto(encode_expert_command(command, key), address)
+
+
+def try_receive_expert_control_command(
+    sock: socket.socket,
+    *,
+    key: bytes | None,
+) -> tuple[ControlCommand, tuple[str, int]] | None:
+    return _try_receive_keyed_control_command(sock, key, decode_expert_command)
+
+
+def _try_receive_keyed_control_command(
+    sock: socket.socket,
+    key: bytes | None,
+    decode: Callable[[bytes, bytes], ControlCommand],
+) -> tuple[ControlCommand, tuple[str, int]] | None:
     try:
         packet, peer = sock.recvfrom(UDP_RECEIVE_BUFFER_BYTES)
     except BlockingIOError:
@@ -149,4 +178,4 @@ def try_receive_windowed_control_command(
     if not key:
         raise NoActiveControlKeyError("no active control session key")
 
-    return decode_windowed_command(packet, key), peer
+    return decode(packet, key), peer

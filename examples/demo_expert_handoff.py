@@ -9,9 +9,9 @@ from time import monotonic, sleep
 from rover.core.control_target import ControlTarget
 from rover.desktop import secure_connection
 from rover.desktop.expert_management_client import ExpertManagementClient
-from rover.protocol.control_codec import ControlCommand
+from rover.protocol.control_codec import AuthorityGeneration, ControlCommand
 from rover.protocol.telemetry_codec import MAX_TELEMETRY_MESSAGE_BYTES, decode_telemetry
-from rover.transport.udp_transport import send_windowed_control_command
+from rover.transport.udp_transport import send_expert_control_command
 
 
 def _require_result(reply: dict, action: str, *, reason: str | None = None) -> None:
@@ -36,8 +36,14 @@ def _send_motion(
     if monotonic() - requested_at >= window["lifetime_s"]:
         raise TimeoutError("control window expired before the motion command could be sent")
 
-    command = ControlCommand(session_id, 0, ControlTarget(1.0, 0.0), window["window_id"])
-    send_windowed_control_command(sock, command, address, key=key)
+    command = ControlCommand(
+        session_id=session_id,
+        seq=0,
+        target=ControlTarget(1.0, 0.0),
+        window_id=window["window_id"],
+        generation=AuthorityGeneration(epoch=generation["epoch"], number=generation["number"]),
+    )
+    send_expert_control_command(sock, command, address, key=key)
 
 
 def _wait_for_speed(sock: socket.socket, vehicle_ip: str, speed_mps: float) -> None:
@@ -74,7 +80,7 @@ def _wait_until_held(client: ExpertManagementClient, session_id: str) -> dict:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Check an expert TLS control authority handoff.")
+    parser = argparse.ArgumentParser(description="Check an expert TLS handoff with UDP v3 control.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=19177, help="vehicle TLS management port")
     parser.add_argument("--control-port", type=int, default=9999)
@@ -121,13 +127,13 @@ def main(argv: list[str] | None = None) -> int:
                 generation_a = acquired["generation"]
                 competing = client_b.acquire_authority(session_b)
                 _require_result(competing, "competing request from B", reason="authority_busy")
-                print("P3 A holds authority; B's competing request was rejected", flush=True)
+                print("P4 A holds authority; B's competing request was rejected", flush=True)
 
                 _send_motion(client_a, session_a, generation_a, control, address)
                 _wait_for_speed(telemetry, vehicle_ip, 1.0)
                 transfer = client_a.transfer_authority(session_a, generation_a, session_b)
                 _require_result(transfer, "A transfer to B")
-                print("P3 A observed speed=1.0 m/s; transfer accepted", flush=True)
+                print("P4 A observed speed=1.0 m/s; transfer accepted", flush=True)
 
                 generation_b = _wait_until_held(client_b, session_b)
                 if generation_a == generation_b:
@@ -135,13 +141,13 @@ def main(argv: list[str] | None = None) -> int:
                 _wait_for_speed(telemetry, vehicle_ip, 0.0)
                 old_window = client_a.issue_control_window(session_a, generation_a)
                 _require_result(old_window, "A window after transfer", reason="not_authority_holder")
-                print("P3 speed=0.0 m/s; B holds a new generation with control disabled", flush=True)
+                print("P4 speed=0.0 m/s; B holds a new generation with control disabled", flush=True)
 
                 _send_motion(client_b, session_b, generation_b, control, address)
                 _wait_for_speed(telemetry, vehicle_ip, 1.0)
                 released = client_b.release_authority(session_b, generation_b)
                 _require_result(released, "B release authority")
-                print("P3 B explicitly enabled control, observed speed=1.0 m/s and released", flush=True)
+                print("P4 B explicitly enabled control, observed speed=1.0 m/s and released", flush=True)
 
     except ssl.SSLCertVerificationError as error:
         print("REJECT certificate:", error.verify_message)

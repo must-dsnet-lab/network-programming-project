@@ -14,6 +14,18 @@ class ControlMacVerificationError(ValueError):
     """The received control MAC failed verification."""
 
 
+class ControlProtocolVersionError(ValueError):
+    """A validly signed control datagram used an unexpected protocol version."""
+
+
+@dataclass(frozen=True)
+class AuthorityGeneration:
+    """An authority grant number scoped to one vehicle runtime."""
+
+    epoch: str
+    number: int
+
+
 @dataclass(frozen=True)
 # 在已有会话中更新运动目标
 # controlCommand控制的是一个具体的报文
@@ -22,6 +34,8 @@ class ControlCommand:
     seq: int  # 该会话的第几条控制报文
     target: ControlTarget  # 速度与朝向目标
     window_id: str | None = None  # 带编号的指令有效时间段
+    generation: AuthorityGeneration | None = None
+
 
 def _validate_motion_value(value: object, field_name: str) -> None:
     if type(value) not in (int, float):
@@ -202,13 +216,16 @@ def _validate_window_id(value: object) -> None:
         raise ValueError("window_id must be a non-blank string")
 
 
-def encode_windowed_command(command: ControlCommand, key: bytes) -> bytes:
+def _windowed_control_fields(command: ControlCommand, version: int) -> dict:
     _validate_window_id(command.window_id)
     message = json.loads(encode_command(command))
-    message["version"] = 2
+    message["version"] = version
     message["type"] = "authenticated_control_command"
     message["window_id"] = command.window_id
+    return message
 
+
+def _encode_signed_control_fields(message: dict, key: bytes) -> bytes:
     payload = _encode_control_fields(message)
     message["mac"] = compute_control_mac(payload, key)
     packet = _encode_control_fields(message)
@@ -219,28 +236,42 @@ def encode_windowed_command(command: ControlCommand, key: bytes) -> bytes:
     return packet
 
 
-def decode_windowed_command(data: bytes, key: bytes) -> ControlCommand:
+def encode_windowed_command(command: ControlCommand, key: bytes) -> bytes:
+    return _encode_signed_control_fields(_windowed_control_fields(command, 2), key)
+
+
+def _verify_windowed_control_fields(data: bytes, key: bytes, expected_version: int) -> dict:
     if len(data) > MAX_CONTROL_MESSAGE_BYTES:
         raise ValueError("control message is too large")
 
-    message = json.loads(data.decode("utf-8"))
-    if not isinstance(message, dict):
-        raise ValueError("message must be a JSON object")
+    try:
+        message = json.loads(data.decode("utf-8"))
+        if not isinstance(message, dict):
+            raise ValueError("message must be a JSON object")
 
-    received_mac = message.pop("mac", None)
-    payload = _encode_control_fields(message)
+        received_mac = message.pop("mac", None)
+        payload = _encode_control_fields(message)
+    except RecursionError as exc:
+        raise ValueError("control message is too deeply nested") from exc
+
     if not verify_control_mac(payload, key, received_mac):
         raise ControlMacVerificationError("control MAC verification failed")
 
     version = message.get("version")
 
-    if type(version) is not int or version != 2:
-        raise ValueError("unsupported protocol version")
+    if type(version) is not int or version != expected_version:
+        raise ControlProtocolVersionError("unsupported protocol version")
 
     if message.get("type") != "authenticated_control_command":
         raise ValueError("unexpected message type")
 
     _validate_window_id(message.get("window_id"))
+    return message
+
+
+def _command_from_windowed_fields(
+    message: dict, generation: AuthorityGeneration | None = None
+) -> ControlCommand:
     window_id = message.pop("window_id")
 
     # 内部适配已认证的字典，复用原来的控制字段校验。
@@ -253,4 +284,38 @@ def decode_windowed_command(data: bytes, key: bytes) -> ControlCommand:
         seq=base.seq,
         target=base.target,
         window_id=window_id,
+        generation=generation,
     )
+
+
+def decode_windowed_command(data: bytes, key: bytes) -> ControlCommand:
+    return _command_from_windowed_fields(_verify_windowed_control_fields(data, key, 2))
+
+
+def _validate_generation_fields(epoch: object, number: object) -> None:
+    if not isinstance(epoch, str) or not epoch.strip():
+        raise ValueError("generation.epoch must be a non-blank string")
+    if type(number) is not int or number <= 0:
+        raise ValueError("generation.number must be a positive integer")
+
+
+def encode_expert_command(command: ControlCommand, key: bytes) -> bytes:
+    generation = command.generation
+    if not isinstance(generation, AuthorityGeneration):
+        raise ValueError("generation is required for expert control commands")
+    _validate_generation_fields(generation.epoch, generation.number)
+
+    message = _windowed_control_fields(command, 3)
+    message["generation"] = {"epoch": generation.epoch, "number": generation.number}
+    return _encode_signed_control_fields(message, key)
+
+
+def decode_expert_command(data: bytes, key: bytes) -> ControlCommand:
+    message = _verify_windowed_control_fields(data, key, 3)
+    generation = message.pop("generation", None)
+    if not isinstance(generation, dict):
+        raise ValueError("generation must be a JSON object")
+
+    epoch, number = generation.get("epoch"), generation.get("number")
+    _validate_generation_fields(epoch, number)
+    return _command_from_windowed_fields(message, AuthorityGeneration(epoch, number))

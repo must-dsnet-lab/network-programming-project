@@ -11,16 +11,26 @@ from rover.core.control_target import ControlTarget
 from rover.protocol.control_codec import (
     ControlCommand,
     encode_authenticated_command,
+    encode_expert_command,
     encode_target,
     encode_windowed_command,
 )
 from rover.vehicle.control_window import ControlWindow
+from rover.vehicle.control_authority import ControlAuthority, ControlSession
 from rover.vehicle.vehicle_runtime import step_vehicle
 
 
 class TestWindowedVehicleApp(unittest.TestCase):
+    @staticmethod
+    def _enabled_expert_authority():
+        session = ControlSession("desktop-a", "connection-a", "session-a")
+        authority, _ = ControlAuthority(epoch="unit-epoch").acquire(session)
+        authority, _ = authority.set_enabled(session, authority.grant.generation, True)
+        return authority
+
     def _run_one_tick(
-        self, packet, *, managed=True, window=None, key=b"k" * 32, event_log=None
+        self, packet, *, managed=True, window=None, key=b"k" * 32, event_log=None,
+        authority=None,
     ):
         control = MagicMock()
         control.__enter__.return_value = control
@@ -44,13 +54,21 @@ class TestWindowedVehicleApp(unittest.TestCase):
             states.append(state)
             return state
 
-        management = nullcontext(process) if managed else None
+        if authority is not None:
+            expert = MagicMock(spec=app.ExpertManagementRuntime, side_effect=process)
+            expert.authority = authority
+            expert.observe_vehicle.side_effect = lambda guard, state: guard
+            management = nullcontext(expert)
+        else:
+            management = nullcontext(process) if managed else None
+
+        times = [100.0, 100.01, 100.02, 100.03, 100.04, 100.05, 100.06]
         with (
             patch.object(app.socket, "socket", side_effect=[control, telemetry]),
             patch.object(
                 app,
                 "monotonic",
-                side_effect=[100.0, 100.01, 100.02, 100.03, 100.04, 100.05],
+                side_effect=times,
             ),
             patch.object(app, "sleep", side_effect=KeyboardInterrupt),
             patch.object(app, "step_vehicle", side_effect=observe_step),
@@ -70,6 +88,42 @@ class TestWindowedVehicleApp(unittest.TestCase):
         )
         self.assertEqual(state.speed_mps, 1.0)
         self.assertGreater(state.x_m, 0.0)
+
+    def test_expert_mode_rejects_legacy_version_with_current_control_material(self):
+        authority = self._enabled_expert_authority()
+        command = ControlCommand("session-a", 0, ControlTarget(1.0, 0.0), "window-a")
+
+        with TemporaryDirectory() as temporary:
+            event_log = Path(temporary) / "events.csv"
+            state = self._run_one_tick(
+                encode_windowed_command(command, b"k" * 32),
+                window=ControlWindow("window-a", 100.0, 100.25),
+                authority=authority,
+                event_log=event_log,
+            )
+            with event_log.open(encoding="utf-8", newline="") as stream:
+                reasons = [
+                    row["detail"] for row in csv.DictReader(stream)
+                    if row["event"] == "control_rejected"
+                ]
+
+        self.assertEqual(state.speed_mps, 0.0)
+        self.assertEqual(reasons, ["unsupported_control_version"])
+
+    def test_version_three_moves_only_in_expert_mode(self):
+        authority = self._enabled_expert_authority()
+        command = ControlCommand(
+            "session-a", 0, ControlTarget(1.0, 0.0), "window-a",
+            generation=authority.grant.generation,
+        )
+        packet = encode_expert_command(command, b"k" * 32)
+        window = ControlWindow("window-a", 100.0, 100.25)
+
+        expert = self._run_one_tick(packet, window=window, authority=authority)
+        advanced = self._run_one_tick(packet, window=window)
+
+        self.assertEqual(expert.speed_mps, 1.0)
+        self.assertEqual(advanced.speed_mps, 0.0)
 
     def test_wrong_missing_or_expired_window_cannot_move_vehicle(self):
         command = ControlCommand(
