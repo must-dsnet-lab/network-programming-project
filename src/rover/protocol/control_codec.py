@@ -1,13 +1,17 @@
-from rover.core.control_target import ControlTarget
 import json
 from dataclasses import dataclass
 from math import isfinite
+
+from rover.core.control_target import ControlTarget
+from rover.core.driving import ControlIntent, DriveInput
 from rover.protocol.control_auth import (
     compute_control_mac,
     verify_control_mac,
 )
 
 MAX_CONTROL_MESSAGE_BYTES = 1200
+_DRIVE_FIELDS = {"throttle", "brake", "steering"}
+_TARGET_FIELDS = ("speed_mps", "heading_rad")
 
 
 class ControlMacVerificationError(ValueError):
@@ -32,7 +36,7 @@ class AuthorityGeneration:
 class ControlCommand:
     session_id: str  # 属于哪次控制会话
     seq: int  # 该会话的第几条控制报文
-    target: ControlTarget  # 速度与朝向目标
+    target: ControlIntent
     window_id: str | None = None  # 带编号的指令有效时间段
     generation: AuthorityGeneration | None = None
 
@@ -50,6 +54,56 @@ def _validate_motion_value(value: object, field_name: str) -> None:
         raise ValueError(f"{field_name} must be finite")
 
 
+def _encode_motion_fields(target: ControlIntent) -> dict:
+    if isinstance(target, DriveInput):
+        return {"drive_input": {
+            "throttle": target.throttle,
+            "brake": target.brake,
+            "steering": target.steering,
+        }}
+    _validate_motion_value(target.speed_mps, "speed_mps")
+    _validate_motion_value(target.heading_rad, "heading_rad")
+    return {"speed_mps": target.speed_mps, "heading_rad": target.heading_rad}
+
+
+def _decode_control_json(data: bytes) -> dict:
+    duplicate = False
+
+    def collect_fields(pairs):
+        nonlocal duplicate
+        fields = dict(pairs)
+        duplicate |= len(fields) != len(pairs)
+        return fields
+
+    try:
+        message = json.loads(data.decode("utf-8"), object_pairs_hook=collect_fields)
+    except RecursionError as exc:
+        raise ValueError("control message is too deeply nested") from exc
+    if not isinstance(message, dict):
+        raise ValueError("message must be a JSON object")
+    if "drive_input" in message and duplicate:
+        raise ValueError("driving control message contains duplicate fields")
+    return message
+
+
+def _decode_motion_fields(message: dict) -> ControlIntent:
+    if _DRIVE_FIELDS.intersection(message):
+        raise ValueError("driving fields must be inside drive_input")
+    if "drive_input" in message:
+        if any(field in message for field in _TARGET_FIELDS):
+            raise ValueError("mixed driving and numeric motion fields")
+        drive = message["drive_input"]
+        if not isinstance(drive, dict) or drive.keys() != _DRIVE_FIELDS:
+            raise ValueError("drive_input must contain exactly throttle, brake and steering")
+        return DriveInput(drive["throttle"], drive["brake"], drive["steering"])
+
+    if not all(field in message for field in _TARGET_FIELDS):
+        raise ValueError("missing motion fields")
+    for field in _TARGET_FIELDS:
+        _validate_motion_value(message[field], field)
+    return ControlTarget(message["speed_mps"], message["heading_rad"])
+
+
 def _validate_command_metadata(session_id: object, seq: object) -> None:
     # session_id必须是字符串，且不能是空串或纯空白
     if not isinstance(session_id, str) or not session_id.strip():#.strip()：去掉字符串开头和结尾的空白字符
@@ -59,34 +113,23 @@ def _validate_command_metadata(session_id: object, seq: object) -> None:
         raise ValueError("seq must be a non-negative integer")
 
 
-# 发送：ControlTarget → 字典 → JSON 文本 → UTF-8 字节
-def encode_target(target: ControlTarget) -> bytes:
-    _validate_motion_value(target.speed_mps, "speed_mps")
-    _validate_motion_value(target.heading_rad, "heading_rad")
-
+# 发送：控制目标 → 字典 → JSON 文本 → UTF-8 字节
+def encode_target(target: ControlIntent) -> bytes:
     message = {
         "version": 1,
         "type": "control_target",
-        "speed_mps": target.speed_mps,
-        "heading_rad": target.heading_rad,
+        **_encode_motion_fields(target),
     }
     #json.dumps(message)：字典转成 JSON 文本，结果是 str
     #.encode("utf-8")：文本转成待发送的 bytes
     return json.dumps(message).encode("utf-8")
 
-# 接收：UTF-8 字节 → JSON 文本 → 字典 → ControlTarget
-def decode_target(data: bytes) -> ControlTarget:
-    # data.decode("utf-8")：收到的字节还原成文本
-    # json.loads(...)：解析文本得到字典，再取出字段构造 ControlTarget
-
+# 接收：UTF-8 字节 → JSON 文本 → 字典 → 控制目标
+def decode_target(data: bytes) -> ControlIntent:
     if len(data) > MAX_CONTROL_MESSAGE_BYTES:
         raise ValueError("control message is too large")
 
-    message = json.loads(data.decode("utf-8"))
-
-    if not isinstance(message, dict): #dict 是 Python 语言内部的叫法(检查用)
-        # JSON object 是网络传输协议（JSON 标准）的叫法（报错用）
-        raise ValueError("message must be a JSON object")
+    message = _decode_control_json(data)
 
     version = message.get("version")
     if type(version) is not int or version != 1:
@@ -95,30 +138,18 @@ def decode_target(data: bytes) -> ControlTarget:
     if message.get("type") != "control_target":
         raise ValueError("unexpected message type")
 
-    if "speed_mps" not in message or "heading_rad" not in message:
-        raise ValueError("missing motion fields")
-
-    for field in ("speed_mps", "heading_rad"):
-        _validate_motion_value(message[field], field)
-
-    return ControlTarget(
-        speed_mps=message["speed_mps"],
-        heading_rad=message["heading_rad"]
-    )
+    return _decode_motion_fields(message)
 
 
 def encode_command(command: ControlCommand) -> bytes:
     _validate_command_metadata(command.session_id, command.seq)
-    _validate_motion_value(command.target.speed_mps, "speed_mps")
-    _validate_motion_value(command.target.heading_rad, "heading_rad")
 
     message = {
         "version": 1,
         "type": "control_command",
         "session_id": command.session_id,
         "seq": command.seq,
-        "speed_mps": command.target.speed_mps,
-        "heading_rad": command.target.heading_rad,
+        **_encode_motion_fields(command.target),
     }
 
     packet = json.dumps(message).encode("utf-8")
@@ -134,10 +165,7 @@ def decode_command(data: bytes) -> ControlCommand:
     if len(data) > MAX_CONTROL_MESSAGE_BYTES:
         raise ValueError("control message is too large")
 
-    message = json.loads(data.decode("utf-8"))
-
-    if not isinstance(message, dict):
-        raise ValueError("message must be a JSON object")
+    message = _decode_control_json(data)
 
     version = message.get("version")
     if type(version) is not int or version != 1:
@@ -146,22 +174,17 @@ def decode_command(data: bytes) -> ControlCommand:
     if message.get("type") != "control_command":
         raise ValueError("unexpected message type")
 
-    for field in ("session_id", "seq", "speed_mps", "heading_rad"):
+    required = ("session_id", "seq") if "drive_input" in message else ("session_id", "seq", *_TARGET_FIELDS)
+    for field in required:
         if field not in message:
             raise ValueError(f"missing required field: {field}")
 
     _validate_command_metadata(message["session_id"], message["seq"])
 
-    for field in ("speed_mps", "heading_rad"):
-        _validate_motion_value(message[field], field)
-
     return ControlCommand(
         session_id=message["session_id"],
         seq=message["seq"],
-        target=ControlTarget(
-            speed_mps=message["speed_mps"],
-            heading_rad=message["heading_rad"],
-        ),
+        target=_decode_motion_fields(message),
     )
 
 
@@ -193,9 +216,7 @@ def decode_authenticated_command(data: bytes, key: bytes) -> ControlCommand:
     if len(data) > MAX_CONTROL_MESSAGE_BYTES:
         raise ValueError("control message is too large")
 
-    message = json.loads(data.decode("utf-8"))
-    if not isinstance(message, dict):
-        raise ValueError("message must be a JSON object")
+    message = _decode_control_json(data)
 
     # 接收时先取出 mac，用其余全部字段重新计算并核对
     received_mac = message.pop("mac", None)
@@ -245,10 +266,7 @@ def _verify_windowed_control_fields(data: bytes, key: bytes, expected_version: i
         raise ValueError("control message is too large")
 
     try:
-        message = json.loads(data.decode("utf-8"))
-        if not isinstance(message, dict):
-            raise ValueError("message must be a JSON object")
-
+        message = _decode_control_json(data)
         received_mac = message.pop("mac", None)
         payload = _encode_control_fields(message)
     except RecursionError as exc:

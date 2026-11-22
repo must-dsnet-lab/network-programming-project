@@ -7,7 +7,7 @@ from dataclasses import dataclass, replace
 from threading import Condition, Thread
 from time import monotonic
 
-from rover.core.control_target import ControlTarget
+from rover.core.driving import ControlIntent, DriveInput
 from rover.desktop.control_worker import SEND_INTERVAL_S, WorkerStatus
 from rover.desktop.expert_management_client import ExpertManagementClient
 from rover.desktop.secure_control import ControlRequestRejected
@@ -38,6 +38,7 @@ class ExpertAuthorityStatus:
     last_result: ExpertAuthorityResult | None
     account_role: str | None = None
     transfer_candidates: tuple[tuple[str, str], ...] = ()
+    drive_input_supported: bool = False
 
 
 @dataclass(frozen=True)
@@ -81,6 +82,7 @@ def _authority_status(reply: dict[str, object]) -> ExpertAuthorityStatus:
         transfer_candidates=tuple(
             (item["session_id"], item["client_id"]) for item in reply.get("transfer_candidates", ())
         ),
+        drive_input_supported=reply.get("drive_input_supported") is True,
     )
 
 
@@ -100,7 +102,7 @@ class _ExpertMotion:
 
     def prepare(
         self, client: ExpertManagementClient, session_id: str,
-        generation: AuthorityGeneration, target: ControlTarget,
+        generation: AuthorityGeneration, target: ControlIntent,
     ) -> ControlCommand:
         fields = _generation_fields(generation)
         if self.generation != generation:
@@ -144,7 +146,8 @@ class ExpertControlWorker:
         self._status = ExpertWorkerStatus("new")
         self._closing = False
         self._auto_renew = False
-        self._target: ControlTarget | None = None
+        self._target: ControlIntent | None = None
+        self._driving_paused = False
         self._intent = 0
         self._action: _Action | None = None
         self._recipients: tuple[str, ...] = ()
@@ -172,15 +175,19 @@ class ExpertControlWorker:
         with self._condition:
             return self._status
 
-    def apply_target(self, target: ControlTarget) -> bool:
+    def apply_target(self, target: ControlIntent, *, driving_paused: bool = False) -> bool:
         with self._condition:
             authority = self._status.authority
-            if (self._closing or self._action is not None or authority is None
+            driving = isinstance(target, DriveInput)
+            action_blocks_input = self._action is not None and (not driving or not self._action.automatic)
+            if (self._closing or action_blocks_input or authority is None
                     or not authority.owns_authority or authority.generation is None
                     or not authority.lease_remaining_s
+                    or (driving and not authority.drive_input_supported)
                     or "set_authority_enabled" not in authority.allowed_actions):
                 return False
             self._target = target
+            self._driving_paused = driving_paused
             self._intent += 1
             self._status = replace(self._status, detail="")
             self._condition.notify()
@@ -188,6 +195,7 @@ class ExpertControlWorker:
 
     def _clear_target(self) -> None:
         self._target = None
+        self._driving_paused = False
         self._intent += 1
 
     def stop_sending(self) -> None:
@@ -316,8 +324,10 @@ class ExpertControlWorker:
                 call(session_id, generation, action.recipient)
 
     def _auto_renew_active(self) -> bool:
-        return (self._auto_renew and self._status.state == "sending"
-                and self._target is not None and self._target.speed_mps != 0)
+        target = self._target
+        if not self._auto_renew or self._status.state != "sending" or target is None:
+            return False
+        return not self._driving_paused if isinstance(target, DriveInput) else target.speed_mps != 0.0
 
     def _refresh(
         self, client: ExpertManagementClient, session_id: str, motion: _ExpertMotion,

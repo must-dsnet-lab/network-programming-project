@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 
 from rover.core.control_target import ControlTarget
+from rover.core.driving import ControlIntent
 from rover.core.vehicle_model import VehicleState
 
 CONTROL_TIMEOUT_S = 0.5
@@ -8,7 +9,7 @@ CONTROL_TIMEOUT_S = 0.5
 
 @dataclass(frozen=True)
 class AcceptedTarget:
-    target: ControlTarget
+    target: ControlIntent
     # accepted_at_s：真正接受有效指令的时间，用于后续控制超时检查
     accepted_at_s: float  # 接收端单调时钟读数，单位秒
 
@@ -19,7 +20,7 @@ def target_for_tick(
     state: VehicleState,
     last_accepted: AcceptedTarget | None,
     now_s: float,
-) -> ControlTarget:
+) -> ControlIntent:
     if (
         last_accepted is None
         or now_s - last_accepted.accepted_at_s >= CONTROL_TIMEOUT_S

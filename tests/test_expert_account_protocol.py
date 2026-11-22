@@ -62,7 +62,9 @@ class TestExpertAccountProtocol(unittest.TestCase):
 
         a = dispatch("a", "open_session")["session_id"]
         b = dispatch("b", "open_session", "observer")["session_id"]
-        self.assertEqual(dispatch("b", "query_authority", session_id=b)["allowed_actions"], [])
+        observer_status = dispatch("b", "query_authority", session_id=b)
+        self.assertEqual(observer_status["allowed_actions"], [])
+        self.assertNotIn("drive_input_supported", observer_status)
         for action in ("acquire_authority", "emergency_stop", "reset_control"):
             self.assertEqual(dispatch("b", action, session_id=b)["reason"], "permission_denied")
         generation = dispatch("a", "acquire_authority", session_id=a)["generation"]
@@ -118,7 +120,9 @@ class TestExpertAccountProtocol(unittest.TestCase):
             self.assertEqual(reply["port"], 46000)
             runtime.register_telemetry(encode_telemetry_registration(reply["token"]), ("127.0.0.1", 41000 + index), 1.1)
             if name == "observer":
-                self.assertEqual(dispatch(name, "query_authority", session_id=sessions[name])["account_role"], name)
+                observer = dispatch(name, "query_authority", session_id=sessions[name])
+                self.assertEqual(observer["account_role"], name)
+                self.assertIs(observer["drive_input_supported"], True)
         waiting = dispatch("unregistered", "open_session")["session_id"]
         self.assertEqual(len(runtime.telemetry_destinations()), 4)
         generation = dispatch("a", "acquire_authority", session_id=sessions["a"])["generation"]

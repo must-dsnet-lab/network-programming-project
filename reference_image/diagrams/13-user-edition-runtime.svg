@@ -1,0 +1,162 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1908" viewBox="0 0 1440 1908" role="img" aria-labelledby="title description">
+<title id="title">图 13｜二维用户版运行关系</title>
+<desc id="description">桌面和车端之间的 TLS 注册、登录、遥测令牌签发与状态查询。接收套接字发送 UDP 登记包，车端回传遥测。下方展示管理快照、角色权限、交接和断开清理。</desc>
+<rect x="0" y="0" width="1440" height="1908" rx="0" fill="#f5f8fc" stroke="none" stroke-width="1.4"/>
+<text x="40" y="48" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="700" fill="#4b6077" text-anchor="start">用户版 · 运行结构</text>
+<text x="40" y="110" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="54" font-weight="700" fill="#1a2c44" text-anchor="start">图 13｜二维用户版运行关系</text>
+<polyline points="42,161 88,161" fill="none" stroke="#205c9c" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="88.00,161.00 79.00,165.00 79.00,157.00" fill="#205c9c"/>
+<text x="96" y="168" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#205c9c" text-anchor="start">TLS 管理请求</text>
+<polyline points="300,161 346,161" fill="none" stroke="#205c9c" stroke-width="3.7" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="346.00,161.00 337.00,165.00 337.00,157.00" fill="#205c9c"/>
+<text x="354" y="168" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#205c9c" text-anchor="start">TLS 状态回复</text>
+<polyline points="580,161 626,161" fill="none" stroke="#096a64" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="626.00,161.00 617.00,165.00 617.00,157.00" fill="#096a64"/>
+<text x="634" y="168" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#096a64" text-anchor="start">UDP 登记或遥测</text>
+<polyline points="904,161 950,161" fill="none" stroke="#644393" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="950.00,161.00 941.00,165.00 941.00,157.00" fill="#644393"/>
+<text x="958" y="168" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#644393" text-anchor="start">同端流程</text>
+<polyline points="1167,161 1213,161" fill="none" stroke="#9a3849" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="1213.00,161.00 1204.00,165.00 1204.00,157.00" fill="#9a3849"/>
+<text x="1221" y="168" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="25" font-weight="400" fill="#9a3849" text-anchor="start">断开清理</text>
+<rect x="40" y="208" width="552" height="62" rx="10" fill="#ffffff" stroke="#d5dfeb" stroke-width="1.5"/>
+<text x="58" y="234" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#205c9c" text-anchor="start">桌面端</text>
+<text x="58" y="257" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="400" fill="#4b6077" text-anchor="start">Qt 主线程 · ExpertControlWorker</text>
+<rect x="848" y="208" width="552" height="62" rx="10" fill="#ffffff" stroke="#d5dfeb" stroke-width="1.5"/>
+<text x="866" y="234" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#644393" text-anchor="start">车端</text>
+<text x="866" y="257" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="400" fill="#4b6077" text-anchor="start">TLS 管理 · 仿真线程 · UDP 遥测</text>
+<rect x="40" y="286" width="552" height="128" rx="13" fill="#edf5ff" stroke="#205c9c" stroke-width="1.7"/>
+<text x="58" y="322" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#205c9c" text-anchor="start">首次注册</text>
+<text x="58" y="354" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">register_configured_account()</text>
+<text x="58" y="382" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">校验证书和主机名后提交账号与凭据</text>
+<rect x="848" y="286" width="552" height="128" rx="13" fill="#edf5ff" stroke="#205c9c" stroke-width="1.7"/>
+<text x="866" y="322" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#205c9c" text-anchor="start">存储账号 · 默认观察员</text>
+<text x="866" y="354" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">AccountStore.register()</text>
+<text x="866" y="382" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">SQLite 保存角色和加盐凭据摘要</text>
+<text x="720" y="312" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#205c9c" text-anchor="middle">注册请求</text>
+<polyline points="592,327 848,327" fill="none" stroke="#205c9c" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="848.00,327.00 839.00,331.00 839.00,323.00" fill="#205c9c"/>
+<text x="720" y="368" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#205c9c" text-anchor="middle">注册结果</text>
+<polyline points="848,383 592,383" fill="none" stroke="#205c9c" stroke-width="3.7" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="592.00,383.00 601.00,379.00 601.00,387.00" fill="#205c9c"/>
+<polyline points="308,414 308,454" fill="none" stroke="#205c9c" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="308.00,454.00 304.00,445.00 312.00,445.00" fill="#205c9c"/>
+<text x="327" y="442" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#205c9c" text-anchor="start">注册后点击「连接」</text>
+<rect x="40" y="454" width="552" height="143" rx="13" fill="#edf5ff" stroke="#205c9c" stroke-width="1.7"/>
+<text x="58" y="490" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#205c9c" text-anchor="start">登录 · 自动绑定遥测端口</text>
+<text x="58" y="522" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">connect_configured_management()</text>
+<text x="58" y="550" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">本地 UDP 先绑定 0.0.0.0:0</text>
+<text x="58" y="578" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">TLS 验证通过后认证并打开会话</text>
+<rect x="848" y="454" width="552" height="143" rx="13" fill="#edf5ff" stroke="#205c9c" stroke-width="1.7"/>
+<text x="866" y="490" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#205c9c" text-anchor="start">建立已认证会话</text>
+<text x="866" y="522" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">ExpertManagementRuntime.serve()</text>
+<text x="866" y="550" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">匹配 SQLite 凭据和角色</text>
+<text x="866" y="578" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">按连接绑定 session_id · 最多 6 个会话</text>
+<text x="720" y="488" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#205c9c" text-anchor="middle">认证／打开会话</text>
+<polyline points="592,503 848,503" fill="none" stroke="#205c9c" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="848.00,503.00 839.00,507.00 839.00,499.00" fill="#205c9c"/>
+<text x="720" y="547" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#205c9c" text-anchor="middle">会话 ID</text>
+<polyline points="848,562 592,562" fill="none" stroke="#205c9c" stroke-width="3.7" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="592.00,562.00 601.00,558.00 601.00,566.00" fill="#205c9c"/>
+<polyline points="308,597 308,638" fill="none" stroke="#644393" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="308.00,638.00 304.00,629.00 312.00,629.00" fill="#644393"/>
+<polyline points="1124,597 1124,638" fill="none" stroke="#644393" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="1124.00,638.00 1120.00,629.00 1128.00,629.00" fill="#644393"/>
+<rect x="40" y="638" width="552" height="130" rx="13" fill="#edf5ff" stroke="#205c9c" stroke-width="1.7"/>
+<text x="58" y="674" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#205c9c" text-anchor="start">申请遥测登记信息</text>
+<text x="58" y="706" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">prepare_telemetry(session_id)</text>
+<text x="58" y="734" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">由后台线程在已认证 TLS 连接上请求</text>
+<rect x="848" y="638" width="552" height="130" rx="13" fill="#edf5ff" stroke="#205c9c" stroke-width="1.7"/>
+<text x="866" y="674" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#205c9c" text-anchor="start">发放一次性登记令牌</text>
+<text x="866" y="706" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">TelemetryRegistry.issue()</text>
+<text x="866" y="734" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">令牌绑定会话与 TLS 对端 IP · 默认 5 秒</text>
+<text x="720" y="668" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#205c9c" text-anchor="middle">登记准备</text>
+<polyline points="592,683 848,683" fill="none" stroke="#205c9c" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="848.00,683.00 839.00,687.00 839.00,679.00" fill="#205c9c"/>
+<text x="720" y="722" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#205c9c" text-anchor="middle">令牌／遥测端口</text>
+<polyline points="848,737 592,737" fill="none" stroke="#205c9c" stroke-width="3.7" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="592.00,737.00 601.00,733.00 601.00,741.00" fill="#205c9c"/>
+<polyline points="308,768 308,810" fill="none" stroke="#644393" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="308.00,810.00 304.00,801.00 312.00,801.00" fill="#644393"/>
+<polyline points="1124,768 1124,810" fill="none" stroke="#644393" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="1124.00,810.00 1120.00,801.00 1128.00,801.00" fill="#644393"/>
+<rect x="40" y="810" width="552" height="145" rx="13" fill="#e9f7f4" stroke="#096a64" stroke-width="1.7"/>
+<text x="58" y="846" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#096a64" text-anchor="start">从遥测接收套接字发送令牌</text>
+<text x="58" y="878" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">_register_telemetry()</text>
+<text x="58" y="906" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">向 TLS 对端 IP 和协商的车端端口发送</text>
+<text x="58" y="934" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">query_authority() 查询登记是否成功</text>
+<rect x="848" y="810" width="552" height="145" rx="13" fill="#e9f7f4" stroke="#096a64" stroke-width="1.7"/>
+<text x="866" y="846" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#096a64" text-anchor="start">验令牌 · 源地址成为目的地址</text>
+<text x="866" y="878" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">TelemetryRegistry.accept()</text>
+<text x="866" y="906" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">校验令牌与时限，核对 TLS 对端 IP</text>
+<text x="866" y="934" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">记录实际 UDP 源 IP:端口，消耗令牌</text>
+<text x="720" y="844" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#096a64" text-anchor="middle">UDP 登记包</text>
+<polyline points="592,859 848,859" fill="none" stroke="#096a64" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="848.00,859.00 839.00,863.00 839.00,855.00" fill="#096a64"/>
+<text x="720" y="905" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#205c9c" text-anchor="middle">TLS 登记状态</text>
+<polyline points="848,920 592,920" fill="none" stroke="#205c9c" stroke-width="3.7" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="592.00,920.00 601.00,916.00 601.00,924.00" fill="#205c9c"/>
+<polyline points="308,955 308,996" fill="none" stroke="#096a64" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="308.00,996.00 304.00,987.00 312.00,987.00" fill="#096a64"/>
+<polyline points="1124,955 1124,996" fill="none" stroke="#096a64" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="1124.00,996.00 1120.00,987.00 1128.00,987.00" fill="#096a64"/>
+<rect x="40" y="996" width="552" height="145" rx="13" fill="#e9f7f4" stroke="#096a64" stroke-width="1.7"/>
+<text x="58" y="1032" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#096a64" text-anchor="start">收到遥测后更新界面</text>
+<text x="58" y="1064" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">DesktopConsole.poll_telemetry()</text>
+<text x="58" y="1092" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">只接受已协商车端 IP:端口的遥测</text>
+<text x="58" y="1120" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">显示位置、朝向、实际车速与故障锁存</text>
+<rect x="848" y="996" width="552" height="145" rx="13" fill="#e9f7f4" stroke="#096a64" stroke-width="1.7"/>
+<text x="866" y="1032" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#096a64" text-anchor="start">向各登记端点回传遥测</text>
+<text x="866" y="1064" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">telemetry_destinations()</text>
+<text x="866" y="1092" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">send_telemetry()</text>
+<text x="866" y="1120" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">从接收登记包的同一个车端套接字发出</text>
+<text x="720" y="1052" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="400" fill="#096a64" text-anchor="middle">周期回传</text>
+<polyline points="848,1067 592,1067" fill="none" stroke="#096a64" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="592.00,1067.00 601.00,1063.00 601.00,1071.00" fill="#096a64"/>
+<polyline points="40,527 16,527 16,1240 40,1240" fill="none" stroke="#644393" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="40.00,1240.00 31.00,1244.00 31.00,1236.00" fill="#644393"/>
+<rect x="40" y="1185" width="612" height="141" rx="13" fill="#f0ebf9" stroke="#644393" stroke-width="1.7"/>
+<text x="58" y="1221" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#644393" text-anchor="start">已认证会话 · 角色与登记状态</text>
+<text x="58" y="1253" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">query_authority()</text>
+<text x="58" y="1281" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">按角色分流，操作者须先完成遥测登记</text>
+<text x="58" y="1309" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">TLS 断开时清理该会话</text>
+<polyline points="1124,1141 1124,1185" fill="none" stroke="#644393" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="1124.00,1185.00 1120.00,1176.00 1128.00,1176.00" fill="#644393"/>
+<rect x="688" y="1185" width="712" height="141" rx="13" fill="#f0ebf9" stroke="#644393" stroke-width="1.7"/>
+<text x="706" y="1221" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#644393" text-anchor="start">车端管理窗口 · 会话快照</text>
+<text x="706" y="1253" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">publish_admin_snapshot()</text>
+<text x="706" y="1281" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">VehicleAdminWindow._update_sessions()</text>
+<text x="706" y="1309" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">表中「已发送」表示车端 UDP 发送调用成功</text>
+<text x="40" y="1371" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="35" font-weight="700" fill="#644393" text-anchor="start">会话角色与交接</text>
+<polyline points="346,1326 346,1381 215,1381 215,1396" fill="none" stroke="#644393" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="215.00,1396.00 211.00,1387.00 219.00,1387.00" fill="#644393"/>
+<polyline points="346,1381 613,1381 613,1396" fill="none" stroke="#644393" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="613.00,1396.00 609.00,1387.00 617.00,1387.00" fill="#644393"/>
+<rect x="40" y="1396" width="350" height="133" rx="13" fill="#e9f7f4" stroke="#096a64" stroke-width="1.7"/>
+<text x="58" y="1432" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#096a64" text-anchor="start">观察员</text>
+<text x="58" y="1464" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">可登录、登记并接收遥测</text>
+<text x="58" y="1492" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">车端拒绝控制动作</text>
+<rect x="414" y="1396" width="398" height="133" rx="13" fill="#f0ebf9" stroke="#644393" stroke-width="1.7"/>
+<text x="432" y="1432" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#644393" text-anchor="start">操作者</text>
+<text x="432" y="1464" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">登记成功后可申请独占控制权</text>
+<text x="432" y="1492" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">当前持有者才能发起交接</text>
+<polyline points="812,1468 848,1468" fill="none" stroke="#644393" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="848.00,1468.00 839.00,1472.00 839.00,1464.00" fill="#644393"/>
+<rect x="848" y="1396" width="552" height="133" rx="13" fill="#f0ebf9" stroke="#644393" stroke-width="1.7"/>
+<text x="866" y="1432" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#644393" text-anchor="start">交接候选 · 其他已登记操作者</text>
+<text x="866" y="1464" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">0 人不可交接 · 1 人直接交接</text>
+<text x="866" y="1492" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">2 人及以上弹出窗口，按会话选人</text>
+<polyline points="1124,1529 1124,1573" fill="none" stroke="#644393" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="1124.00,1573.00 1120.00,1564.00 1128.00,1564.00" fill="#644393"/>
+<rect x="414" y="1573" width="986" height="118" rx="13" fill="#f0ebf9" stroke="#644393" stroke-width="1.7"/>
+<text x="432" y="1609" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#644393" text-anchor="start">车端确认归零后交给目标会话</text>
+<text x="432" y="1641" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">observe_vehicle() → ControlAuthority.motion_stopped()</text>
+<text x="432" y="1669" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">停止原持有者并确认零速 → 授予新代次 → 新持有者点击「开始／应用」</text>
+<polyline points="40,1282 16,1282 16,1785 40,1785" fill="none" stroke="#9a3849" stroke-width="3.7" stroke-linejoin="round"/>
+<polygon points="40.00,1785.00 31.00,1789.00 31.00,1781.00" fill="#9a3849"/>
+<rect x="40" y="1733" width="1360" height="145" rx="13" fill="#fceef1" stroke="#9a3849" stroke-width="1.7"/>
+<text x="58" y="1769" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="30" font-weight="700" fill="#9a3849" text-anchor="start">TLS 断开与重连</text>
+<text x="58" y="1801" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#1a2c44" text-anchor="start">_apply_closed_connections() → TelemetryRegistry.disconnect()</text>
+<text x="58" y="1829" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">清掉令牌和端点，原持有者断开时撤权停车。角色修改后，旧会话在下次请求时结束。</text>
+<text x="58" y="1857" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">重新登录建立新会话，使用新令牌登记本次 UDP 接收端点。</text>
+</svg>

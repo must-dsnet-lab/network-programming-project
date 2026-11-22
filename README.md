@@ -8,28 +8,35 @@
 
 ### 功能与交付
 
-- **运动模型**：车辆状态、单步推进、固定步长轨迹及分阶段控制。
-- **网络与保护**：UDP控制与遥测、TLS认证管理、HMAC与有效窗口准入、控制超时停车、急停和故障锁存。
-- **桌面控制**：数值输入、正常停车/停发、地图与轨迹、遥测可用/过期提示。
+- **运动模型**：二维数值控制和驾驶输入，车端按固定步长计算加速、滑行、制动与转向。
+- **网络与保护**：TLS 管理、UDP 控制与遥测、HMAC 与有效窗口、独占控制权与零速交接、租约与看门狗、急停和显式复位。
+- **桌面与部署**：本地模拟、图形化登录、观察员与操作者、自动遥测登记、车端会话管理，以及地图、轨迹和操纵控件。
 
-当前原型可在本机以源码方式运行，无需实体小车。最终交付目标为Windows EXE，发布包待制作。
+二维版可从源码运行，也已构建 Windows x64 桌面端和车端管理包，并完成本机验证。体验本地模拟只要桌面端。测试多人操作时使用两端配套版本。[本地模拟与打包](#desktop-windows-starter) · [用户版部署与登录](#two-dimensional-user-edition) · [二维驾驶](#desktop-2d-driving)
 
 ### 模块职责速查
 
 | 模块与能力 | 在系统中的作用与关键入口 |
 | --- | --- |
-| 车辆状态、目标与步进 | `VehicleState`、`apply_target()`、`advance()`提供运动计算，本身不是网络协议。 |
+| 车辆状态、目标与步进 | `VehicleState` 保存平面状态。`apply_target()`、`advance()` 处理数值控制，`advance_driving()` 按驾驶输入积分车辆运动。 |
 | 控制与遥测编解码 | `encode_target()/decode_target()`、`encode_telemetry()/decode_telemetry()`定义应用消息并转换数据表示。 |
 | UDP收发与非阻塞接收 | `send_target()`、`try_receive_target()`及遥测对应函数使用系统Socket；无包、坏包与系统错误分别处理。 |
 | 超时停车与故障锁存 | `AcceptedTarget`、`update_control_guard()`、`step_vehicle()`执行本地保护，不代表已完成认证会话。 |
-| 会话状态与管理接入 | `open_control_session()`、`enable_control_session()`、`close_control_session()`维护登记、使能与关闭状态；TLS 实验入口已连接仿真主循环，UDP 控制通过 HMAC 和会话准入检查。 |
+| 会话状态与管理接入 | 高级模式维护单控制会话，专家及用户版由 `ExpertManagementRuntime` 串行处理会话、独占授权、租约和交接。用户版额外管理账号角色与遥测登记。 |
 | 桌面显示与周期控制 | `start_control()`、`send_control()`、`poll_telemetry()`组合两条UDP方向；`world_to_screen()`是GUI坐标换算。 |
 
 ### 开发路线与验收范围
 
-开发顺序为 **完整会话流程与ID约定 → 内存串联 → 管理消息与TCP分帧 → 本机TCP传输 → TLS、身份与会话绑定 → 新UDP控制及HMAC、有效窗口、急停与恢复 → 桌面整合 → 双机高级验收**。内存串联阶段复用现有会话状态逻辑。
+高级版按 **会话与编号 → 内存串联 → TCP 分帧 → TLS 认证 → 安全 UDP 与保护恢复 → 桌面整合 → 网络故障与虚拟局域网验收** 推进。之后进入专家控制权、二维用户版和驾驶模型。
 
-安全桌面控制、急停与复位已完成本机验收。TLS 管理、UDP 控制和遥测已在 Windows 宿主机与 Ubuntu 虚拟机之间完成[虚拟局域网联调](#vmware-lan-acceptance)。专家版已在 Windows 本机验证双 TLS 在线和零速交接。两台物理电脑的局域网验收待组员集中测试。
+| 阶段 | 已验证的工作 | 去哪里复现 |
+| --- | --- | --- |
+| 高级版 | Windows 宿主机与 Ubuntu 虚拟机完成 TLS、UDP 控制和遥测闭环，留有网络故障与保护恢复记录 | [VMware 联调](#vmware-lan-acceptance) · [高级验收](#advanced-acceptance-status) |
+| 专家 P1–P7 | Windows 本机验证双 TLS、独占授权、零速交接、授权代次、租约、桌面操作和机制对照 | [专家复跑索引](docs/expert-control-authority.md#组员复跑索引) · [图 11](#expert-authority-flow) · [图 12](docs/expert-control-authority.md#102-本机结果) |
+| 二维用户版 | Windows 本机验证注册、角色、自动遥测、多候选交接和车端管理 | [部署与登录](#two-dimensional-user-edition) |
+| U4–U5 二维驾驶 | Windows 本机验证输入、车辆动力、保护及重连，提供固定输入与曲线复现 | [驾驶与测量](#desktop-2d-driving) |
+
+物理双机、真实断网和无开发环境 Windows 的复测按[组员集中验收清单](docs/team-acceptance.md)收集。
 
 - 项目范围包括观察端、故障注入、重复实验与原始数据，以及专家阶段的控制权交接、授权代次、租约和机制对照。
 - 第二台机器预检及最小EXE打包提前安排。配置、资源、证书、日志、跨机验证、报告、PPT与录像随版本更新。
@@ -67,21 +74,22 @@
 
 先改善现有桌面操作，再逐步加入操纵、物理和三维显示。 [体验实施顺序与验收](docs/development-roadmap.md#experience-delivery)
 
-- [ ] U1 优化桌面 GUI 布局、控制操作、状态提示和地图使用。 [界面和控件验收](#desktop-ui-acceptance)
+- [x] U1 优化桌面布局、控制操作、状态和地图。已留同场景前后对照、控件表与本机回归。 [界面和控件验收](#desktop-ui-acceptance)
 - [x] U2 增加图形化连接配置，已通过 Windows 本机联调。 [操作与复跑](#desktop-graphical-connection)
-- [ ] U3 跑通二维启动与只读观察，最小 Windows EXE 待无开发环境验收。 [操作与打包](#desktop-windows-starter)
-- [ ] 二维用户版支持三个及以上桌面端在线，登录后自动接收遥测，支持在多个候选端之间选择交接对象。 [多端任务与验收](docs/development-roadmap.md#multi-desktop-telemetry)
-- [ ] 交付车端管理 EXE，供管理员实时查看各桌面会话的连接、遥测登记、控制权和近期事件。 [车端管理验收](docs/development-roadmap.md#vehicle-admin-exe)
-  两项均已完成 Windows 本机联调，集中验收时复跑无开发环境的 Windows 包和物理局域网。 [本机启动和试跑](#two-dimensional-user-edition)
-- [ ] U4 接入方向摇杆、油门与刹车，定义回中、失焦和断开行为。
-- [ ] U5 在二维车端验证加速、滑行、制动与转向模型。
+- [x] U3 验证三个桌面启动入口，完成 Windows x64 桌面包的本机冒烟。 [操作与打包](#desktop-windows-starter)
+- [x] 二维用户版在 Windows 本机验证三位操作者和一位观察员同时在线、自动遥测和多候选交接。 [多端任务与验收](docs/development-roadmap.md#multi-desktop-telemetry)
+- [x] 车端管理 EXE 在本机验证服务启停、会话管理、角色更新和遥测登记。 [车端管理验收](docs/development-roadmap.md#vehicle-admin-exe)
+- [x] U4 接入方向摇杆、油门与刹车，本机验证释放、失焦和断开。 [二维驾驶操作](#desktop-2d-driving)
+- [x] U5 在二维车端验证加速、滑行、制动与转向，提供速度和加速度曲线。 [固定输入复现](#desktop-2d-driving)
+- [ ] R06/R07 在无项目开发环境的 Windows 复测桌面端和车端管理 EXE。 [组员复跑](docs/team-acceptance.md#2-组内复跑)
+- [ ] 用户版 LAN 在两台物理电脑核对登录、自动遥测、多端交接和重连。 [现场验收](docs/team-acceptance.md#3-物理双机与实际断网)
 - [ ] U6 建立真实三维坐标与遥测，验证高度变化和兼容性。
 - [ ] U7 接入三维场景和车体，保留二维视图。
 - [ ] U8 完成驾驶反馈、场景验收和发布包复验。
 
 ### 章节导航
 
-本页按开发顺序保留各阶段示例，当前完整桌面操作可直接看[4.1启动](#quick-start)和[4.3数值控制](#desktop-control-acceptance)。
+首次体验从 [4.7 Windows 启动](#desktop-windows-starter) 开始。测试账号、交接和观察端看 [4.8 二维用户版](#two-dimensional-user-edition)，摇杆和踏板看 [4.9 二维驾驶](#desktop-2d-driving)。基础示例从 [4.1 启动](#quick-start) 和 [4.3 数值控制](#desktop-control-acceptance) 开始。
 旧示例中的A/B/C是该例自己的终端标签。
 
 | 板块 | 内容 |
@@ -89,10 +97,10 @@
 | [1. 环境准备与项目结构](#environment) | 安装、测试、目录职责与应用入口 |
 | [2. 车辆运动与UDP控制](#motion-control) | 离线运动 → 单包UDP控制 → 持续运行与本地保护 |
 | [3. 遥测回传](#telemetry) | 三终端运行、状态观察与图2 |
-| [4. 桌面控制台](#desktop-console) | 启动与状态 → 地图/轨迹/坐标 → 数值控制与验收 → [图形化连接](#desktop-graphical-connection) → [Windows 启动与只读观察](#desktop-windows-starter) |
+| [4. 桌面控制台](#desktop-console) | 数值控制 → [图形化连接](#desktop-graphical-connection) → [Windows 启动](#desktop-windows-starter) → [二维用户版](#two-dimensional-user-edition) → [二维驾驶](#desktop-2d-driving) |
 | [5. 协议分层、TCP 分帧与 TLS 会话](#network-layers) | 控制信封 → 管理编解码与分帧 → TLS 与线程交接 |
 | [6. 安全控制、管理动作与保护恢复](#secure-control-evolution) | HMAC、有效窗口 → 管理请求、急停 → 复位与运行时 |
-| [7. 正式入口、桌面整合与跨系统联调](#secure-desktop-integration) | 正式启动 → 安全桌面 → VMware 与只读观察 → [专家版双端控制时序](#expert-authority-flow) |
+| [7. 正式入口、桌面整合与跨系统联调](#secure-desktop-integration) | 正式启动 → 安全桌面 → VMware 与只读观察 → [专家控制权时序](#expert-authority-flow) → [专家机制对照](docs/expert-control-authority.md#10-p7-高级与专家机制对照) |
 | [8. 网络故障实验与高级验收](#fault-experiment-sequence) | 断流、丢包、延迟、乱序与重复 → 诊断 → 计时与证据 |
 | [9. 项目配置与文档维护](#project-maintenance) | 包配置、Git协作、目录迁移、导图维护与TDD开发方式 |
 
@@ -150,27 +158,29 @@ LICENSE          项目许可证
 
 | 模块 | 文件与职责 |
 | --- | --- |
-| `core` | `vehicle_model.py`保存状态并计算单步运动；`control_target.py`定义/应用运动目标；`simulation.py`用于离线多步轨迹。 |
-| `protocol` | `control_codec.py`、`telemetry_codec.py`与`management_codec.py`定义控制、遥测和管理消息的JSON编解码与字段校验；`control_auth.py`计算和核对HMAC认证码。 |
+| `core` | `vehicle_model.py` 保存状态并计算单步运动，`control_target.py` 定义数值目标，`driving.py` 定义驾驶输入和二维动力，`simulation.py` 用于离线多步轨迹。 |
+| `protocol` | `control_codec.py`、`telemetry_codec.py` 和管理编解码模块定义消息字段；`control_auth.py` 负责 HMAC，`telemetry_registration.py` 定义用户版遥测登记。 |
 | `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误；`tcp_records.py`编解码TCP应用记录并从分次到达的字节中提取完整正文；`tcp_transport.py`负责本机TCP收发、EOF及读取期限。 |
-| `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理会话、密钥、使能、接受记录及超时；`management_session.py`处理身份和会话归属，`management_connection.py`处理管理消息流，`management_runtime.py`负责TLS监听、网络线程与主线程队列交接；`vehicle_runtime.py`组合受保护步进，`app.py`运行车端循环。 |
-| `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹；`management_client.py`封装TLS管理请求、自动编号及回复配对；`secure_connection.py`统一证书校验、账号认证和连接清理；`secure_control.py`组织桌面会话、窗口与签名发包；`control_worker.py`负责后台连接、周期发送、保活和状态更新。 |
-| `tests` | U3 本机全量回归 556 项，覆盖模型、控制/遥测/管理消息、管理客户端、安全连接入口、桌面安全发包与后台线程、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动与网络地址配置、遥测双发、控制断流和车端计时、真实 UDP、本机 TCP、TCP 应用记录、保护、会话状态及桌面各启动角色。 |
-| `examples` | 教学示例，可单独观察离线运动、单包与周期控制、超时、命令行遥测和安全管理连接。 |
+| `vehicle` | `control_guard.py` 和 `control_watchdog.py` 管理控制准入与超时。`management_session.py`、`management_connection.py`、`management_runtime.py` 处理高级会话和线程交接。`expert_management_runtime.py` 在专家和用户版裁决控制权，`accounts.py` 存储角色，`telemetry_registration.py` 管理遥测登记。`vehicle_runtime.py` 组合受保护步进，`app.py` 运行循环，`admin_app.py` 提供车端管理窗口。 |
+| `desktop` | `app.py` 组织界面和周期操作，`desktop_map.py` 绘图，`map_geometry.py` 换算坐标，`trajectory.py` 保存轨迹。`connection_flow.py` 管理图形连接，`secure_connection.py` 负责 TLS，管理客户端负责请求和回复配对。`secure_control.py`、`control_worker.py` 和 `expert_control_worker.py` 处理会话与发包。`driving_controls.py` 采集摇杆和踏板。 |
+| `tests` | U5 Windows 本机全量 612 项，覆盖运动模型、编解码、TCP/TLS、控制准入、安全机制、遥测、桌面及车端管理。U3 基线 556 项的记录见 [4.7](#desktop-windows-starter)。 |
+| `examples` | 教学与验收入口，包括离线运动、单包与周期控制、超时、遥测、安全管理、专家机制对照和二维驾驶曲线。 |
 | `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
 `core`负责运动规则，车端`vehicle`决定何时应用什么目标；同一模型可用于离线示例和联网运行。
 `protocol`负责消息怎样解释，`transport`负责消息怎样收发。目录本身不规定执行顺序，运行顺序由函数调用决定。
 
-#### 1.4.1 两个应用入口
+<a id="141-两个应用入口"></a>
+
+#### 1.4.1 应用入口
 
 | 模块 | 原文件 | 作用 |
 | --- | --- | --- |
 | `rover.desktop.app` | `demo_desktop_console.py` | 创建桌面窗口、Socket与定时器，连接用户操作和遥测显示。 |
 | `rover.vehicle.app` | `demo_udp_vehicle_loop.py` | 维护车辆/保护状态，循环收包、步进并回传遥测。 |
+| `rover.vehicle.admin_app` | 用户版新增入口 | 从窗口启停车端、管理角色并查看会话。对应 `RoverVehicleAdmin.exe`。 |
 
-两个`app.py`用完整模块名区分。它们保留原程序逻辑，不是另写一套程序。
-当前双终端完整命令见[4.1](#quick-start)；示例按本页命令使用`-m examples.示例名`。
+基础双终端命令见 [4.1](#quick-start)，当前用户版命令见 [4.8](#two-dimensional-user-edition)。示例按本页命令使用 `-m examples.示例名`。
 单独运行测试时，例如`.\.venv\Scripts\python.exe -m unittest -v tests.test_vehicle_model`。
 不要直接运行`src/`内的文件。
 
@@ -571,7 +581,7 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 
 ### 4.6 U2 图形化连接配置
 
-桌面控制台右侧的「连接设置」可切到高级或专家模式。先在项目根目录启动对应模式的车端，保留车端终端，再打开桌面连接表单。
+以下步骤用于采用固定遥测地址的高级和专家模式。先在项目根目录启动对应模式的车端，保留车端终端，再打开桌面连接表单。采用账号注册和自动遥测的连接见 [4.8 二维用户版](#two-dimensional-user-edition)。
 
 ```powershell
 # 车端窗口任选一种
@@ -620,10 +630,10 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 | 入口 | 操作与结果 |
 | --- | --- |
 | 本地模拟 | 自动启动本机二维虚拟车，等到遥测可用后应用目标。控制和遥测使用操作系统分配的回环端口。关窗结束该虚拟车，重新打开可启动新实例。日志保存在当前用户数据目录下的 `Rover/logs/`，路径可在状态说明的提示中查看 |
-| 连接车端 | 沿用 [U2 连接设置](#desktop-graphical-connection)。选择已运行车端的高级或专家模式，导入对应公开 CA 并登录。连接配置可选保存。 [公开配置模板](examples/desktop-connection.example.json) |
-| 只读观察 | 填写本机遥测接收地址和 UDP 端口，默认 `127.0.0.1:10001`。界面显示地图、轨迹和车端状态。车端第二路遥测目的地应与观察台一致，回环时在车端命令追加 `--observer-host 127.0.0.1 --observer-port 10001`。 [遥测双发复现](#telemetry-observer-acceptance) |
+| 连接车端 | 按车端选择模式并导入公开 CA。高级和专家模式沿用 [U2 固定端口配置](#desktop-graphical-connection)。用户版的观察员和操作者都从这里登录，自动接收遥测。 [用户版部署](#two-dimensional-user-edition) · [公开配置模板](examples/desktop-connection.example.json) |
+| 只读观察（手动遥测） | 接收车端预设的固定 UDP 遥测。在本机填 `127.0.0.1:10001` 时，车端需要启用 `--observer-host 127.0.0.1 --observer-port 10001`。 [遥测双发复现](#telemetry-observer-acceptance) |
 
-**当前双路遥测。** 车端可配置两个接收地址。默认第一路发往 `127.0.0.1:10000`，`--observer-host` 和 `--observer-port` 指定第二路。A 加观察端时填观察端的接收地址和端口，A 加 B 时填 B 的接收地址和端口。若 B 在本机监听 `10002`，第二路就发往 `127.0.0.1:10002`。同机每个窗口用各自的端口。连接表单配置本窗口的监听，车端启动参数配置发送目的地。 [二维用户版自动登记计划](docs/development-roadmap.md#multi-desktop-telemetry)
+**高级和专家模式的固定双路遥测。** 默认第一路发往 `127.0.0.1:10000`，`--observer-host` 和 `--observer-port` 指定第二路。第二路可以服务手动观察端，也可以服务专家模式的操作台 B。若 B 监听 `127.0.0.1:10002`，车端第二路也填这个端点。同机各窗口使用独立端口。用户版按登录会话自动登记各自的接收端点。 [两种模式的接入验收](docs/development-roadmap.md#multi-desktop-telemetry)
 
 打包人员在 Windows 项目根目录执行：
 
@@ -642,15 +652,29 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 
 ### 4.8 二维用户版注册、多桌面和车端管理
 
+**本机复现。** 准备同一版本的两个 Windows 包，或从源码启动两个入口。部署人员按 [7.1.1 证书准备](#vehicle-certificate-setup)生成实验用证书。车端读取服务器证书和私钥，桌面只需导入同批生成的公开 `ca.pem`。本机可用默认地址 `127.0.0.1`，证书名称留空时按 `localhost` 核对。
+
 | 从哪个程序开始 | 操作 |
 | --- | --- |
 | `RoverVehicleAdmin.exe` | 选择包含 `server.pem` 和 `server.key` 的车端证书目录，选择账号库文件，点击「启动车端」。默认本机地址为 `127.0.0.1`，管理 TCP 为 `19177`，控制 UDP 为 `9999`。运行已有车端时，先正常停车并退出旧进程，或在双方界面填写另一组端口 |
 | `RoverDesktop.exe` | 点「连接车端」，选择「用户版（自动遥测）」。输入车端地址、账号和至少 12 字符的凭据，选择部署人员提供的公开 `ca.pem`。首次点「注册账号」，然后重新输入凭据并点「连接」 |
 | 车端授权与桌面驾驶 | 新账号是观察员。管理员输入账号，把角色更新为「操作者」。该账号重新登录后，可以先申请控制权，再应用目标。持有者有多个候选人时，可在「交接」中选择接收会话 |
 
-桌面窗口登录后自动分配并登记 UDP 遥测接收端口。管理员可在会话表核对账号、角色、地址、遥测发送、控制权及最近活动，点选某行查看事件。断开后该会话进入近期记录，重新连接建立新的会话及遥测登记。
+**账号与会话。** Windows 默认账号库为 `%LOCALAPPDATA%\RoverVehicle\accounts.sqlite3`，实际路径以车端管理窗口为准。注册和角色存入 SQLite，关闭并重新启动车端后继续使用同一路径即可登录。角色变化会使旧会话退出，账号在重新登录后使用新角色。车端当前最多接受六个同时在线的已登录会话。
 
-要观察用户版车端，在桌面启动页选择「连接车端」，用只读账号登录「用户版（自动遥测）」。启动页的「只读观察」入口使用手工指定的遥测目的地。Windows 桌面会独占自己的 UDP 监听端口，监听地址与已有窗口重叠时会提示监听失败。
+**遥测从哪里来。** 创建窗口时，桌面先打开 UDP 接收套接字，由系统分配端口。TLS 登录并建立会话后，桌面取得短期登记凭证，再从同一个 UDP 套接字发登记包。车端按实际收到的来源 IP 和端口回传遥测。车端表里的「已发送」表示车端 UDP 发送调用成功，桌面的「遥测可用」用于核对实际收到数据。点选会话可看近期事件。断开会清除原遥测登记，重连后新会话重新登记端点。
+
+要观察用户版车端，在桌面启动页选择「连接车端」，用观察员账号登录「用户版（自动遥测）」。启动页的「只读观察（手动遥测）」用于接收预设目标的固定遥测。Windows 桌面会独占自己的 UDP 监听端口，监听地址与已有窗口重叠时会提示监听失败。
+
+**多候选交接。** 注册三个操作者 A、B、C 和一个观察员，并确认四条会话均收到遥测。A 申请控制权并应用目标，再点「交接」选择 C。车端确认零速后授予 C，C 显式应用才起步。只有一名候选人时，交接按钮会直接发起交接。观察员可跟随车辆状态和轨迹，交接资格由车端根据角色和遥测登记裁决。
+
+<a id="user-edition-runtime-map"></a>
+
+#### 图 13 二维用户版运行关系
+
+[![图 13：用户版 TLS 登录、UDP 自动登记和遥测分发，及角色、交接和断开清理](reference_image/diagrams/13-user-edition-runtime.png)](reference_image/diagrams/13-user-edition-runtime.svg)
+
+点击图片可放大。观察员和操作者共用登录及遥测路径，车端按会话分别登记端点、分发遥测和裁决控制资格。 [图 13 生成源](reference_image/diagrams/render_user_edition_runtime.py)
 
 源码复现可用 `python -m rover.vehicle.admin_app` 和 `python -m rover.desktop.app --launcher`。Windows 打包使用同一脚本分别执行两次：
 
@@ -660,6 +684,47 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 ```
 
 **Windows 本机证据（2026-11-23）**。使用实际车端管理界面启停、浏览会话及更新 SQLite 角色。三位操作者和一位观察员经 TLS 登录，四个窗口的 UDP 接收端口由系统分配。A 从 B、C 中选择 C，车端归零后由 C 显式应用再起步。B 重连的遥测端口从 `57095` 变为 `57100`。专项与全量通过，最终全量 **590 项**。两种 Windows 包均在项目目录之外通过启动参数冒烟检查。原始记录见本机 `local/u3-tests/product-final-20261123-044308509/`。 [组员复跑 R07](docs/team-acceptance.md#2-组内复跑)
+
+<a id="desktop-2d-driving"></a>
+
+### 4.9 U4/U5 二维驾驶
+
+在启动页选择「本地模拟」，或用操作者账号连接更新后的「用户版（自动遥测）」车端。用户版先申请控制权，可勾选「操纵期间自动续期」连续驾驶。选择「二维驾驶」，点击「开始／应用」启用摇杆和踏板。界面显示输入百分比，实际速度、朝向和轨迹由车端遥测更新。
+
+| 操作 | 车端与界面反应 |
+| --- | --- |
+| 拖动方向摇杆，或按住 `A`／`D` | 分别向左／右转。摇杆中央有 8% 死区，松手回中，车保持当前朝向继续行驶 |
+| 拖动油门，或按住 `W` | 车逐步加速，松开后滑行减速。可边按键边用鼠标转向 |
+| 拖动刹车，或按住 `S` | 刹车优先，车减速至零。「正常停车」和窗口失焦提交全力制动并暂停驾驶，重新操作需再点「开始／应用」 |
+| 急停、控制超时或断开 | 按车端既有保护规则停车，急停和看门狗超时锁存。重新连接或显式复位后维持静止，需按模式重新申请并应用 |
+
+**输入和准入。** `drive_input` 中的 `throttle` 和 `brake` 为 `0–1`，`steering` 为 `−1–1`，其中正值向左。车端对驾驶输入和 `speed_mps`／`heading_rad` 数值目标分别解码，混用两种字段会被拒绝。高级和专家可沿用数值控制。用户版由 TLS 状态的 `drive_input_supported` 字段声明驾驶能力，界面只向已登录操作者显示驾驶选项。沿用 HMAC、短窗、序号与授权代次检查，回传平面位置、朝向、实测速度和保护状态。 [控制报文](src/rover/protocol/control_codec.py) · [驾驶模型](src/rover/core/driving.py)
+
+<a id="two-dimensional-driving-flow"></a>
+
+#### 图 14 二维驾驶运行链路
+
+[![图 14：驾驶输入经过本地或安全 UDP 控制、车端保护和固定步长运动，再以遥测回到桌面](reference_image/diagrams/14-2d-driving-flow.png)](reference_image/diagrams/14-2d-driving-flow.svg)
+
+点击图片可放大。沿主线可查看摇杆和踏板输入如何驱动车辆加速、滑行与制动，沿保护分支可核对故障停车和恢复条件。 [图 14 生成源](reference_image/diagrams/render_2d_driving_flow.py)
+
+**固定输入复现（Windows PowerShell）**
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B -m examples.demo_2d_driving --output-dir '.\local\u5-tests\profile-01'
+```
+
+平地步长为 20 ms，前进速度上限 2.0 m/s，满油门加速度 1.2 m/s²，滑行减速度 0.30 m/s²，满刹车减速度 2.4 m/s²。满舵曲率为 `0.8 m⁻¹`，方向变化随行驶距离积累，静止时朝向保持。普通踩刹车按模型减速，急停和看门狗沿用车端立即归零及锁存规则。
+
+固定输入产生 281 条样本。满油 1.80 s 后为 2.000 m/s，再滑行 1.00 s 后为 1.700 m/s。全力制动距离为 0.6021 m，0.72 s 时首次采样到零速。模拟计时以固定步长为准。每次复跑请选一个新目录，程序会生成 `driving-profile.csv` 和 `driving-profile.svg`。
+
+[![二维驾驶固定输入的速度和加速度曲线](reference_image/diagrams/u5-driving-profile.png)](reference_image/diagrams/u5-driving-profile.svg)
+
+[固定输入 CSV](reference_image/diagrams/u5-driving-profile.csv) · [曲线生成入口](examples/demo_2d_driving.py)
+
+**Windows 本机验收（2026-11-23）**。实际车端管理窗口、TLS 和 UDP 跑通操作者加速与转向、观察员同步收遥测、松油滑行、踩刹车、停发看门狗、急停、显式复位和驾驶中断开。用 Qt 窗口失焦事件验证制动与重新应用。另用本地模拟子进程验证起步、正常停车和关窗退出。全量 612 项通过。本机证据存于 `local/u3-tests/driving-2d-20261123-062938657/`，固定输入数据与曲线存于 `local/u5-tests/profile-20261123-062656086/`。 [组员复跑 R08](docs/team-acceptance.md#2-组内复跑)
+
+负责人对 `9960002` 反馈本轮检测通过。R08 各场景的执行环境和录像按组员复跑清单收集。
 
 <a id="network-layers"></a>
 
@@ -674,7 +739,7 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信结构。
 高级与专家属于项目验收阶段，分层图用于对照不同网络功能的职责。
 本项目在应用代码中承担消息语义、数据表示和会话管理功能；不能把写了`session_id`直接当作独立实现了OSI的L5。[分层与应用内会话功能的说明](https://docs.oracle.com/cd/E19504-01/802-5886/intro-45828/index.html)。
-下图对照2026-11-16源码，区分已使用、开发中、系统提供及跨机待验；功能变化时同步修订。
+图 5 保留 2026-11-16 的分层阶段快照，区分当时已使用、开发中、系统提供及跨机待验的能力。后续安全运行结构见 [图 10](#advanced-runtime-map)和[图 11](#expert-authority-flow)。
 
 [![本项目网络协议分层与实现状态](reference_image/diagrams/05-network-layers.svg)](reference_image/diagrams/05-network-layers.svg)
 
@@ -686,7 +751,7 @@ OSI七层用于理解职责，TCP/IP用于描述本项目采用的实际通信�
 
 ##### 报文格式与编解码
 
-最近通过的控制编解码基线为40项（旧格式19项、新格式21项），涵盖合法编解码、倒车往返、两端元数据/运动值校验、两端1200字节边界、解析前拒绝超限、严格版本类型及新旧格式互拒；完整项目回归已通过。
+早期数值控制的编解码基线共 40 项（旧格式 19 项、会话格式 21 项），覆盖往返、运动值与元数据校验、1200 字节边界、严格版本类型及格式互拒。后续驾驶输入见 [4.9 输入和准入](#desktop-2d-driving)。
 
 新解码器先检查原始`bytes`长度，再进行UTF-8解码和JSON解析：超限已违反约定，无需再创建字符串与对象。限制按字节而非字符或字典字段数计算；先解析再检查仍能判定长度，但解析开销已经发生。超限且同时无法解析时，优先报告长度错误。
 
@@ -1139,7 +1204,7 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 `Management session: ...`打印的是`guard.session_id`变化，不是TLS连接状态。急停后的第一个`None`来自首次TLS断开、撤销原会话；重连后打印的新ID建立复位归属，接着的`None`来自明确复位主动注销该会话，此时第二条TLS仍保持。随后同条TLS申请新的控制会话时再次打印新ID，最后断开才再次打印`None`。`SessionOpened`说明当时成功登记，后续复位或断开仍可撤销它。
 
-管理操作职责导图按用户要求继续延期，待后续同类接口稳定后统一整理，不在此单元新增图。
+复位作为管理请求沿桌面、协议、车端连接和仿真状态处理。[图 9](#management-request-flow) 将它与急停等请求放在同一张图里对照。
 
 #### 6.3.2 管理运行时迁入项目包
 
@@ -1162,6 +1227,8 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 TCP/UDP首部的端口号字段占16位，可表示0至65535（2的16次方减1）。本项目要求命令行填写明确的固定服务或目的端口，因此限制为1至65535；内部`telemetry_sock.bind((address[0], 0))`中的0则请求操作系统分配可用的本地源端口。操作系统分配的是实际端口号，后续报文使用分配后的端口。
 
 2026-11-21用户完成启动参数专项9项及全量310项回归，`--help`可显示所有参数；遥测发送绑定也从固定回环改为所选本机接口。启动自动测试使用启动替身与虚拟证书文件核对参数和错误路径；真实证书与网络行为另按下面的双终端过程验收，跨机与GUI接入继续推进。
+
+<a id="vehicle-certificate-setup"></a>
 
 #### 7.1.1 本地配置与证书准备
 
@@ -1412,7 +1479,9 @@ PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./loca
 
 [![图 11：桌面 A、车端和桌面 B 的零速交接、租约到期与 UDP 看门狗时序](reference_image/diagrams/11-expert-authority-flow.png)](reference_image/diagrams/11-expert-authority-flow.svg)
 
-点击图片打开 SVG 矢量原图。[P6 双端复跑与通过条件](docs/expert-control-authority.md#91-组员本机复现) · [图 11 生成源](reference_image/diagrams/render_expert_authority_flow.py)
+点击图片打开 SVG 矢量原图。图 11 展示专家双控制台的零速交接、租约和 UDP 看门狗。P7 使用同一计时口径对照高级与专家模式，三轮看门狗停车时间的中位数均为 500 ms，详见图 12 与公开数据。
+
+[P1–P7 复跑索引](docs/expert-control-authority.md#组员复跑索引) · [P6 双端复跑](docs/expert-control-authority.md#91-组员本机复现) · [图 11 生成源](reference_image/diagrams/render_expert_authority_flow.py) · [图 12 与数据](docs/expert-control-authority.md#102-本机结果)
 
 <a id="fault-experiment-sequence"></a>
 
@@ -1695,7 +1764,9 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 | A07 指令新鲜度 | N3 有中继和车端序号统计，[VMware 100 ms 复测](#control-rejection-evidence)有窗口不匹配和锁存原因记录 | 重复、乱序、过期及旧会话的分场景拒绝原因记录 |
 | A08 车端失联停车 | [N4 控制断流](#control-outage-lab)和[遥测中断停发](#telemetry-outage-acceptance)首轮从末条有效指令到零速锁存分别为 507.562 ms 和 510.202 ms。[Windows 本机回环进程异常退出](docs/verification.md#advanced-acceptance-status) 10 轮均停车，保护未锁存 | 物理双机实际断网后的停车实测 |
 | A09 重连与主动恢复 | N5 转发恢复后显式复位并重新应用才起步，[本机已验证管理连接主动关闭和重连](#management-close-preflight)。[VMware 网卡中断记录](docs/verification.md#advanced-acceptance-status)补充了锁存证据 | 物理双机实际断网后的检测、重连及显式恢复起步 |
-| A10 故障实验与证据 | N0 正常长跑、故障档首轮和[管理计时](#management-timing-evidence)均有原始数据 | 各短场景至少 10 轮，汇总结果并留存演示录像 |
+| A10 故障实验与证据 | N0 正常长跑、故障档首轮和[管理计时](#management-timing-evidence)均有原始数据 | 依组内目标将短场景补至每档 10 轮，汇总结果并留存演示录像 |
+
+高级验收后推进了 [专家 P1–P7](docs/expert-control-authority.md#组员复跑索引)、[二维用户版](#two-dimensional-user-edition)和[二维驾驶](#desktop-2d-driving)。各阶段记录自己的本机验收和物理双机待补项。
 
 ### 8.4 连接恢复与异步响应预检
 
@@ -1793,7 +1864,15 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 
 #### 9.3.2 SVG导图与生成源
 
-图4的[运动与坐标生成源](reference_image/diagrams/render_vehicle_motion.py)、图5的[网络分层生成源](reference_image/diagrams/render_network_layers.py)、图6的[封装与边界生成源](reference_image/diagrams/render_encapsulation.py)、图7的[TCP接收生成源](reference_image/diagrams/render_tcp_record_receive.py)、图8的[TLS 管理会话生成源](reference_image/diagrams/render_tls_management.py)和图9的[管理请求流程生成源](reference_image/diagrams/render_management_request_flow.py)包含可修改的文字、变量名及布局。图6的`LABELS`、`FIELDS`和布局常量集中保存函数名、字段文字、位置与尺寸。
+图 4–14 的 Python 生成源、SVG 和高清 PNG 保存在 `reference_image/diagrams/`。图 6 的 `LABELS`、`FIELDS` 和布局常量集中保存文字、字段及尺寸。
+
+| 后续阶段图 | 正文或数据入口 | 可编辑生成源 |
+| --- | --- | --- |
+| 图 10 高级版核心运行结构 | [总图与函数索引](#advanced-runtime-map) | [render_advanced_runtime.py](reference_image/diagrams/render_advanced_runtime.py) |
+| 图 11 专家控制权时序 | [零速交接、续期与停车](#expert-authority-flow) | [render_expert_authority_flow.py](reference_image/diagrams/render_expert_authority_flow.py) |
+| 图 12 P7 看门狗时间对照 | [图与测量结果](docs/expert-control-authority.md#102-本机结果) · [公开汇总数据](reference_image/diagrams/p7-watchdog-samples.csv) | [render_watchdog_comparison.py](reference_image/diagrams/render_watchdog_comparison.py) |
+| 图 13 二维用户版运行关系 | [角色、自动遥测和管理](#user-edition-runtime-map) | [render_user_edition_runtime.py](reference_image/diagrams/render_user_edition_runtime.py) |
+| 图 14 二维驾驶运行链路 | [操纵、运动和保护](#two-dimensional-driving-flow) | [render_2d_driving_flow.py](reference_image/diagrams/render_2d_driving_flow.py) |
 使用项目已有PySide6，在仓库根目录运行：
 
 ```powershell
@@ -1803,12 +1882,16 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 .\.venv\Scripts\python.exe reference_image/diagrams/render_tcp_record_receive.py
 .\.venv\Scripts\python.exe reference_image/diagrams/render_tls_management.py
 .\.venv\Scripts\python.exe reference_image/diagrams/render_management_request_flow.py
+.\.venv\Scripts\python.exe reference_image/diagrams/render_advanced_runtime.py
 .\.venv\Scripts\python.exe reference_image/diagrams/render_expert_authority_flow.py
+.\.venv\Scripts\python.exe reference_image/diagrams/render_watchdog_comparison.py
+.\.venv\Scripts\python.exe reference_image/diagrams/render_user_edition_runtime.py
+.\.venv\Scripts\python.exe reference_image/diagrams/render_2d_driving_flow.py
 ```
 
-每个命令各自更新对应的SVG与高清PNG，输出到生成源所在目录。图5至图9复用同目录图4生成源的绘图工具，须一并保留。README使用相对链接，图的位置和资源目录均可调整。
+各命令生成对应的 SVG 和 PNG，默认输出到生成源所在目录。图 5–14 复用图 4 的绘图工具。README 使用相对链接，移动资源时同步更新引用。U5 的数据曲线及独立生成命令见 [4.9](#desktop-2d-driving)。
 
-新增协议能力时，同步修订图5的核对日期、各层状态、报文类型和通道说明；以实际接入与验证结果标记进展。安全机制不硬塞到单个OSI层，未做的跨机实验也不写成已完成。
+图 5 保留早期协议分层阶段的状态。新增能力应同步更新相应阶段的图、正文和复现入口，并标明所对应的版本和验证范围。
 
 技术变更记在对应章节。项目总览随功能范围、开发路线或验收目标的变化独立修订。
 
