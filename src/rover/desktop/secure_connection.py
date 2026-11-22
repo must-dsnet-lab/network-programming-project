@@ -80,13 +80,29 @@ def connect_expert_management(
 
 
 @contextmanager
+def _connection_setup_errors() -> Iterator[None]:
+    try:
+        yield
+    except AuthenticationRejected:
+        raise ConnectionSetupError("authentication", "认证被拒绝。请核对账号和凭据。") from None
+    except (ssl.SSLCertVerificationError, _CertificateLoadError, FileNotFoundError):
+        raise ConnectionSetupError("certificate", "证书校验失败。请核对 CA 文件和车端证书名称。") from None
+    except ssl.SSLError:
+        raise ConnectionSetupError("protocol", "TLS 握手失败。请核对车端是否在该管理端口运行安全模式。") from None
+    except OSError:
+        raise ConnectionSetupError("network", "无法连接车端。请检查网络、车端地址和管理端口。") from None
+    except ValueError:
+        raise ConnectionSetupError("protocol", "管理协议响应无效。请核对车端连接模式。") from None
+
+
+@contextmanager
 def connect_configured_management(
     settings: "DesktopConnectionSettings", credential: str,
 ) -> Iterator[ManagementClient | ExpertManagementClient]:
     """Label setup failures without changing exceptions raised during a session."""
-    connect = connect_expert_management if settings.mode == "expert" else connect_management
+    connect = connect_management if settings.mode == "advanced" else connect_expert_management
     with ExitStack() as stack:
-        try:
+        with _connection_setup_errors():
             client = stack.enter_context(connect(
                 settings.management_address,
                 ca_file=settings.ca_file,
@@ -94,14 +110,12 @@ def connect_configured_management(
                 client_id=settings.client_id,
                 credential=credential,
             ))
-        except AuthenticationRejected:
-            raise ConnectionSetupError("authentication", "认证被拒绝。请核对账号和凭据。") from None
-        except (ssl.SSLCertVerificationError, _CertificateLoadError, FileNotFoundError):
-            raise ConnectionSetupError("certificate", "证书校验失败。请核对 CA 文件和车端证书名称。") from None
-        except ssl.SSLError:
-            raise ConnectionSetupError("protocol", "TLS 握手失败。请核对车端是否在该管理端口运行安全模式。") from None
-        except OSError:
-            raise ConnectionSetupError("network", "无法连接车端。请检查网络、车端地址和管理端口。") from None
-        except ValueError:
-            raise ConnectionSetupError("protocol", "管理协议响应无效。请核对车端连接模式。") from None
         yield client
+
+
+def register_configured_account(settings: "DesktopConnectionSettings", credential: str) -> str | None:
+    if settings.mode != "product":
+        return "registration_unavailable"
+    with _connection_setup_errors():
+        with _verified_tls_socket(settings.management_address, settings.ca_file, settings.tls_server_name, 3.0) as tls:
+            return ExpertManagementClient(tls).register_account(settings.client_id, credential)

@@ -5,6 +5,7 @@ import json
 from pathlib import Path
 from ipaddress import IPv4Address
 import socket
+import sqlite3
 import sys
 from threading import Event, Thread
 from time import monotonic, sleep
@@ -17,10 +18,12 @@ from rover.vehicle.control_guard import (
     update_windowed_command_guard_with_reason,
 )
 from rover.vehicle.management_runtime import management_listener
+from rover.vehicle.accounts import AccountStore
 from rover.vehicle.expert_control import EXPERT_AUTHORITY_LEASE_S
 from rover.vehicle.expert_management_runtime import ExpertManagementRuntime, expert_management_listener
 from rover.protocol.control_codec import ControlMacVerificationError, ControlProtocolVersionError
 from rover.protocol.telemetry_codec import TelemetrySnapshot
+from rover.protocol.telemetry_registration import REGISTRATION_DATAGRAM_SIZE, is_telemetry_registration
 from rover.transport.udp_transport import (
     NoActiveControlKeyError,
     send_telemetry,
@@ -73,6 +76,9 @@ def main(
 
         writer = csv.writer(event_stream) if event_stream is not None else None
         expert = process_management if isinstance(process_management, ExpertManagementRuntime) else None
+        registered_telemetry = expert is not None and expert.dynamic_telemetry
+        if registered_telemetry:
+            expert.configure_telemetry_registration(telemetry_sock.getsockname()[1])
         receive_managed_command = (
             try_receive_expert_control_command if expert is not None
             else try_receive_windowed_control_command
@@ -208,24 +214,46 @@ def main(
                 # 5. 更新车辆后，按发送期限采样并回传
                 telemetry_now_s = monotonic()
 
+                if registered_telemetry:
+                    try:
+                        registration, peer = telemetry_sock.recvfrom(REGISTRATION_DATAGRAM_SIZE + 1)
+                    except BlockingIOError:
+                        pass
+                    except OSError as exc:
+                        if telemetry_now_s >= next_telemetry_error_log_s:
+                            print(f"telemetry registration receive error: {exc}", flush=True)
+                            next_telemetry_error_log_s = telemetry_now_s + 1.0
+                    else:
+                        if is_telemetry_registration(registration):
+                            expert.register_telemetry(registration, peer, telemetry_now_s)
+
                 if telemetry_now_s >= next_telemetry_at_s:
                     snapshot = TelemetrySnapshot(
                         state=state,
                         fault_latched=guard.fault_latched,
                     )
 
-                    for destination in telemetry_destinations:
+                    destinations = expert.telemetry_destinations() if registered_telemetry else telemetry_destinations
+                    for destination in destinations:
                         try:
                             send_telemetry(telemetry_sock, snapshot, destination)
                         except (OSError, ValueError) as exc:
+                            if registered_telemetry:
+                                expert.record_telemetry_result(destination, False)
                             if telemetry_now_s >= next_telemetry_error_log_s:
                                 print(f"telemetry unavailable: {destination}: {exc}", flush=True)
                                 next_telemetry_error_log_s = telemetry_now_s + 1.0
+                        else:
+                            if registered_telemetry:
+                                expert.record_telemetry_result(destination, True)
 
                     # 每轮最多发送一次；落后时跳过积压，不集中补发
                     next_telemetry_at_s += telemetry_interval_s
                     if next_telemetry_at_s <= telemetry_now_s:
                         next_telemetry_at_s = telemetry_now_s + telemetry_interval_s
+
+                if registered_telemetry:
+                    expert.publish_admin_snapshot()
 
                 # 6. 输出本轮处理结果
                 if rejected_message is not None:
@@ -336,7 +364,9 @@ def cli(argv: list[str] | None = None) -> None:
         help="use expert TLS management with two sessions and UDP v3 control",
     )
     parser.add_argument("--cert-dir", type=Path)
-    parser.add_argument("--credentials-file", type=Path)
+    identity = parser.add_mutually_exclusive_group()
+    identity.add_argument("--credentials-file", type=Path)
+    identity.add_argument("--account-db", type=Path, help="enable registration and SQLite accounts in expert mode")
     parser.add_argument("--bind-host", type=_host_argument, default="127.0.0.1")
     control_port = parser.add_mutually_exclusive_group()
     control_port.add_argument("--control-port", type=_port_argument, default=9999)
@@ -351,9 +381,11 @@ def cli(argv: list[str] | None = None) -> None:
 
     if args.expert_management and not args.secure:
         parser.error("--expert-management requires --secure")
+    if args.account_db is not None and not args.expert_management:
+        parser.error("--account-db requires --secure and --expert-management")
     if args.secure: # 命令中带 --secure
-        if args.cert_dir is None or args.credentials_file is None:
-            parser.error("--secure requires --cert-dir and --credentials-file")
+        if args.cert_dir is None or (args.credentials_file is None and args.account_db is None):
+            parser.error("--secure requires --cert-dir and either --credentials-file or --account-db")
     elif args.cert_dir is not None or args.credentials_file is not None:
         parser.error("--cert-dir and --credentials-file require --secure")
     observer_address = None
@@ -366,19 +398,23 @@ def cli(argv: list[str] | None = None) -> None:
         or args.telemetry_host != "127.0.0.1" or observer_address is not None
     ):
         parser.error("--auto-control-port requires the local loopback demo")
+    if args.account_db is not None and observer_address is not None:
+        parser.error("--account-db uses registered telemetry recipients")
     management = None
     try:
         if args.secure:
             for name in ("server.pem", "server.key"):
                 if not (args.cert_dir / name).is_file():
                     parser.error(f"missing certificate file: {args.cert_dir / name}")
-            trusted = load_trusted_credentials(args.credentials_file)
-            listener = expert_management_listener if args.expert_management else management_listener
-            management = listener(
-                args.cert_dir,
-                trusted,
-                address=(args.bind_host, args.management_port),
-            )
+            management_address = (args.bind_host, args.management_port)
+            if args.account_db is not None:
+                management = expert_management_listener(
+                    args.cert_dir, {}, address=management_address, accounts=AccountStore(args.account_db),
+                )
+            else:
+                trusted = load_trusted_credentials(args.credentials_file)
+                listener = expert_management_listener if args.expert_management else management_listener
+                management = listener(args.cert_dir, trusted, address=management_address)
 
         runtime_options = {"event_log": args.event_log} if args.event_log is not None else {}
         if args.auto_control_port:
@@ -392,7 +428,7 @@ def cli(argv: list[str] | None = None) -> None:
             observer_address=observer_address,
             **runtime_options,
         )
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, sqlite3.Error) as error:
         parser.error(f"vehicle startup failed: {error}")
 
 

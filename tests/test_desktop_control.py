@@ -26,6 +26,9 @@ class FakeSocket:
     def setblocking(self, flag):
         pass # pass 代表什么也不做就跳过
 
+    def setsockopt(self, level, option, value):
+        pass
+
     def bind(self, address):
         pass
 

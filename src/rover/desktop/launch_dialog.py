@@ -21,8 +21,8 @@ def choose_launch_role() -> str | None:
 
     choices = {
         "local": ("本地模拟", "启动本机虚拟车，练习二维操作"),
-        "connect": ("连接车端", "登录已运行的高级或专家车端"),
-        "observe": ("只读观察", "查看地图、轨迹和车端遥测"),
+        "connect": ("连接车端", "支持用户版、高级和专家模式。用户版登录后自动接收遥测。"),
+        "observe": ("只读观察（手动遥测）", "接收旧版车端发往预设地址的 UDP 遥测。"),
     }
     for index, (label, description) in enumerate(choices.values(), start=2):
         button = QPushButton(label)
@@ -30,7 +30,9 @@ def choose_launch_role() -> str | None:
         button.setAutoDefault(False)
         button.clicked.connect(lambda checked=False, result=index: dialog.done(result))
         layout.addWidget(button)
-        layout.addWidget(QLabel(description))
+        description_label = QLabel(description)
+        description_label.setWordWrap(True)
+        layout.addWidget(description_label)
     layout.addSpacing(4)
 
     try:

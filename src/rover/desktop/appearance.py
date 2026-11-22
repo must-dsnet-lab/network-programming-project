@@ -1,4 +1,6 @@
-from PySide6.QtGui import QFont, QFontDatabase
+from PySide6.QtCore import QPoint, Qt
+from PySide6.QtGui import QColor, QFont, QFontDatabase, QPainter, QPolygon
+from PySide6.QtWidgets import QAbstractSpinBox, QSpinBox, QStyle, QStyleOptionSpinBox
 
 
 def desktop_font(pixels: int, *, bold=False, numeric=False) -> QFont:
@@ -12,6 +14,62 @@ def desktop_font(pixels: int, *, bold=False, numeric=False) -> QFont:
 
 
 STATUS_COLORS = {"live": "#176756", "alert": "#8a481a", "quiet": "#5c6b64"}
+
+
+_PORT_STYLE = """
+    QSpinBox { background: #ffffff; color: #24312c; border: 1px solid #cbd6cf;
+               border-radius: 4px; min-height: 30px; padding: 0 29px 0 6px; }
+    QSpinBox:focus { border-color: #287d67; }
+    QSpinBox:disabled { background: #f2f4f1; color: #5c6b64; }
+    QSpinBox::up-button, QSpinBox::down-button { subcontrol-origin: padding; width: 25px; }
+    QSpinBox::up-button { subcontrol-position: top right; }
+    QSpinBox::down-button { subcontrol-position: bottom right; }
+"""
+
+
+class PortSpinBox(QSpinBox):
+    """Keep native spin controls and draw legible arrows at their styled hit targets."""
+
+    def __init__(self, value: int) -> None:
+        super().__init__()
+        self.setStyleSheet(_PORT_STYLE)
+        self.setRange(1, 65535)
+        self.setValue(value)
+
+    def paintEvent(self, event) -> None:
+        super().paintEvent(event)
+        option = QStyleOptionSpinBox()
+        self.initStyleOption(option)
+        painter = QPainter(self)
+        for control, enabled_flag, direction in (
+            (QStyle.SubControl.SC_SpinBoxUp, QAbstractSpinBox.StepEnabledFlag.StepUpEnabled, -1),
+            (QStyle.SubControl.SC_SpinBoxDown, QAbstractSpinBox.StepEnabledFlag.StepDownEnabled, 1),
+        ):
+            rect = self.style().subControlRect(QStyle.ComplexControl.CC_SpinBox, option, control, self)
+            rect = rect.intersected(self.rect().adjusted(1, 1, -1, -1))
+            enabled = self.isEnabled() and bool(option.stepEnabled & enabled_flag)
+            if enabled and option.activeSubControls & control:
+                background = "#d3e6dc" if option.state & QStyle.StateFlag.State_Sunken else "#e3efe9"
+            else:
+                background = "#edf4f0" if enabled else "#f2f4f1"
+            painter.fillRect(rect, QColor(background))
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+            painter.setPen(QColor("#b8c8c0"))
+            painter.drawLine(rect.topLeft(), rect.bottomLeft())
+            if direction == 1:
+                painter.drawLine(rect.topLeft(), rect.topRight())
+
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.setBrush(QColor("#225446" if enabled else "#7d9086"))
+            center = rect.center()
+            base = center - QPoint(0, direction * 3)
+            painter.drawPolygon(QPolygon([
+                center + QPoint(0, direction * 3),
+                base + QPoint(5, 0),
+                base - QPoint(5, 0),
+            ]))
+        painter.end()
 
 
 CONSOLE_STYLE = """

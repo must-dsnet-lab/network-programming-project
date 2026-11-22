@@ -27,7 +27,10 @@ class TestExpertDesktopControl(unittest.TestCase):
         socket_patch = patch("rover.desktop.app.socket.socket", return_value=FakeSocket([]))
         socket_patch.start()
         self.addCleanup(socket_patch.stop)
-        self.window = DesktopConsole(secure_worker=self.worker, expert_mode=True, operator_id="desk-a")
+        self.window = DesktopConsole(
+            secure_worker=self.worker, expert_mode=True, operator_id="desk-a",
+            telemetry_address=("127.0.0.1", 10002),
+        )
         self.addCleanup(dispose_widget, self.window)
 
     def set_status(self, *, phase, allowed=(), owns=False, number=None, holder=None,
@@ -86,6 +89,36 @@ class TestExpertDesktopControl(unittest.TestCase):
         self.assertFalse(self.window.stop_button.isEnabled())
         self.worker.apply_target.assert_called_once_with(ControlTarget(1.0, 0.0))
 
+    def test_product_waits_for_telemetry_from_the_registered_vehicle_socket(self):
+        window = DesktopConsole(secure_worker=self.worker, expert_mode=True, register_expert_telemetry=True)
+        self.addCleanup(dispose_widget, window)
+        self.worker.set_telemetry_receiver.assert_called_once_with(window.sock)
+        self.worker.telemetry_source.return_value = ("127.0.0.1", 50801)
+        snapshot = TelemetrySnapshot(VehicleState(), False)
+        with patch("rover.desktop.app.try_receive_telemetry", side_effect=[
+            (snapshot, ("127.0.0.1", 50802)), None,
+        ]):
+            window.poll_telemetry()
+        self.assertIsNone(window.last_received_s)
+        with patch("rover.desktop.app.try_receive_telemetry", side_effect=[
+            (snapshot, ("127.0.0.1", 50801)), None,
+        ]):
+            window.poll_telemetry()
+        self.assertIsNotNone(window.last_received_s)
+
+    def test_product_observer_uses_user_edition_account_labels(self):
+        self.set_status(phase="idle")
+        self.worker.status.return_value.authority.account_role = "observer"
+        window = DesktopConsole(
+            secure_worker=self.worker, expert_mode=True, register_expert_telemetry=True, operator_id="desk-a",
+        )
+        self.addCleanup(dispose_widget, window)
+
+        self.assertEqual(window.windowTitle(), "虚拟小车 · 用户版")
+        self.assertEqual(window.operator_label.text(), "当前账号：desk-a · 观察员（只读）")
+        self.assertIn("停止接收遥测", window.disconnect_button.toolTip())
+        self.assertEqual(self.window.windowTitle(), "虚拟小车 · 专家控制台")
+
     def test_renewal_pending_leaves_local_stop_available(self):
         self.report_telemetry()
         self.set_status(phase="controlling", allowed=("set_authority_enabled", "renew_authority"),
@@ -142,9 +175,28 @@ class TestExpertDesktopControl(unittest.TestCase):
         self.set_status(phase="idle", allowed=("acquire_authority",), last_result=reset)
         self.window.poll_secure_status()
         self.assertFalse(self.window.acquire_authority_button.isEnabled())
+        self.assertIn("等待本窗口收到未锁存遥测", self.window.control_status.text())
+        self.assertIn("127.0.0.1:10002", self.window.control_status.text())
+        self.assertIn("车端遥测目的地", self.window.control_status.text())
+        self.report_telemetry(fault=True)
+        self.assertFalse(self.window.acquire_authority_button.isEnabled())
+
         self.report_telemetry(fault=False)
         self.assertTrue(self.window.acquire_authority_button.isEnabled())
         self.assertFalse(self.window.start_button.isEnabled())
+        self.assertIn("请先申请控制权", self.window.control_status.text())
+
+        self.set_status(phase="controlling", holder="desk-b", number=4, last_result=reset)
+        self.window.poll_secure_status()
+        self.assertFalse(self.window.acquire_authority_button.isEnabled())
+        self.assertIn("等待当前持有者归还或交接", self.window.control_status.text())
+
+        self.set_status(phase="held", owns=True, holder="desk-a", number=5,
+                        allowed=("set_authority_enabled",))
+        self.window.poll_secure_status()
+        self.assertTrue(self.window.start_button.isEnabled())
+        self.assertIn("开始／应用", self.window.control_status.text())
+        self.worker.apply_target.assert_not_called()
 
 
 class TestExpertDesktopCli(unittest.TestCase):

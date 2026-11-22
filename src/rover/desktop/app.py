@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMessageBox,
     QPlainTextEdit,
@@ -33,7 +34,7 @@ from rover.desktop.appearance import CONSOLE_STYLE, STATUS_COLORS, desktop_font
 from rover.desktop.connection_flow import DesktopConnectionFlow
 from rover.desktop.connection_profile import DesktopConnectionSettings
 from rover.desktop.control_worker import SecureControlWorker
-from rover.desktop.expert_control_worker import ExpertControlWorker
+from rover.desktop.expert_control_worker import ExpertAuthorityStatus, ExpertControlWorker
 from rover.desktop.local_vehicle import LocalVehicleProcess, LocalVehicleStartupError
 from rover.desktop.secure_connection import connect_expert_management, connect_management
 from rover.desktop.desktop_map import VehicleMap
@@ -84,6 +85,7 @@ class DesktopConsole(QWidget):
         expert_mode: bool = False,
         require_initial_telemetry: bool = False,
         telemetry_peer_host: Callable[[], str | None] | None = None,
+        register_expert_telemetry: bool = False,
         read_only: bool = False,
         local_demo: bool = False,
     ):
@@ -97,6 +99,8 @@ class DesktopConsole(QWidget):
         self._local_telemetry_source: tuple[str, int] | None = None
         self._require_initial_telemetry = expert_mode or require_initial_telemetry
         self._telemetry_peer_host = telemetry_peer_host
+        self._register_expert_telemetry = register_expert_telemetry
+        self._account_caption = "当前账号" if register_expert_telemetry else "当前操作员"
         self._last_authority_overview = None
         self._last_authority_result = None
         self._motion_generation = None
@@ -109,9 +113,11 @@ class DesktopConsole(QWidget):
         self.setObjectName("console")
         self.setWindowTitle("虚拟小车 · 专家控制台" if expert_mode else "虚拟小车控制台")
         if read_only:
-            self.setWindowTitle("虚拟小车 · 只读观察")
+            self.setWindowTitle("虚拟小车 · 只读观察（手动遥测）")
         elif local_demo:
             self.setWindowTitle("虚拟小车 · 本地模拟")
+        elif register_expert_telemetry:
+            self.setWindowTitle("虚拟小车 · 用户版")
         self.resize(1140, 740)
         self.setFont(desktop_font(13))
         self.setStyleSheet(CONSOLE_STYLE)
@@ -127,6 +133,10 @@ class DesktopConsole(QWidget):
         self.control_sock = None #发送
 
         try:
+            # Windows can otherwise bind a specific IPv4 address over a wildcard receiver.
+            exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+            if exclusive is not None:
+                self.sock.setsockopt(socket.SOL_SOCKET, exclusive, 1)
             self.sock.setblocking(False)
             self.sock.bind(self.listen_address)
             if self.listen_address[1] == 0:
@@ -170,6 +180,8 @@ class DesktopConsole(QWidget):
         if self.secure_worker is not None:
             self.secure_status_timer = QTimer(self)
             self.secure_status_timer.timeout.connect(self.poll_secure_status)
+            if register_expert_telemetry:
+                self.secure_worker.set_telemetry_receiver(self.sock)
             self.secure_worker.start()
             self.poll_secure_status()
             self.secure_status_timer.start(50)
@@ -300,7 +312,8 @@ class DesktopConsole(QWidget):
         layout.setSpacing(6)
 
         row = QHBoxLayout()
-        row.addWidget(self._label("专家控制权", size=15, bold=True))
+        authority_caption = "控制权" if self._register_expert_telemetry else "专家控制权"
+        row.addWidget(self._label(authority_caption, size=15, bold=True))
         self.authority_status = self._label("等待车端授权状态")
         self.authority_holder = self._label("持有者：—", muted=True)
         self.authority_generation = self._label("代次：—", muted=True)
@@ -394,7 +407,7 @@ class DesktopConsole(QWidget):
         connection.addWidget(self.connection_value)
         side.addLayout(connection)
         initial_operator = "待认证" if self.secure_worker else "本地演示"
-        operator_text = "仅接收车端遥测" if self.read_only else f"当前操作员：{initial_operator}"
+        operator_text = "仅接收车端遥测" if self.read_only else f"{self._account_caption}：{initial_operator}"
         self.operator_label = self._label(operator_text, muted=True)
         self.operator_label.setWordWrap(True)
         side.addWidget(self.operator_label)
@@ -405,7 +418,11 @@ class DesktopConsole(QWidget):
         self.connection_settings_button.clicked.connect(self.connection_settings_requested)
         self.connection_settings_button.hide()
         connection_actions.addWidget(self.connection_settings_button)
-        self.disconnect_button = self._button("断开", "停止发包并关闭 TLS 管理连接，继续查看遥测")
+        disconnect_hint = (
+            "退出当前账号并停止接收遥测" if self._register_expert_telemetry
+            else "停止发包并关闭 TLS 管理连接，继续查看遥测"
+        )
+        self.disconnect_button = self._button("断开", disconnect_hint)
         self.disconnect_button.clicked.connect(self.disconnect_management)
         self.disconnect_button.hide()
         connection_actions.addWidget(self.disconnect_button)
@@ -587,7 +604,22 @@ class DesktopConsole(QWidget):
         if button is None or not button.isEnabled():
             return
         action = button.property("authorityAction")
-        accepted = getattr(self.secure_worker, action)()
+        if action == "transfer_authority":
+            authority = self.secure_worker.status().authority
+            candidates = getattr(authority, "transfer_candidates", ())
+            if len(candidates) > 1:
+                labels = {
+                    f"{client_id}（{session_id[:8]}）": session_id
+                    for session_id, client_id in candidates
+                }
+                chosen, confirmed = QInputDialog.getItem(self, "交接控制权", "选择在线操作者", list(labels), 0, False)
+                if not confirmed:
+                    return
+                accepted = self.secure_worker.transfer_authority(labels[chosen])
+            else:
+                accepted = self.secure_worker.transfer_authority()
+        else:
+            accepted = getattr(self.secure_worker, action)()
         if accepted and action in ("release_authority", "transfer_authority"):
             self.current_target = None
         self.poll_secure_status()
@@ -719,7 +751,7 @@ class DesktopConsole(QWidget):
         elif has_target and state == "sending" and self.current_target.speed_mps == 0:
             text = "正在发送零速目标，按车端遥测确认停车"
         elif reset_confirmed:
-            text = "复位已确认，等待遥测更新" if self._secure_motion_blocked() else "遥测已确认解锁，请重新应用"
+            text = self._reset_status_text(authority, can_apply)
         elif state in ("ready", "sending", "stopped") and self._telemetry_control_suspended:
             text = "遥测不可用，已停止发包"
         elif state in ("ready", "stopped") and self._last_telemetry_fault_latched:
@@ -738,12 +770,36 @@ class DesktopConsole(QWidget):
                 tone = "alert" if state == "failed" else "quiet"
             else:
                 operator = self.operator_id or "—"
+                role = getattr(authority, "account_role", None)
+                if role in ("operator", "observer"):
+                    operator += " · 操作者" if role == "operator" else " · 观察员（只读）"
                 connection, tone = "TLS 已认证", "live"
             self.connection_value.setText(connection)
             self._set_tone(self.connection_value, tone)
-            self.operator_label.setText(f"当前操作员：{operator}")
+            self.operator_label.setText(f"{self._account_caption}：{operator}")
             self._append_event(labels[state])
             self._last_secure_state = state
+
+    def _reset_status_text(self, authority: ExpertAuthorityStatus | None, can_apply: bool) -> str:
+        blocked = self._secure_motion_blocked()
+        if not self.expert_mode:
+            return "复位已确认，等待遥测更新" if blocked else "遥测已确认解锁，请重新应用"
+        if blocked:
+            host, port = self.listen_address
+            telemetry_hint = (
+                "请核对连接与遥测状态。" if self._register_expert_telemetry else "请核对车端遥测目的地。"
+            )
+            return (
+                f"车端已确认复位，等待本窗口收到未锁存遥测（{host}:{port}）。"
+                f"{telemetry_hint}"
+            )
+        if can_apply:
+            return "已取得控制权，请点「开始／应用」。"
+        if self.acquire_authority_button.isEnabled():
+            return "遥测已确认解锁，请先申请控制权。"
+        if authority is not None and authority.holder_client_id and not authority.owns_authority:
+            return "遥测已确认解锁，等待当前持有者归还或交接控制权。"
+        return "遥测已确认解锁，等待车端允许申请控制权。"
 
     def _append_event(self, message: str) -> None:
         timestamp = QTime.currentTime().toString("HH:mm:ss")
@@ -807,6 +863,8 @@ class DesktopConsole(QWidget):
             if self.local_demo and self._local_telemetry_source != source:
                 continue
             if self._telemetry_peer_host is not None and self._telemetry_peer_host() != source[0]:
+                continue
+            if self._register_expert_telemetry and self.secure_worker.telemetry_source() != source:
                 continue
             latest, peer = snapshot, source
             self.last_received_s = monotonic()
@@ -883,7 +941,7 @@ class DesktopConsole(QWidget):
                 self.control_status.setText("正在关闭安全连接")
                 self.connection_value.setText("关闭中")
                 self._set_tone(self.connection_value, "quiet")
-                self.operator_label.setText("当前操作员：—")
+                self.operator_label.setText(f"{self._account_caption}：—")
                 self._append_event("正在关闭安全连接")
                 self.start_button.setEnabled(False)
                 self.stop_button.setEnabled(False)

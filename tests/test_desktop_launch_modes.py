@@ -1,3 +1,4 @@
+import socket
 import unittest
 from pathlib import Path
 from unittest.mock import Mock, patch
@@ -15,6 +16,15 @@ class TestDesktopLaunchModes(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.qt = QApplication.instance() or QApplication([])
+
+    @unittest.skipUnless(hasattr(socket, "SO_EXCLUSIVEADDRUSE"), "Windows socket binding behavior")
+    def test_observer_cannot_reuse_the_wildcard_receiver_port(self):
+        owner = app.DesktopConsole(read_only=True, telemetry_address=("0.0.0.0", 0))
+        self.addCleanup(dispose_widget, owner)
+        address = ("127.0.0.1", owner.listen_address[1])
+        with self.assertRaises(OSError):
+            observer = app.DesktopConsole(read_only=True, telemetry_address=address)
+            self.addCleanup(dispose_widget, observer)
 
     def test_observer_only_opens_receive_socket_and_updates_map(self):
         receiver = FakeSocket([])

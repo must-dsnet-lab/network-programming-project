@@ -164,6 +164,21 @@ class TestVehicleStartup(unittest.TestCase):
         advanced.assert_not_called()
         self.assertIs(main.call_args.kwargs["management"], sentinel.context)
 
+    def test_expert_account_database_selects_sqlite_login(self):
+        database = self.root / "accounts.sqlite3"
+        with (
+            patch.object(app, "AccountStore", return_value=sentinel.accounts) as open_accounts,
+            patch.object(app, "expert_management_listener", return_value=sentinel.runtime) as listener,
+            patch.object(app, "main") as main,
+        ):
+            app.cli([
+                "--secure", "--expert-management", "--cert-dir", str(self.cert_dir),
+                "--account-db", str(database),
+            ])
+        open_accounts.assert_called_once_with(database)
+        self.assertIs(listener.call_args.kwargs["accounts"], sentinel.accounts)
+        self.assertIs(main.call_args.kwargs["management"], sentinel.runtime)
+
     def test_invalid_or_missing_credentials_prevent_secure_startup(self):
         for document in (b"{", b"\xff", b"[]", b"{}", b'{"client": " "}'):
             with self.subTest(document=document):
