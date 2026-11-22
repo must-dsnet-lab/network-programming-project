@@ -24,6 +24,7 @@ class ControlSession:
     client_id: str
     connection_id: str
     session_id: str
+    role: str = "operator"
 
 
 @dataclass(frozen=True)

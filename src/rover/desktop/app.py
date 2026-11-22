@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QGridLayout,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QMessageBox,
     QPlainTextEdit,
@@ -84,6 +85,7 @@ class DesktopConsole(QWidget):
         expert_mode: bool = False,
         require_initial_telemetry: bool = False,
         telemetry_peer_host: Callable[[], str | None] | None = None,
+        register_expert_telemetry: bool = False,
         read_only: bool = False,
         local_demo: bool = False,
     ):
@@ -97,6 +99,7 @@ class DesktopConsole(QWidget):
         self._local_telemetry_source: tuple[str, int] | None = None
         self._require_initial_telemetry = expert_mode or require_initial_telemetry
         self._telemetry_peer_host = telemetry_peer_host
+        self._register_expert_telemetry = register_expert_telemetry
         self._last_authority_overview = None
         self._last_authority_result = None
         self._motion_generation = None
@@ -170,6 +173,8 @@ class DesktopConsole(QWidget):
         if self.secure_worker is not None:
             self.secure_status_timer = QTimer(self)
             self.secure_status_timer.timeout.connect(self.poll_secure_status)
+            if register_expert_telemetry:
+                self.secure_worker.set_telemetry_receiver(self.sock)
             self.secure_worker.start()
             self.poll_secure_status()
             self.secure_status_timer.start(50)
@@ -587,7 +592,22 @@ class DesktopConsole(QWidget):
         if button is None or not button.isEnabled():
             return
         action = button.property("authorityAction")
-        accepted = getattr(self.secure_worker, action)()
+        if action == "transfer_authority":
+            authority = self.secure_worker.status().authority
+            candidates = getattr(authority, "transfer_candidates", ())
+            if len(candidates) > 1:
+                labels = {
+                    f"{client_id}（{session_id[:8]}）": session_id
+                    for session_id, client_id in candidates
+                }
+                chosen, confirmed = QInputDialog.getItem(self, "交接控制权", "选择在线操作者", list(labels), 0, False)
+                if not confirmed:
+                    return
+                accepted = self.secure_worker.transfer_authority(labels[chosen])
+            else:
+                accepted = self.secure_worker.transfer_authority()
+        else:
+            accepted = getattr(self.secure_worker, action)()
         if accepted and action in ("release_authority", "transfer_authority"):
             self.current_target = None
         self.poll_secure_status()
@@ -738,6 +758,9 @@ class DesktopConsole(QWidget):
                 tone = "alert" if state == "failed" else "quiet"
             else:
                 operator = self.operator_id or "—"
+                role = getattr(authority, "account_role", None)
+                if role in ("operator", "observer"):
+                    operator += " · 操作者" if role == "operator" else " · 只读"
                 connection, tone = "TLS 已认证", "live"
             self.connection_value.setText(connection)
             self._set_tone(self.connection_value, tone)
@@ -825,6 +848,8 @@ class DesktopConsole(QWidget):
             if self.local_demo and self._local_telemetry_source != source:
                 continue
             if self._telemetry_peer_host is not None and self._telemetry_peer_host() != source[0]:
+                continue
+            if self._register_expert_telemetry and self.secure_worker.telemetry_source() != source:
                 continue
             latest, peer = snapshot, source
             self.last_received_s = monotonic()

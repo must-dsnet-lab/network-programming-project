@@ -89,6 +89,23 @@ class TestExpertDesktopControl(unittest.TestCase):
         self.assertFalse(self.window.stop_button.isEnabled())
         self.worker.apply_target.assert_called_once_with(ControlTarget(1.0, 0.0))
 
+    def test_product_waits_for_telemetry_from_the_registered_vehicle_socket(self):
+        window = DesktopConsole(secure_worker=self.worker, expert_mode=True, register_expert_telemetry=True)
+        self.addCleanup(dispose_widget, window)
+        self.worker.set_telemetry_receiver.assert_called_once_with(window.sock)
+        self.worker.telemetry_source.return_value = ("127.0.0.1", 50801)
+        snapshot = TelemetrySnapshot(VehicleState(), False)
+        with patch("rover.desktop.app.try_receive_telemetry", side_effect=[
+            (snapshot, ("127.0.0.1", 50802)), None,
+        ]):
+            window.poll_telemetry()
+        self.assertIsNone(window.last_received_s)
+        with patch("rover.desktop.app.try_receive_telemetry", side_effect=[
+            (snapshot, ("127.0.0.1", 50801)), None,
+        ]):
+            window.poll_telemetry()
+        self.assertIsNotNone(window.last_received_s)
+
     def test_renewal_pending_leaves_local_stop_available(self):
         self.report_telemetry()
         self.set_status(phase="controlling", allowed=("set_authority_enabled", "renew_authority"),

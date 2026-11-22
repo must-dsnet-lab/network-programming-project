@@ -1,10 +1,13 @@
 param(
-    [string]$OutputDirectory = ""
+    [string]$OutputDirectory = "",
+    [switch]$VehicleAdmin
 )
 
 $ErrorActionPreference = "Stop"
+$bundleName = if ($VehicleAdmin) { 'RoverVehicleAdmin' } else { 'RoverDesktop' }
+$entryScript = if ($VehicleAdmin) { 'run_rover_vehicle_admin.py' } else { 'run_rover_desktop.py' }
 if ($env:OS -ne "Windows_NT") {
-    throw "Build RoverDesktop.exe on Windows."
+    throw "Build ${bundleName}.exe on Windows."
 }
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
@@ -17,7 +20,7 @@ if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
     $OutputDirectory = Join-Path $projectRoot 'dist'
 }
 $OutputDirectory = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($OutputDirectory)
-$bundle = Join-Path $OutputDirectory 'RoverDesktop'
+$bundle = Join-Path $OutputDirectory $bundleName
 if (Test-Path -LiteralPath $bundle) {
     throw "The bundle directory already exists. Choose another -OutputDirectory: $bundle"
 }
@@ -30,11 +33,11 @@ New-Item -ItemType Directory -Path $workDirectory -Force | Out-Null
 # The bootloader hides the console it owns when the user double-clicks the EXE.
 $buildArguments = @(
     '-m', 'PyInstaller', '--onedir', '--console', '--hide-console', 'hide-early',
-    '--noupx', '--icon', 'NONE', '--name', 'RoverDesktop',
+    '--noupx', '--icon', 'NONE', '--name', $bundleName,
     '--paths', (Join-Path $projectRoot 'src'),
     '--specpath', $workDirectory, '--workpath', $workDirectory,
     '--distpath', $OutputDirectory,
-    (Join-Path $PSScriptRoot 'run_rover_desktop.py')
+    (Join-Path $PSScriptRoot $entryScript)
 )
 $originalPath = $env:Path
 $originalPythonPath = $env:PYTHONPATH
@@ -51,9 +54,13 @@ try {
     $env:PYTHONPATH = $originalPythonPath
 }
 
-$executable = Join-Path $bundle 'RoverDesktop.exe'
+$executable = Join-Path $bundle "${bundleName}.exe"
 if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
     throw "The build did not create $executable"
 }
 
-Write-Output "Rover desktop executable: $executable"
+if ($VehicleAdmin) {
+    Write-Output "Rover vehicle admin executable: $executable"
+} else {
+    Write-Output "Rover desktop executable: $executable"
+}

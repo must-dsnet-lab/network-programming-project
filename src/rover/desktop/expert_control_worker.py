@@ -12,6 +12,7 @@ from rover.desktop.control_worker import SEND_INTERVAL_S, WorkerStatus
 from rover.desktop.expert_management_client import ExpertManagementClient
 from rover.desktop.secure_control import ControlRequestRejected
 from rover.protocol.control_codec import AuthorityGeneration, ControlCommand
+from rover.protocol.telemetry_registration import encode_telemetry_registration
 from rover.transport.udp_transport import send_expert_control_command
 
 
@@ -35,6 +36,8 @@ class ExpertAuthorityStatus:
     lease_remaining_s: float | None
     allowed_actions: frozenset[str]
     last_result: ExpertAuthorityResult | None
+    account_role: str | None = None
+    transfer_candidates: tuple[tuple[str, str], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -74,6 +77,10 @@ def _authority_status(reply: dict[str, object]) -> ExpertAuthorityStatus:
         allowed_actions=frozenset(reply["allowed_actions"]),
         last_result=(ExpertAuthorityResult(result["action"], result["accepted"], result["reason"])
                      if result is not None else None),
+        account_role=reply.get("account_role"),
+        transfer_candidates=tuple(
+            (item["session_id"], item["client_id"]) for item in reply.get("transfer_candidates", ())
+        ),
     )
 
 
@@ -141,6 +148,18 @@ class ExpertControlWorker:
         self._intent = 0
         self._action: _Action | None = None
         self._recipients: tuple[str, ...] = ()
+        self._telemetry_receiver: socket.socket | None = None
+        self._telemetry_source: tuple[str, int] | None = None
+
+    def set_telemetry_receiver(self, receiver: socket.socket) -> None:
+        with self._condition:
+            if self._status.state != "new":
+                raise RuntimeError("telemetry receiver must be attached before start")
+            self._telemetry_receiver = receiver
+
+    def telemetry_source(self) -> tuple[str, int] | None:
+        with self._condition:
+            return self._telemetry_source
 
     def start(self) -> None:
         with self._condition:
@@ -192,8 +211,8 @@ class ExpertControlWorker:
     def release_authority(self) -> bool:
         return self._queue_action("release_authority")
 
-    def transfer_authority(self) -> bool:
-        return self._queue_action("transfer_authority")
+    def transfer_authority(self, recipient: str | None = None) -> bool:
+        return self._queue_action("transfer_authority", recipient=recipient)
 
     def emergency_stop(self) -> bool:
         return self._queue_action("emergency_stop")
@@ -201,17 +220,17 @@ class ExpertControlWorker:
     def reset_control(self) -> bool:
         return self._queue_action("reset_control")
 
-    def _queue_action(self, name: str, *, automatic: bool = False) -> bool:
+    def _queue_action(self, name: str, *, automatic: bool = False, recipient: str | None = None) -> bool:
         with self._condition:
             authority = self._status.authority
             if (self._closing or self._action is not None or authority is None
                     or name not in authority.allowed_actions):
                 return False
-            recipient = None
             if name == "transfer_authority":
-                if len(self._recipients) != 1:
+                if recipient is None and len(self._recipients) == 1:
+                    recipient = self._recipients[0]
+                if recipient not in self._recipients:
                     return False
-                recipient = self._recipients[0]
             if name != "renew_authority":
                 self._clear_target()
             state = {"emergency_stop": "stopping", "reset_control": "resetting"}.get(
@@ -246,15 +265,43 @@ class ExpertControlWorker:
             with self._connect() as client, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
                 udp.setblocking(False)
                 address = (client.peer_host, self._address[1]) if self._use_management_peer else self._address
-                self._run_loop(client, client.open_session(), udp, address)
+                session_id = client.open_session()
+                if self._telemetry_receiver is not None and not self._register_telemetry(client, session_id):
+                    return
+                self._run_loop(client, session_id, udp, address)
         except Exception as error:
-            failure = f"{type(error).__name__}: {error}"
+            failure = {
+                "capacity_reached": "车端在线会话已满，请稍后重新连接。",
+                "account_role_changed": "账号角色已更新，请重新连接。",
+                "telemetry_registration_unavailable": "车端未启用用户版遥测登记，请核对连接模式。",
+            }.get(str(error), f"{type(error).__name__}: {error}")
         finally:
             with self._condition:
                 state = "failed" if failure and not self._closing else "closed"
                 self._closing = True
+                self._telemetry_source = None
                 self._clear_target()
                 self._status = ExpertWorkerStatus(state, failure if state == "failed" else "")
+
+    def _register_telemetry(self, client: ExpertManagementClient, session_id: str) -> bool:
+        receiver = self._telemetry_receiver
+        assert receiver is not None
+        token, port = client.prepare_telemetry(session_id)
+        packet = encode_telemetry_registration(token)
+        address = (client.peer_host, port)
+        with self._condition:
+            self._telemetry_source = address
+        for _ in range(5):
+            with self._condition:
+                if self._closing:
+                    return False
+            receiver.sendto(packet, address)
+            if client.query_authority(session_id).get("telemetry_registered") is True:
+                return True
+            with self._condition:
+                if not self._closing:
+                    self._condition.wait(0.12)
+        raise ConnectionError("未收到车端遥测登记确认。请核对 UDP 连通性。")
 
     def _dispatch(self, client: ExpertManagementClient, session_id: str, action: _Action) -> None:
         call = getattr(client, action.name)

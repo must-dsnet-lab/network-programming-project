@@ -147,7 +147,8 @@ class DesktopConnectionFlow(QObject):
     def _create_configured_console(self, selection: ConnectionSelection) -> bool:
         settings = selection.settings
         self._settings = settings
-        expert = settings.mode == "expert"
+        expert = settings.mode != "advanced"
+        product = settings.mode == "product"
         worker_type = ExpertControlWorker if expert else SecureControlWorker
         peer_host = None
 
@@ -162,10 +163,11 @@ class DesktopConnectionFlow(QObject):
             return peer_host
 
         worker = worker_type(connect, settings.control_address, use_management_peer=True)
+        product_options = {"register_expert_telemetry": True} if product else {}
         window = self._open_console(
-            secure_worker=worker, telemetry_address=settings.telemetry_address,
+            secure_worker=worker, telemetry_address=("0.0.0.0", 0) if product else settings.telemetry_address,
             operator_id=settings.client_id, expert_mode=expert, require_initial_telemetry=True,
-            telemetry_peer_host=telemetry_peer_host,
+            telemetry_peer_host=telemetry_peer_host, **product_options,
         )
         if window is None:
             return False

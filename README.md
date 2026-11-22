@@ -72,6 +72,7 @@
 - [ ] U3 跑通二维启动与只读观察，最小 Windows EXE 待无开发环境验收。 [操作与打包](#desktop-windows-starter)
 - [ ] 二维用户版支持三个及以上桌面端在线，登录后自动接收遥测，支持在多个候选端之间选择交接对象。 [多端任务与验收](docs/development-roadmap.md#multi-desktop-telemetry)
 - [ ] 交付车端管理 EXE，供管理员实时查看各桌面会话的连接、遥测登记、控制权和近期事件。 [车端管理验收](docs/development-roadmap.md#vehicle-admin-exe)
+  两项均已完成 Windows 本机联调，集中验收时复跑无开发环境的 Windows 包和物理局域网。 [本机启动和试跑](#two-dimensional-user-edition)
 - [ ] U4 接入方向摇杆、油门与刹车，定义回中、失焦和断开行为。
 - [ ] U5 在二维车端验证加速、滑行、制动与转向模型。
 - [ ] U6 建立真实三维坐标与遥测，验证高度变化和兼容性。
@@ -636,6 +637,27 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 **源码本机证据（2026-11-23）**。Windows 11、Python 3.12.10，离屏 Qt 通过启动界面进入三个角色。本地模拟连续两次观测到 `0.00 → 0.65 → 0.00 m/s`，停发后归零锁存并禁用应用，退出后控制端口可以立即重绑。高级连接通过 TLS 认证并保存公开配置，独立只读窗口收到 `0.00 → 0.80 → 0.00 m/s`。专项 77 项、全量 556 项通过。截图与原始日志见本机 `local/u3-tests/source-20261123-025436997/`。
 
 **EXE 本机证据（2026-11-23）**。PyInstaller 6.22.3 生成的 Windows x64 包在项目目录外解压。在未继承 Python 或 Qt 开发路径的进程环境中，启动页两次打开并退出，Qt 和 Python 运行库从包内加载。打包后的本地模拟子进程完成 UDP 起步、停车与退出。压缩包及原始记录留在本机 `local/u3-tests/packaging-final/`。单独的无开发环境 Windows 验收由组员执行。 [组员 EXE 验收 R06](docs/team-acceptance.md#2-组内复跑)
+
+<a id="two-dimensional-user-edition"></a>
+
+### 4.8 二维用户版注册、多桌面和车端管理
+
+| 从哪个程序开始 | 操作 |
+| --- | --- |
+| `RoverVehicleAdmin.exe` | 选择包含 `server.pem` 和 `server.key` 的车端证书目录，选择账号库文件，点击「启动车端」。默认本机地址为 `127.0.0.1`，管理 TCP 为 `19177`，控制 UDP 为 `9999`。运行已有车端时，先正常停车并退出旧进程，或在双方界面填写另一组端口 |
+| `RoverDesktop.exe` | 点「连接车端」，选择「用户版（自动遥测）」。输入车端地址、账号和至少 12 字符的凭据，选择部署人员提供的公开 `ca.pem`。首次点「注册账号」，然后重新输入凭据并点「连接」 |
+| 车端授权与桌面驾驶 | 新账号是观察员。管理员输入账号，把角色更新为「操作者」。该账号重新登录后，可以先申请控制权，再应用目标。持有者有多个候选人时，可在「交接」中选择接收会话 |
+
+桌面窗口登录后自动分配并登记 UDP 遥测接收端口。管理员可在会话表核对账号、角色、地址、遥测发送、控制权及最近活动，点选某行查看事件。断开后该会话进入近期记录，重新连接建立新的会话及遥测登记。
+
+源码复现可用 `python -m rover.vehicle.admin_app` 和 `python -m rover.desktop.app --launcher`。Windows 打包使用同一脚本分别执行两次：
+
+```powershell
+.\scripts\build_windows_desktop.ps1 -OutputDirectory '.\dist\user-edition'
+.\scripts\build_windows_desktop.ps1 -VehicleAdmin -OutputDirectory '.\dist\user-edition'
+```
+
+**Windows 本机证据（2026-11-23）**。使用实际车端管理界面启停、浏览会话及更新 SQLite 角色。三位操作者和一位观察员经 TLS 登录，四个窗口的 UDP 接收端口由系统分配。A 从 B、C 中选择 C，车端归零后由 C 显式应用再起步。B 重连的遥测端口从 `57095` 变为 `57100`。专项与全量通过，最终全量 **590 项**。两种 Windows 包均在项目目录之外通过启动参数冒烟检查。原始记录见本机 `local/u3-tests/product-final-20261123-044308509/`。 [组员复跑 R07](docs/team-acceptance.md#2-组内复跑)
 
 <a id="network-layers"></a>
 

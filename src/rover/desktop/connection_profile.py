@@ -50,8 +50,8 @@ class DesktopConnectionSettings:
     client_id: str = "desktop-a"
 
     def __post_init__(self) -> None:
-        if self.mode not in ("advanced", "expert"):
-            raise ValueError("请选择高级或专家模式")
+        if self.mode not in ("advanced", "expert", "product"):
+            raise ValueError("请选择高级、专家或用户版")
         for port, label in (
             (self.management_port, "管理端口"),
             (self.control_port, "控制端口"),

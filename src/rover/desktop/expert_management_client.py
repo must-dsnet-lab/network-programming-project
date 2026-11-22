@@ -23,6 +23,17 @@ class ExpertManagementClient:
     def peer_host(self) -> str:
         return self._tls.getpeername()[0]
 
+    def register_account(self, client_id: str, credential: str) -> str | None:
+        reply = self._exchange(
+            "register_account", "registration_result", client_id=client_id, credential=credential,
+        )
+        accepted, reason = reply.get("accepted"), reply.get("reason")
+        if accepted is True and "reason" in reply and reason is None:
+            return None
+        if accepted is False and _nonblank_text(reason):
+            return reason
+        self._invalid_reply("invalid account registration result")
+
     def authenticate(self, client_id: str, credential: str) -> bool:
         reply = self._exchange(
             "authenticate",
@@ -43,6 +54,13 @@ class ExpertManagementClient:
         if not isinstance(session_id, str) or not session_id.strip():
             self._invalid_reply("session_id must be a non-blank string")
         return session_id
+
+    def prepare_telemetry(self, session_id: str) -> tuple[str, int]:
+        reply = self._exchange("prepare_telemetry", "prepare_telemetry_result", session_id=session_id)
+        token, port = reply.get("token"), reply.get("port")
+        if not isinstance(token, str) or type(port) is not int or not 1 <= port <= 65535:
+            self._invalid_reply("invalid telemetry registration reply")
+        return token, port
 
     def query_authority(self, session_id: str) -> dict[str, object]:
         reply = self._exchange(
@@ -83,6 +101,20 @@ class ExpertManagementClient:
                 self._invalid_reply("lease_remaining_s requires ownership")
             if not _nonnegative_number(reply["lease_remaining_s"]):
                 self._invalid_reply("lease_remaining_s must be a finite, non-negative number")
+        if "account_role" in reply and reply["account_role"] not in ("operator", "observer"):
+            self._invalid_reply("invalid account role")
+        if "telemetry_registered" in reply and type(reply["telemetry_registered"]) is not bool:
+            self._invalid_reply("invalid telemetry registration status")
+        if "transfer_candidates" in reply:
+            candidates = reply["transfer_candidates"]
+            if (
+                not owns_authority
+                or not isinstance(candidates, list)
+                or any(not isinstance(item, dict) or not _nonblank_text(item.get("session_id"))
+                       or not _nonblank_text(item.get("client_id")) for item in candidates)
+                or [item["session_id"] for item in candidates] != reply.get("target_session_ids")
+            ):
+                self._invalid_reply("invalid transfer candidates")
         self._validate_public_authority(reply, owns_authority)
         return reply
 
