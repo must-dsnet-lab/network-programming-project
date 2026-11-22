@@ -111,10 +111,9 @@ class ExpertVehicleControl:
             )
 
         if action == "reset_control":
-            if not guard.fault_latched:
-                return self._reply(guard, "fault_not_latched")
-            if self._last_speed_mps != 0.0 or guard.enabled or guard.last_accepted is not None:
-                return self._reply(guard, "vehicle_not_stopped")
+            reason = self.reset_rejection(guard)
+            if reason is not None:
+                return self._reply(guard, reason)
             self.authority = self.authority.fault_cleared()
             return self._reply(replace(guard, fault_latched=False))
 
@@ -189,6 +188,13 @@ class ExpertVehicleControl:
             return self._reply(guard, reason)
         self.authority = authority
         return self._reply(_revoke_motion(guard))
+
+    def reset_rejection(self, guard: ControlGuardState) -> str | None:
+        if not guard.fault_latched:
+            return "fault_not_latched"
+        if self._last_speed_mps != 0.0 or guard.enabled or guard.last_accepted is not None:
+            return "vehicle_not_stopped"
+        return None
 
     def disconnect(self, guard: ControlGuardState, session: ControlSession) -> ControlGuardState:
         guard = self.sync_fault(guard)

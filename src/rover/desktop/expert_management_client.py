@@ -79,7 +79,46 @@ class ExpertManagementClient:
                 self._invalid_reply("lease_remaining_s requires ownership")
             if not _nonnegative_number(reply["lease_remaining_s"]):
                 self._invalid_reply("lease_remaining_s must be a finite, non-negative number")
+        self._validate_public_authority(reply, owns_authority)
         return reply
+
+    def _validate_public_authority(self, reply: dict[str, object], owns_authority: bool) -> None:
+        fields = {"holder_client_id", "authority_generation", "allowed_actions", "last_authority_result"}
+        if fields.isdisjoint(reply):
+            return
+        if not fields.issubset(reply):
+            self._invalid_reply("incomplete authority publication")
+
+        holder = reply["holder_client_id"]
+        generation = reply["authority_generation"]
+        if holder is None:
+            if generation is not None or owns_authority:
+                self._invalid_reply("authority generation requires a holder")
+        elif not _nonblank_text(holder) or not _valid_generation(generation):
+            self._invalid_reply("invalid published authority holder or generation")
+        if owns_authority and generation != reply.get("generation"):
+            self._invalid_reply("published authority generation does not match owner generation")
+
+        actions = reply["allowed_actions"]
+        if (
+            not isinstance(actions, list)
+            or not all(_nonblank_text(action) for action in actions)
+            or len(set(actions)) != len(actions)
+        ):
+            self._invalid_reply("allowed_actions must be a list of distinct action names")
+
+        result = reply["last_authority_result"]
+        if result is None:
+            return
+        if not isinstance(result, dict) or not _nonblank_text(result.get("action")):
+            self._invalid_reply("invalid last authority action")
+        accepted = result.get("accepted")
+        if type(accepted) is not bool:
+            self._invalid_reply("last authority action accepted must be a boolean")
+        if accepted and ("reason" not in result or result["reason"] is not None):
+            self._invalid_reply("accepted last authority action must have a null reason")
+        if not accepted and not _nonblank_text(result.get("reason")):
+            self._invalid_reply("rejected last authority action must have a non-blank reason")
 
     def acquire_authority(self, session_id: str) -> dict[str, object]:
         reply = self._action("acquire_authority", session_id)

@@ -362,6 +362,54 @@ class TestExpertManagementClient(unittest.TestCase):
         self.assertEqual(client.query_authority("session-a"), replies[1])
         self.assertEqual(client.query_authority("session-b"), replies[2])
 
+    def test_query_preserves_public_authority_without_granting_ownership(self):
+        status = {
+            **self.status,
+            "phase": "held",
+            "holder_client_id": "desktop-a",
+            "authority_generation": self.generation,
+            "allowed_actions": [],
+            "last_authority_result": {
+                "action": "acquire_authority", "accepted": False, "reason": "authority_busy",
+            },
+        }
+        reply = self._reply("query_authority_result", 1, **status)
+        client = ExpertManagementClient(self._socket(reply))
+        self.assertEqual(client.query_authority("session-b"), reply)
+
+    def test_query_rejects_incomplete_or_invalid_publication(self):
+        valid = {
+            **self.status,
+            "holder_client_id": None,
+            "authority_generation": None,
+            "allowed_actions": ["acquire_authority"],
+            "last_authority_result": None,
+        }
+        incomplete = valid.copy()
+        del incomplete["allowed_actions"]
+        fields = (
+            {"holder_client_id": 7},
+            {"holder_client_id": " "},
+            {"holder_client_id": "desktop-a"},
+            {"authority_generation": self.generation},
+            {"holder_client_id": "desktop-a", "authority_generation": {"epoch": "run", "number": True}},
+            {"owns_authority": True},
+            {"allowed_actions": "acquire_authority"},
+            {"allowed_actions": ["acquire_authority", "acquire_authority"]},
+            {"allowed_actions": [" "]},
+            {"last_authority_result": {"action": "acquire_authority", "accepted": True, "reason": "unexpected"}},
+            {"last_authority_result": {"action": "acquire_authority", "accepted": False, "reason": None}},
+            {"last_authority_result": {"action": "acquire_authority", "accepted": 1, "reason": None}},
+        )
+        for status in (incomplete, *({**valid, **override} for override in fields)):
+            with self.subTest(status=status):
+                tls = self._socket(self._reply("query_authority_result", 1, **status))
+                client = ExpertManagementClient(tls)
+                with self.assertRaises(ValueError):
+                    client.query_authority("session-a")
+                with self.assertRaisesRegex(ConnectionError, "unusable"):
+                    client.open_session()
+
     def test_query_rejects_malformed_or_out_of_scope_holder_fields(self):
         for fields in (
             {"generation": self.generation},
