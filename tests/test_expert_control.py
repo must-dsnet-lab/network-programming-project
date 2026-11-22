@@ -4,8 +4,8 @@ import unittest
 from rover.core.control_target import ControlTarget
 from rover.core.vehicle_model import VehicleState
 from rover.protocol.control_codec import ControlCommand
-from rover.vehicle.control_authority import ControlSession
-from rover.vehicle.control_guard import ControlGuardState, update_windowed_command_guard_with_reason
+from rover.vehicle.control_authority import AuthorityGeneration, ControlSession
+from rover.vehicle.control_guard import ControlGuardState, update_expert_command_guard_with_reason
 from rover.vehicle.control_watchdog import CONTROL_TIMEOUT_S
 from rover.vehicle.expert_control import ExpertVehicleControl
 
@@ -47,8 +47,13 @@ class TestExpertVehicleControl(unittest.TestCase):
         return reply["window_id"]
 
     def simulate_command(self, session, window):
-        packet = ControlCommand(session.session_id, 0, ControlTarget(1.0, 0.0), window)
-        self.guard, reason = update_windowed_command_guard_with_reason(self.guard, 1.2, packet)
+        packet = ControlCommand(
+            session.session_id, 0, ControlTarget(1.0, 0.0), window,
+            generation=self.control.authority.grant.generation,
+        )
+        self.guard, reason = update_expert_command_guard_with_reason(
+            self.guard, 1.2, packet, authority=self.control.authority,
+        )
         self.assertIsNone(reason)
         return packet
 
@@ -121,8 +126,53 @@ class TestExpertVehicleControl(unittest.TestCase):
         new_generation = {"epoch": grant.generation.epoch, "number": grant.generation.number}
         self.assertNotEqual(self.enable(self.b, new_generation), previous_key)
         self.grant_window(self.b, new_generation)
-        _, reason = update_windowed_command_guard_with_reason(self.guard, 1.2, packet)
-        self.assertEqual(reason, "window_mismatch")
+        next_guard, reason = update_expert_command_guard_with_reason(
+            self.guard, 1.2, packet, authority=self.control.authority,
+        )
+        self.assertIs(next_guard, self.guard)
+        self.assertEqual(reason, "not_authority_holder")
+
+    def test_expert_admission_checks_generation_window_and_sequence_without_refreshing(self):
+        earlier = self.acquire(self.a)
+        self.assertTrue(self.dispatch(self.a, "release_authority", generation=earlier)["accepted"])
+        self.observe(0.0)
+        generation = self.acquire(self.a)
+        self.enable(self.a, generation)
+        first = self.simulate_command(self.a, self.grant_window(self.a, generation))
+
+        for incoming, expected in (
+            (replace(first, seq=1, generation=AuthorityGeneration(**earlier)), "stale_generation"),
+            (replace(first, seq=1, generation=AuthorityGeneration("earlier-epoch", generation["number"])), "stale_generation"),
+            (replace(first, seq=1, window_id="old-window"), "window_mismatch"),
+            (first, "sequence_duplicate"),
+        ):
+            with self.subTest(expected=expected, incoming=incoming):
+                next_guard, reason = update_expert_command_guard_with_reason(
+                    self.guard, 1.25, incoming, authority=self.control.authority,
+                )
+                self.assertEqual(reason, expected)
+                self.assertIs(next_guard, self.guard)
+
+        next_guard, reason = update_expert_command_guard_with_reason(
+            self.guard, 1.25, replace(first, seq=1), authority=self.control.authority,
+        )
+        self.assertIsNone(reason)
+        self.assertEqual(next_guard.last_seq, 1)
+        self.assertEqual(next_guard.last_accepted.accepted_at_s, 1.25)
+
+    def test_expert_admission_applies_watchdog_before_command(self):
+        generation = self.acquire(self.a)
+        self.enable(self.a, generation)
+        first = self.simulate_command(self.a, self.grant_window(self.a, generation))
+
+        next_guard, reason = update_expert_command_guard_with_reason(
+            self.guard, 1.201 + CONTROL_TIMEOUT_S, replace(first, seq=1),
+            authority=self.control.authority,
+        )
+
+        self.assertEqual(reason, "fault_latched")
+        self.assertTrue(next_guard.fault_latched)
+        self.assertIsNone(next_guard.last_accepted)
 
     def test_candidate_disconnect_during_stop_leaves_authority_idle(self):
         generation = self.acquire(self.a)

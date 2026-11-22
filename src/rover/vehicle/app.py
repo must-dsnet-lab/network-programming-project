@@ -11,15 +11,17 @@ from rover.vehicle.control_guard import (
     ControlGuardState,
     update_control_guard,
     close_control_session,
+    update_expert_command_guard_with_reason,
     update_windowed_command_guard_with_reason,
 )
 from rover.vehicle.management_runtime import management_listener
 from rover.vehicle.expert_management_runtime import ExpertManagementRuntime, expert_management_listener
-from rover.protocol.control_codec import ControlMacVerificationError
+from rover.protocol.control_codec import ControlMacVerificationError, ControlProtocolVersionError
 from rover.protocol.telemetry_codec import TelemetrySnapshot
 from rover.transport.udp_transport import (
     NoActiveControlKeyError,
     send_telemetry,
+    try_receive_expert_control_command,
     try_receive_windowed_control_command,
     try_receive_target,
 )
@@ -67,6 +69,10 @@ def main(
 
         writer = csv.writer(event_stream) if event_stream is not None else None
         expert = process_management if isinstance(process_management, ExpertManagementRuntime) else None
+        receive_managed_command = (
+            try_receive_expert_control_command if expert is not None
+            else try_receive_windowed_control_command
+        )
 
         def record(at_s: float, event: str, *, seq: int | None = None, detail: str = "") -> None:
             if writer is not None:
@@ -124,9 +130,7 @@ def main(
                     if process_management is None:
                         received = try_receive_target(sock)
                     else:
-                        received = try_receive_windowed_control_command(
-                            sock, key=guard.control_key
-                        )
+                        received = receive_managed_command(sock, key=guard.control_key)
                 except ValueError as exc:
                     rejected_message = str(exc)
                     if process_management is not None:
@@ -134,6 +138,8 @@ def main(
                             rejection_reason = "invalid_mac"
                         elif isinstance(exc, NoActiveControlKeyError):
                             rejection_reason = "missing_session_key"
+                        elif expert is not None and isinstance(exc, ControlProtocolVersionError):
+                            rejection_reason = "unsupported_control_version"
                         else:
                             rejection_reason = "invalid_datagram"
 
@@ -143,9 +149,14 @@ def main(
                 if process_management is None:
                     guard = update_control_guard(guard, now_s, incoming)
                 else:
-                    guard, guard_rejection = update_windowed_command_guard_with_reason(
-                        guard, now_s, incoming
-                    )
+                    if expert is not None:
+                        guard, guard_rejection = update_expert_command_guard_with_reason(
+                            guard, now_s, incoming, authority=expert.authority,
+                        )
+                    else:
+                        guard, guard_rejection = update_windowed_command_guard_with_reason(
+                            guard, now_s, incoming,
+                        )
                     if guard_rejection is not None:
                         rejection_reason = guard_rejection
 
@@ -273,7 +284,7 @@ def cli(argv: list[str] | None = None) -> None:
     parser.add_argument("--secure", action="store_true")
     parser.add_argument(
         "--expert-management", action="store_true",
-        help="use the expert TLS management protocol and allow two sessions",
+        help="use expert TLS management with two sessions and UDP v3 control",
     )
     parser.add_argument("--cert-dir", type=Path)
     parser.add_argument("--credentials-file", type=Path)

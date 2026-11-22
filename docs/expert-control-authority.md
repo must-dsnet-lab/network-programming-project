@@ -1,8 +1,8 @@
-# 专家 P1 · 控制权状态机与消息草案
+# 专家控制权与协议验收
 
 [开发路线](development-roadmap.md#protocol-delivery) · [控制权模型](../src/rover/vehicle/control_authority.py) · [验收用例](../tests/test_control_authority.py)
 
-P1 用独立的 `ControlAuthority` 表达车端控制权裁决。状态机和用例可以单独验证，管理报文、连接调度、UDP 准入和租约时钟按 P2–P6 逐步接入。本页的线上接口供后续评审。物理双机与断网验收继续按高级阶段的记录口径执行。
+P1 用独立的 `ControlAuthority` 表达车端控制权裁决。P2 接入双 TLS 管理会话，P3 接入零速交接，P4 在控制报文上验证授权代次。租约时钟属于 P5。物理双机与断网验收按集中试验计划执行。
 
 ## 1. 身份、会话和授权
 
@@ -32,14 +32,14 @@ P1 用独立的 `ControlAuthority` 表达车端控制权裁决。状态机和用
 
 ## 3. 管理与 UDP 接口草案
 
-专家入口显式启用，复用 TLS 校验、应用认证和 TCP 分帧。P2 采用专家管理报文 `version: 2`，专家安全 UDP 拟用 `version: 3`。高级入口使用管理 v1 和安全 UDP v2。管理版本不兼容时结束当前连接，排查时核对两端的启动模式。专家 UDP 候选格式须完整性校验覆盖会话、授权代次、窗口、序号和指令目标，专家授权路径拒绝缺少代次的高级报文。
+专家入口显式启用，复用 TLS 校验、应用认证和 TCP 分帧。P2 采用专家管理报文 `version: 2`。高级入口使用管理 v1 和安全 UDP v2。管理版本不兼容时结束当前连接，排查时核对两端的启动模式。P4 的 [UDP v3 准入规则](#7-p4-udp-授权代次准入) 适用于当前专家入口。
 
 连接完成 TLS 握手后，经 `authenticate` 提交 `client_id` 和 `credential`。认证成功的连接用 `open_session` 取得各自的 `session_id`，重复打开时复用本连接的会话。打开管理会话不授予控制权。请求使用 UTF-8 JSON，包含整数 `version`、请求类型 `type` 和递增的 `request_id`。车端从认证连接取得操作者身份，并核对请求中的 `session_id` 绑定当前连接。`generation` 携带 `epoch` 和 `number`。下表的回复包含 `version` 和 `type`，回复类型为对应请求类型加 `_result`，并附原编号、布尔值 `accepted` 及 `reason`。成功时 `reason` 为 `null`。
 
 | 请求类型 | 公共字段外的参数 | 受理条件及成功结果 |
 | --- | --- | --- |
 | `acquire_authority` | `session_id` | 活跃会话在 `idle` 可获新代次，返回 `phase` 和 `generation`。 |
-| `set_authority_enabled` | `session_id`、`generation`、`enabled` | 当前持有者在 `held` 或 `controlling` 可切换使能，返回变更后的 `phase`。专家 UDP 接入后，使能成功的回复经当前连接返回该代次的 `control_key`。 |
+| `set_authority_enabled` | `session_id`、`generation`、`enabled` | 当前持有者在 `held` 或 `controlling` 可切换使能，返回变更后的 `phase`。使能成功的回复经当前连接返回 `control_key`。 |
 | `issue_control_window` | `session_id`、`generation` | 使能后的持有者可申请短期控制窗口，返回 `window_id` 和 `lifetime_s`。 |
 | `release_authority` | `session_id`、`generation` | 当前持有者进入 `stopping`。回复报告撤权已受理，归零由仿真步进确认。 |
 | `transfer_authority` | `session_id`、`generation`、`target_session_id` | 当前持有者选择另一条连接的在线候选。车端按签发的候选会话 ID 查找，并在开始停车时回复 `phase`。 |
@@ -171,9 +171,11 @@ P2 A closed: B=1, B session unchanged
 
 P3 将 P1 的裁决接入正式车端主循环。P2 的两条 TLS 连接可同时请求，只有当前持有者可使能、申请窗口或指定交接对象。交接先清掉旧目标、控制密钥、窗口和序号。车端在仿真步进确认零速后才向在线候选授予新代次，新持有者需使能并应用目标。
 
-管理动作使用管理 v2。P3 运动沿用已验证的 UDP v2 格式，依靠车端当前会话、启停状态、新密钥、短窗和序号进行准入。P4 再把代次写入 UDP 报文。专家模式下当前持有者可请求急停，UDP 看门狗触发时同样撤销控制权。处于锁存且车端已观察到零速、无有效目标时，原型的已认证活跃可信账号可明确请求复位。复位回到 `idle`，重新申请授权后才能使能。
+管理动作使用管理 v2。P3 版本的运动报文采用 UDP v2，依靠车端当前会话、启停状态、新密钥、短窗和序号进行准入。专家模式下当前持有者可请求急停，UDP 看门狗触发时同样撤销控制权。处于锁存且车端已观察到零速、无有效目标时，原型的已认证活跃可信账号可明确请求复位。复位回到 `idle`，重新申请授权后才能使能。
 
 ### 6.1 本机复现
+
+以下命令对应 P3 提交 `d540401`。当前专家版用同一交接示例运行 UDP v3，见 [P4 本机复现](#71-组员本机复现)。
 
 在 Windows 项目根目录使用两个 PowerShell 窗口。沿用 P2 实验 CA 和账号配置。先启动车端，并用新文件保存车端事件：
 
@@ -215,3 +217,45 @@ $env:QT_QPA_PLATFORM = 'offscreen'
 | B 释放控制权 | 车端撤下当前控制会话，速度回到 0.0 m/s，未触发故障锁存 |
 
 物理双机与实际断网恢复纳入后续集中验收。
+
+## 7. P4 UDP 授权代次准入
+
+| 车端启动模式 | 控制报文 | 适用客户端 |
+| --- | --- | --- |
+| 默认演示 | UDP v1 控制目标 | 基础演示 |
+| `--secure` | UDP v2。HMAC 覆盖会话、窗口、序号、速度与朝向等字段 | 高级版桌面控制台 |
+| `--secure --expert-management` | UDP v3。在 v2 控制字段上增加 `generation`，HMAC 覆盖代次的两个字段 | 专家交接示例 |
+
+`generation` 来自 TLS 管理回复，包含 `epoch`（车端本次运行标识）和 `number`（正整数授权编号）。UDP v3 同时核对两者。车端每轮在收包前检查看门狗，验证报文的 HMAC 和格式后再按收包时刻检查保护状态，依次核对当前持有会话、代次、使能、窗口和序号。通过准入才更新目标、序号和最后有效指令时刻。专家模式仅接受 UDP v3。
+
+车端事件 CSV 的 `control_rejected` 使用现有 `detail` 列。有效 HMAC 下版本不匹配记为 `unsupported_control_version`，非当前持有会话记为 `not_authority_holder`，当前会话的代次不匹配记为 `stale_generation`。窗口和序号沿用原有原因。若会话密钥已撤销或 MAC 校验失败，分别记录 `missing_session_key` 或 `invalid_mac`，此时尚未进入代次检查。
+
+### 7.1 组员本机复现
+
+记录 `git log -1 --oneline` 的结果。在 Windows 项目根目录开两个 PowerShell 窗口，沿用可用的回环证书和测试账号。终端 A 启动车端并保存事件。
+
+```powershell
+New-Item -ItemType Directory -Path '.\local\p4-tests' -Force | Out-Null
+$p4Log = '.\local\p4-tests\handoff-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '.csv'
+.\.venv\Scripts\python.exe -X utf8 -B -m rover.vehicle.app --secure --expert-management --cert-dir '.\local\certs' --credentials-file '.\local\trusted_clients.json' --event-log $p4Log
+```
+
+终端 B 运行交接示例，按提示输入测试凭据。
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B -m examples.demo_expert_handoff
+```
+
+通过条件是 A 行驶、转让后车端归零、B 持新代次且待使能、B 显式使能后行驶并释放归零。保留两端输出和事件 CSV。拒绝和兼容性用专项测试核对，物理双机留待集中验收。
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B -m unittest -q tests.test_expert_control_codec tests.test_expert_control tests.test_windowed_vehicle_app tests.test_expert_handoff_demo tests.test_control_authority tests.test_windowed_control_guard tests.test_vehicle_startup
+$env:QT_QPA_PLATFORM = 'offscreen'
+.\.venv\Scripts\python.exe -X utf8 -B -m unittest discover -s tests -t . -q
+```
+
+### 7.2 本机证据
+
+2026-11-23，基线 `7a8cea1` 加 P4 工作区改动。Windows 专项与相关入口回归 68 项、离屏全量回归 465 项通过。专项覆盖代次字段参与 HMAC、两种安全报文的版本隔离、会话与代次失效，以及窗口、序号和看门狗保护。
+
+同日在 Windows 本机回环运行正式车端和交接示例，使用临时 CA、两个独立的测试账号、两条 TLS 连接及真实 UDP 收发。车端 CSV 记录 A 行驶至 1.0 m/s、交接后 B 以代次 2 在 0.0 m/s 待使能、B 显式使能后行驶至 1.0 m/s、释放后归零。全程未触发故障锁存。原始日志保存在本机 `local/p4-tests/loopback-20261123-005915320/`。

@@ -6,6 +6,8 @@ from dataclasses import dataclass, field, replace
 from enum import StrEnum
 from uuid import uuid4
 
+from rover.protocol.control_codec import AuthorityGeneration
+
 
 class AuthorityPhase(StrEnum):
     IDLE = "idle"
@@ -22,12 +24,6 @@ class ControlSession:
     client_id: str
     connection_id: str
     session_id: str
-
-
-@dataclass(frozen=True)
-class AuthorityGeneration:
-    epoch: str
-    number: int
 
 
 @dataclass(frozen=True)

@@ -3,6 +3,7 @@ from dataclasses import dataclass, field, replace
 from rover.core.control_target import ControlTarget
 from rover.vehicle.control_watchdog import CONTROL_TIMEOUT_S, AcceptedTarget
 from rover.protocol.control_codec import ControlCommand
+from rover.vehicle.control_authority import AuthorityPhase, ControlAuthority
 from rover.vehicle.control_window import (
     ControlWindow,
     control_window_rejection_reason,
@@ -181,6 +182,39 @@ def update_windowed_command_guard_with_reason(
     if guard.fault_latched:
         return guard, "fault_latched"
 
+    return _apply_windowed_command(guard, now_s, incoming)
+
+
+def update_expert_command_guard_with_reason(
+    guard: ControlGuardState,
+    now_s: float,
+    incoming: ControlCommand | None,
+    *,
+    authority: ControlAuthority,
+) -> tuple[ControlGuardState, str | None]:
+    """Admit a verified expert datagram against the simulation thread's current grant."""
+    guard = update_control_guard(guard, now_s)
+    if incoming is None:
+        return guard, None
+    if guard.fault_latched or authority.phase is AuthorityPhase.FAULT_LATCHED:
+        return guard, "fault_latched"
+    if authority.phase is AuthorityPhase.STOPPING:
+        return guard, "vehicle_stopping"
+
+    grant = authority.grant
+    if grant is None or incoming.session_id != grant.session.session_id:
+        return guard, "not_authority_holder"
+    if incoming.generation != grant.generation:
+        return guard, "stale_generation"
+    if authority.phase is not AuthorityPhase.CONTROLLING:
+        return guard, "session_disabled"
+
+    return _apply_windowed_command(guard, now_s, incoming)
+
+
+def _apply_windowed_command(
+    guard: ControlGuardState, now_s: float, incoming: ControlCommand
+) -> tuple[ControlGuardState, str | None]:
     reason = control_window_rejection_reason(guard.control_window, incoming.window_id, now_s)
     if reason is not None:
         return guard, reason

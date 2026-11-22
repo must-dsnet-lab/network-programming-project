@@ -1,4 +1,5 @@
 import io
+import json
 import unittest
 from collections import deque
 from contextlib import contextmanager, redirect_stdout
@@ -6,9 +7,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, Mock, call, patch
 
 from examples import demo_expert_handoff as demo
-from rover.core.control_target import ControlTarget
 from rover.core.vehicle_model import VehicleState
-from rover.protocol.control_codec import ControlCommand
+from rover.protocol.control_auth import verify_control_mac
 from rover.protocol.telemetry_codec import TelemetrySnapshot, encode_telemetry
 
 
@@ -44,6 +44,7 @@ class TestExpertHandoffDemo(unittest.TestCase):
         self.telemetry_socket = MagicMock()
         for sock in (self.control_socket, self.telemetry_socket):
             sock.__enter__.return_value = sock
+        self.control_socket.sendto.side_effect = self.send_control
         self.telemetry_socket.recvfrom.side_effect = self.recv_telemetry
 
     @contextmanager
@@ -57,10 +58,11 @@ class TestExpertHandoffDemo(unittest.TestCase):
         self.telemetry.append(0.0)
         return {"accepted": True, "phase": "stopping"}
 
-    def send_control(self, sock, command, address, *, key):
-        self.events.append(("send", command.session_id))
-        self.telemetry.append(command.target.speed_mps)
-        return 1
+    def send_control(self, packet, address):
+        message = json.loads(packet)
+        self.events.append(("send", message["session_id"]))
+        self.telemetry.append(message["speed_mps"])
+        return len(packet)
 
     def recv_telemetry(self, *args):
         if not self.telemetry:
@@ -78,11 +80,10 @@ class TestExpertHandoffDemo(unittest.TestCase):
             patch.object(demo.socket, "socket", side_effect=(self.telemetry_socket, self.control_socket)),
             patch.object(demo.socket, "gethostbyname", return_value="127.0.0.1"),
             patch.object(demo, "sleep"),
-            patch.object(demo, "send_windowed_control_command", side_effect=self.send_control) as send,
             redirect_stdout(output),
         ):
             result = demo.main([])
-        return result, output.getvalue(), connect, send, prompt
+        return result, output.getvalue(), connect, self.control_socket.sendto, prompt
 
     def test_switches_moving_authority_at_zero_and_b_reenables(self):
         result, output, connect, send, prompt = self.run_demo()
@@ -103,12 +104,30 @@ class TestExpertHandoffDemo(unittest.TestCase):
         self.assertEqual(self.a.issue_control_window.call_count, 2)
         self.b.set_authority_enabled.assert_called_once_with("session-b", self.generation_b, True)
         self.b.release_authority.assert_called_once_with("session-b", self.generation_b)
-        self.assertEqual(send.call_args_list, [
-            call(self.control_socket, ControlCommand("session-a", 0, ControlTarget(1.0, 0.0), "window-a"),
-                 ("127.0.0.1", 9999), key=b"\x01" * 32),
-            call(self.control_socket, ControlCommand("session-b", 0, ControlTarget(1.0, 0.0), "window-b"),
-                 ("127.0.0.1", 9999), key=b"\x02" * 32),
-        ])
+        expected_commands = (
+            ("session-a", "window-a", self.generation_a, b"\x01" * 32),
+            ("session-b", "window-b", self.generation_b, b"\x02" * 32),
+        )
+        for sent, (session_id, window_id, generation, key) in zip(
+            send.call_args_list, expected_commands, strict=True
+        ):
+            with self.subTest(session=session_id):
+                packet, address = sent.args
+                self.assertEqual(address, ("127.0.0.1", 9999))
+                message = json.loads(packet)
+                mac = message.pop("mac")
+                self.assertEqual(message, {
+                    "version": 3,
+                    "type": "authenticated_control_command",
+                    "session_id": session_id,
+                    "seq": 0,
+                    "speed_mps": 1.0,
+                    "heading_rad": 0.0,
+                    "window_id": window_id,
+                    "generation": generation,
+                })
+                fields = json.dumps(message, sort_keys=True, separators=(",", ":")).encode("utf-8")
+                self.assertTrue(verify_control_mac(fields, key, mac))
         self.assertIn("speed=0.0 m/s", output)
         self.assertNotIn("local-demo-credential", output)
 
