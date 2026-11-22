@@ -33,7 +33,7 @@ from rover.desktop.appearance import CONSOLE_STYLE, STATUS_COLORS, desktop_font
 from rover.desktop.connection_flow import DesktopConnectionFlow
 from rover.desktop.connection_profile import DesktopConnectionSettings
 from rover.desktop.control_worker import SecureControlWorker
-from rover.desktop.expert_control_worker import ExpertControlWorker
+from rover.desktop.expert_control_worker import ExpertAuthorityStatus, ExpertControlWorker
 from rover.desktop.local_vehicle import LocalVehicleProcess, LocalVehicleStartupError
 from rover.desktop.secure_connection import connect_expert_management, connect_management
 from rover.desktop.desktop_map import VehicleMap
@@ -719,7 +719,7 @@ class DesktopConsole(QWidget):
         elif has_target and state == "sending" and self.current_target.speed_mps == 0:
             text = "正在发送零速目标，按车端遥测确认停车"
         elif reset_confirmed:
-            text = "复位已确认，等待遥测更新" if self._secure_motion_blocked() else "遥测已确认解锁，请重新应用"
+            text = self._reset_status_text(authority, can_apply)
         elif state in ("ready", "sending", "stopped") and self._telemetry_control_suspended:
             text = "遥测不可用，已停止发包"
         elif state in ("ready", "stopped") and self._last_telemetry_fault_latched:
@@ -744,6 +744,24 @@ class DesktopConsole(QWidget):
             self.operator_label.setText(f"当前操作员：{operator}")
             self._append_event(labels[state])
             self._last_secure_state = state
+
+    def _reset_status_text(self, authority: ExpertAuthorityStatus | None, can_apply: bool) -> str:
+        blocked = self._secure_motion_blocked()
+        if not self.expert_mode:
+            return "复位已确认，等待遥测更新" if blocked else "遥测已确认解锁，请重新应用"
+        if blocked:
+            host, port = self.listen_address
+            return (
+                f"车端已确认复位，等待本窗口收到未锁存遥测（{host}:{port}）。"
+                "请核对车端遥测目的地。"
+            )
+        if can_apply:
+            return "已取得控制权，请点「开始／应用」。"
+        if self.acquire_authority_button.isEnabled():
+            return "遥测已确认解锁，请先申请控制权。"
+        if authority is not None and authority.holder_client_id and not authority.owns_authority:
+            return "遥测已确认解锁，等待当前持有者归还或交接控制权。"
+        return "遥测已确认解锁，等待车端允许申请控制权。"
 
     def _append_event(self, message: str) -> None:
         timestamp = QTime.currentTime().toString("HH:mm:ss")
