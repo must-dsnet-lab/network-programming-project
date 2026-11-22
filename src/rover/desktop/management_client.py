@@ -38,6 +38,10 @@ class ManagementClient:
         self._next_request_id = 1
         self._usable = True
 
+    @property
+    def peer_host(self) -> str:
+        return self._tls.getpeername()[0]
+
     def _exchange(self, request, encode, decode):
         if not self._usable:
             raise ConnectionError("management connection is unusable")

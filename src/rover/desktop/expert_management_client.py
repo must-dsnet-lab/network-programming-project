@@ -19,6 +19,10 @@ class ExpertManagementClient:
         self._next_request_id = 1
         self._usable = True
 
+    @property
+    def peer_host(self) -> str:
+        return self._tls.getpeername()[0]
+
     def authenticate(self, client_id: str, credential: str) -> bool:
         reply = self._exchange(
             "authenticate",
