@@ -70,6 +70,7 @@
 - [ ] U1 优化桌面 GUI 布局、控制操作、状态提示和地图使用。 [界面和控件验收](#desktop-ui-acceptance)
 - [x] U2 增加图形化连接配置，已通过 Windows 本机联调。 [操作与复跑](#desktop-graphical-connection)
 - [ ] U3 跑通二维启动与只读观察，最小 Windows EXE 待无开发环境验收。 [操作与打包](#desktop-windows-starter)
+- [ ] 二维用户版支持三个及以上桌面端在线，登录后自动接收遥测，支持在多个候选端之间选择交接对象。 [多端任务与验收](docs/development-roadmap.md#multi-desktop-telemetry)
 - [ ] U4 接入方向摇杆、油门与刹车，定义回中、失焦和断开行为。
 - [ ] U5 在二维车端验证加速、滑行、制动与转向模型。
 - [ ] U6 建立真实三维坐标与遥测，验证高度变化和兼容性。
@@ -619,6 +620,8 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 | 本地模拟 | 自动启动本机二维虚拟车，等到遥测可用后应用目标。控制和遥测使用操作系统分配的回环端口。关窗结束该虚拟车，重新打开可启动新实例。日志保存在当前用户数据目录下的 `Rover/logs/`，路径可在状态说明的提示中查看 |
 | 连接车端 | 沿用 [U2 连接设置](#desktop-graphical-connection)。选择已运行车端的高级或专家模式，导入对应公开 CA 并登录。连接配置可选保存。 [公开配置模板](examples/desktop-connection.example.json) |
 | 只读观察 | 填写本机遥测接收地址和 UDP 端口，默认 `127.0.0.1:10001`。界面显示地图、轨迹和车端状态。车端第二路遥测目的地应与观察台一致，回环时在车端命令追加 `--observer-host 127.0.0.1 --observer-port 10001`。 [遥测双发复现](#telemetry-observer-acceptance) |
+
+**当前双路遥测。** 车端可配置两个接收地址。默认第一路发往 `127.0.0.1:10000`，`--observer-host` 和 `--observer-port` 指定第二路。A 加观察端时填观察端的接收地址和端口，A 加 B 时填 B 的接收地址和端口。若 B 在本机监听 `10002`，第二路就发往 `127.0.0.1:10002`。同机每个窗口用各自的端口。连接表单配置本窗口的监听，车端启动参数配置发送目的地。 [二维用户版自动登记计划](docs/development-roadmap.md#multi-desktop-telemetry)
 
 打包人员在 Windows 项目根目录执行：
 
