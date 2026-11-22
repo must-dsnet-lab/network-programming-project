@@ -568,13 +568,22 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 
 ### 4.6 U2 图形化连接配置
 
-桌面控制台右侧的「连接设置」可切到高级或专家模式。原来的[安全启动命令](#secure-desktop-local-acceptance)仍可用于实验复现。想直接打开连接表单时，在项目根目录运行：
+桌面控制台右侧的「连接设置」可切到高级或专家模式。先在项目根目录启动对应模式的车端，保留车端终端，再打开桌面连接表单。
 
 ```powershell
+# 车端窗口任选一种
+# 高级模式
+.\.venv\Scripts\python.exe -X utf8 -B -m rover.vehicle.app --secure --cert-dir '.\local\certs' --credentials-file '.\local\trusted_clients.json'
+# 专家模式
+.\.venv\Scripts\python.exe -X utf8 -B -m rover.vehicle.app --secure --expert-management --cert-dir '.\local\certs' --credentials-file '.\local\trusted_clients.json'
+
+# 另开窗口，直接打开桌面连接表单
 .\.venv\Scripts\python.exe -X utf8 -B -m rover.desktop.app --connect
 ```
 
-1. 启动[正式车端](#secure-desktop-integration)。在表单选择与车端一致的模式，填写车端地址、管理 TCP 端口和控制 UDP 端口。回环默认使用 `127.0.0.1`、`19177` 和 `9999`。
+高级车端显示 `Management TLS listening`，专家车端显示 `Expert management TLS listening`。两者共用默认端口。切换时先正常停车，再结束旧车端。直接连接但尚未启动车端时，桌面会显示「无法连接车端」。
+
+1. 在表单选择与[正式车端](#secure-desktop-integration)一致的模式，填写车端地址、管理 TCP 端口和控制 UDP 端口。回环默认使用 `127.0.0.1`、`19177` 和 `9999`。
 2. 填写桌面本机的遥测接收地址和端口，供车端投递。回环默认 `127.0.0.1:10000`。跨机时填写桌面接收接口，端口与车端的遥测目的端口一致。若多个车端进程共用一台电脑，为它们分配不同的遥测接收端口。
 3. 选择车端项目 CA 的公开 `ca.pem`，输入实验账号与凭据。证书名称可留空自动匹配车端地址，默认回环用 `localhost`。跨机证书名称按[部署和证书说明](#vmware-lan-acceptance)核对。
 4. 点击「连接」，等待 TLS 就绪和该车端的首条遥测。高级模式可显式应用目标。专家模式先申请控制权，再点「开始／应用」。
@@ -590,6 +599,8 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 | TLS 握手失败或管理协议异常 | 核对连接端口与两端选择的安全模式 |
 
 **本机证据（2026-11-23）**。Windows 11、Python 3.12.10，以 PR #35 的功能提交 `28ea698` 为基线。独立运行正式高级车端与专家车端，使用真实 TLS/UDP 和离屏 Qt。高级表单连接后观察到 `0.00 → 0.70 → 0.00 m/s`，断开后遥测继续，重连保持零速。分别输入错误证书名称、错误测试凭据和未监听的管理端口，界面显示对应提示。专家表单完成认证后显示待申请，车辆保持零速。专项 **85 项**、全量 **533 项**通过。截图和原始日志保存在本机 `local/u2-tests/loopback-20261123-021311741768/` 供核对。
+
+**项目负责人手测（2026-11-23）**。在 Windows 本机用 `eeff448` 简单试跑高级和专家模式，反馈两种模式均正常。此轮记录为本机手动试跑。双端交接与物理双机现场用例详见集中验收。
 
 [组员复跑清单](docs/team-acceptance.md#2-组内复跑) · [表单](src/rover/desktop/connection_dialog.py) · [配置读写](src/rover/desktop/connection_profile.py)
 
