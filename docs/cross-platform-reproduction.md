@@ -1,17 +1,23 @@
 # 非 Windows 环境复现指南
 
-**基线** `main` · `e4d1b59` · 对标 [README 第 7 章](../README.md) 的 Windows 双终端流程
+**基线** `main` · `e4d1b59` · 实测环境 macOS 26.0.1 / Apple M2 / Python 3.14.8 / OpenSSL 3.5.9 · 实测日期 2026-11-22
 
 README 的正式复现命令全部以 PowerShell 和 `.\.venv\Scripts\python.exe` 给出，这是 Windows 上的权威路径。本文件补齐 macOS 与 Linux 的等价路径，供协议层开发、编解码回归和跨系统联调查阅。Windows 上仍以 [README](../README.md) 为准，两者命令不同但验收条件相同。
 
 ## 1. 实测状态
 
-| 环节 | macOS 26 / Apple M2 | Linux | Windows |
+| 环节 | macOS 26.0.1 / Apple M2 | Linux | Windows |
 | --- | --- | --- | --- |
-| 全量回归（无 GUI） | 实测 `Ran 365 tests` 通过，2 项因缺 PySide6 报错 | 未实测 | 387 项通过（README 记录） |
+| 协议层回归（不装 Qt） | 实测 `Ran 363 tests` 全部通过（40 个非 GUI 模块） | 未实测 | 387 项通过（README 记录） |
+| 全量回归（装 PySide6 后） | 实测 `Ran 392 tests` 全部通过 | 未实测 | 387 项通过（README 记录） |
 | 车端安全模式启动 | 实测通过，TLS 1.3 握手与证书链校验通过 | 未实测 | 已验收 |
-| 证书准备 | 实测通过（[new_local_tls.sh](../scripts/new_local_tls.sh)） | 同一脚本 | 已验收（`.ps1`） |
-| 桌面 GUI | 未实测（本机未装 PySide6） | 未实测 | 已验收 |
+| 证书准备 | 实测通过（[new_local_tls.sh](../scripts/new_local_tls.sh)，OpenSSL 3.5.9） | 同一脚本 | 已验收（`.ps1`） |
+| 桌面 GUI | PySide6 6.12.0 安装成功；cocoa 平台创建真实窗口通过；29 项 `test_desktop_*` 通过；**未做人工点击验证** | 未实测 | 已验收 |
+
+两处数字差异说明：
+
+- 392 与 387：README 的记录来自 GUI 合并前的基线，本机实测 392 项含 PR #29 新增的 5 项桌面测试。
+- 363 与 392：不装 Qt 时 `test_desktop_control`、`test_desktop_map` 两个模块导入即失败，全量 discover 会报 2 个 error；只跑非 GUI 模块则 363 项全部通过。命令见 [3.1](#31-协议与回归不需要-gui)。
 
 本表只记录实际跑过的命令与结果。未实测项在提交证据时标为「待补」，不并入已验收结论。
 
@@ -19,12 +25,12 @@ README 的正式复现命令全部以 PowerShell 和 `.\.venv\Scripts\python.exe
 
 ### 2.1 Python 与依赖
 
-要求 Python ≥ 3.12（`pyproject.toml`）。本机实测使用 conda Python 3.14.8，协议层未安装任何第三方包也能直接运行。
+要求 Python ≥ 3.12（`pyproject.toml`）。本机实测使用 conda Python 3.14.8。
 
 ```bash
 cd network-programming-project
 
-# 只做协议层开发与回归：不需要安装，靠 PYTHONPATH 指向 src
+# 只做协议层开发与回归：不需要安装依赖，靠 PYTHONPATH 指向 src
 PYTHONPATH=src python3 -B -m unittest discover -s tests -t . -q
 
 # 需要 GUI 时再建虚拟环境
@@ -33,11 +39,18 @@ python3 -m venv .venv
 python -m pip install -r requirements.txt
 ```
 
-`requirements.txt` 只含 `PySide6==6.12.0`。PySide6 在 macOS 上只发布 `cp310-abi3` 的 `macosx_14_0_universal2` wheel（要求 macOS 14 以上）。abi3 对 3.12+ 的解释器前向兼容，但本机未实际安装验证，装不上时按 [2.4](#24-pySide6-装不上时) 处理。
+`requirements.txt` 只含 `PySide6==6.12.0`。macOS 上该版本只发布 `pyside6-6.12.0-cp310-abi3-macosx_14_0_universal2.whl`（abi3 对 3.12+ 的解释器前向兼容，要求 macOS ≥ 14）。本机实测在 macOS 26.0.1 + Python 3.14.8 下安装成功，整套（含 WebEngine）约占 567 MB。装完用下面两条确认：
+
+```bash
+.venv/bin/python -c "import PySide6; print(PySide6.__version__)"    # 期望 6.12.0
+QT_QPA_PLATFORM=offscreen .venv/bin/python -c "import rover.desktop.app; print('ok')"
+```
+
+第二条必须带 `PYTHONPATH=src` 或先 `pip install -e .`，否则 `rover` 不在导入路径上。
 
 ### 2.2 证书
 
-[new_local_tls.sh](../scripts/new_local_tls.sh) 与 PowerShell 版等价：生成实验 CA、签发服务器证书、校验证书链/名称/SAN/有效期，有效期为 CA 365 天、服务器证书 90 天。
+[new_local_tls.sh](../scripts/new_local_tls.sh) 与 PowerShell 版等价：生成实验 CA、签发服务器证书、校验证书链/名称/SAN/有效期，CA 365 天、服务器证书 90 天。
 
 ```bash
 # 本机回环：SAN = DNS:localhost, IP:127.0.0.1
@@ -47,7 +60,13 @@ bash scripts/new_local_tls.sh
 bash scripts/new_local_tls.sh -o local/certs-lan -i 192.168.1.20
 ```
 
-脚本在目录已存在 TLS 材料时拒绝覆盖，不做自动续期。默认输出 `local/certs`，与示例工具的默认 `--ca-file local/certs/ca.pem` 对齐。
+脚本在**写任何文件之前**完成三项检查，任何一项不过都直接退出、不留下半套材料：
+
+1. **OpenSSL 版本**：低于 3.0 或检测到 LibreSSL 时拒绝执行（脚本用到 3.x 的 `-noenc`）。macOS 自带的 `/usr/bin/openssl` 是 LibreSSL，需要装 OpenSSL 3 并用 `OPENSSL=` 指过去，或让它排在 PATH 前面。
+2. **IPv4 格式**：`-i` 必须是四段 0-255、不带前导零的具体地址（`192.168.01.20` 这类带前导零的写法会被拒，避免被当成八进制解读）。
+3. **输出目录**：目录内已有 TLS 材料时拒绝覆盖，不做自动续期。
+
+生成过程在输出目录旁边的临时目录里进行，链校验、主机名校验和每个 SAN IP 都通过后，才整体搬到输出目录；中途失败临时目录会被清理掉。私钥落盘后权限为 `600`。
 
 ### 2.3 可信客户端
 
@@ -61,20 +80,39 @@ bash scripts/new_local_tls.sh -o local/certs-lan -i 192.168.1.20
 
 `local/` 已被根目录 `.gitignore` 排除。提交前用 `git check-ignore -v local/certs/server.key` 复核私钥不在版本库里。
 
+**跨机时桌面端只需要复制 `ca.pem` 这一个公开文件**，供其校验车端证书；`ca.key`、`server.key` 留在车端机器上，不要复制过去。
+
 ### 2.4 PySide6 装不上时
 
 按顺序试：
 
 1. 确认 macOS ≥ 14、Python ≥ 3.12；
 2. 改用 Python 3.12 或 3.13 的独立环境（wheel 的 abi3 分支最稳）；
-3. 跳过 GUI，只用车端与示例客户端验证协议：`python -m rover.vehicle.app` 不依赖 PySide6。
+3. 跳过 GUI，只用车端与示例客户端验证协议：`python -m rover.vehicle.app` 不依赖 PySide6，见 [3.1](#31-协议与回归不需要-gui)。
 
 ## 3. 三条验证路径
 
 ### 3.1 协议与回归（不需要 GUI）
 
+**未装 Qt 时**只跑非 GUI 模块，40 个模块共 363 项：
+
 ```bash
-PYTHONPATH=src python3 -B -m unittest discover -s tests -t . -q
+PYTHONPATH=src python3 -B -m unittest \
+  $(ls tests/test_*.py | grep -v desktop | sed 's#tests/#tests.#; s#\.py$##')
+```
+
+直接把全量 discover 跑在无 Qt 环境上会报 2 个 error（`test_desktop_control`、`test_desktop_map` 导入失败），这不是协议层的问题。
+
+**装好 Qt 之后**跑全量，392 项：
+
+```bash
+PYTHONPATH=src .venv/bin/python -B -m unittest discover -s tests -t . -q
+```
+
+带 GUI 的测试在无显示器环境需要 `QT_QPA_PLATFORM=offscreen`：
+
+```bash
+QT_QPA_PLATFORM=offscreen PYTHONPATH=src .venv/bin/python -B -m unittest discover -s tests -t . -q
 ```
 
 专项测试按影响范围选取，例如只改管理协议时：
@@ -85,15 +123,15 @@ PYTHONPATH=src python3 -B -m unittest -v tests.test_management_codec tests.test_
   tests.test_windowed_control_codec tests.test_telemetry_codec
 ```
 
-带 GUI 的测试在无显示器环境需要 `QT_QPA_PLATFORM=offscreen`：
-
-```bash
-QT_QPA_PLATFORM=offscreen PYTHONPATH=src python3 -B -m unittest discover -s tests -t . -q
-```
-
 ### 3.2 本机单机闭环（车端 + 桌面）
 
-两个终端都在项目根目录。车端：
+两个终端都在项目根目录。**首次启动前先建好日志目录**，否则车端会因为打不开事件日志文件直接退出：
+
+```bash
+mkdir -p local/events
+```
+
+车端：
 
 ```bash
 PYTHONPATH=src python3 -B -m rover.vehicle.app \
@@ -110,6 +148,8 @@ PYTHONPATH=src python3 -B -m rover.desktop.app \
   --ca-file ./local/certs/ca.pem \
   --client-id desktop-a
 ```
+
+本机回环时遥测监听地址默认就是 `127.0.0.1`，可以不写 `--telemetry-bind-host`。
 
 只验证 TLS 与管理握手、不启 GUI 时，用示例客户端：
 
@@ -135,15 +175,23 @@ PYTHONPATH=src python3 -B -m rover.vehicle.app \
   --bind-host 192.168.1.20 --telemetry-host 192.168.1.10
 ```
 
-桌面端连过去，证书 SAN 必须包含 `192.168.1.20`，否则 TLS 校验失败：
+桌面端连过去。**双机时 `--telemetry-bind-host` 必须写成桌面端自己的局域网地址**，不能留默认的 `127.0.0.1` —— 车端是把遥测 UDP 包发到这个地址的，绑在回环上就收不到：
 
 ```bash
 PYTHONPATH=src python3 -B -m rover.desktop.app \
   --secure --vehicle-host 192.168.1.20 \
+  --telemetry-bind-host 192.168.1.10 --telemetry-port 10000 \
   --ca-file ./local/certs-lan/ca.pem --client-id desktop-a
 ```
 
-端口默认：管理 `19177/TCP`、控制 `9999/UDP`、遥测 `10000/UDP`、观察者 `10001/UDP`。跨机时确认这两个 UDP 端口在两端防火墙放行。
+两个参数分工容易混：
+
+- `--vehicle-host` 决定**连到哪个地址**（TCP 管理连接与 UDP 控制都发往这里）；
+- `--server-name` 只决定**用哪个名字做证书校验**（SNI 与 hostname 校验），不改变连接地址；不写时回落到 `--vehicle-host`。
+
+所以连 `192.168.1.20` 时，最省事的做法是签发证书时把该 IP 写进 SAN（`-i 192.168.1.20`），让缺省的 `--server-name` 直接用 IP 通过校验。如果证书里只有 `DNS:localhost` 而你必须连 IP，可以单独写 `--server-name localhost` 让它按证书上的名字校验——这时连接地址仍然是 `--vehicle-host`。
+
+端口默认：管理 `19177/TCP`、控制 `9999/UDP`、遥测 `10000/UDP`、观察者 `10001/UDP`。跨机时确认这些端口在两端防火墙放行。
 
 ## 4. 常见故障
 
@@ -151,21 +199,26 @@ PYTHONPATH=src python3 -B -m rover.desktop.app \
 | --- | --- | --- |
 | `ModuleNotFoundError: No module named 'rover'` | 没设 `PYTHONPATH` | 命令前加 `PYTHONPATH=src`，或在 venv 里 `pip install -e .` |
 | `ModuleNotFoundError: No module named 'PySide6'` | 未装 GUI 依赖 | 只跑车端可忽略；跑桌面或 `test_desktop_*` 需安装 |
+| `vehicle startup failed: [Errno 2] No such file or directory: '.../local/events/xxx.csv'` | 事件日志目录不存在，车端不会自动创建 | `mkdir -p local/events` 后重启 |
+| `需要 OpenSSL 3.0 或更高，当前是 LibreSSL` | macOS 自带的 `/usr/bin/openssl` 是 LibreSSL | 装 OpenSSL 3，用 `OPENSSL=<路径> bash scripts/new_local_tls.sh`，或调整 PATH |
+| `ServerIp 必须是具体 IPv4 地址` | `-i` 写错或带前导零 | 核对四段地址，例如 `192.168.1.20` |
 | `ssl.SSLCertVerificationError: certificate verify failed` | `--ca-file` 与车端 `--cert-dir` 不是同一套证书 | 两边指向同一次脚本输出 |
-| `hostname '...' doesn't match` | 连接地址不在证书 SAN 里 | 重签证书时用 `-i <该地址>`，或让桌面端 `--server-name localhost` 走回环 |
+| `hostname '...' doesn't match` | 证书 SAN 里没有实际连接用的地址或名字 | 重签证书时用 `-i <该地址>`；或按 [3.3](#33-双机linux-车端--macos-桌面) 用 `--server-name` 单独指定校验名（连接地址仍由 `--vehicle-host` 决定） |
+| 双机时桌面端收不到遥测 | `--telemetry-bind-host` 留了默认的 `127.0.0.1` | 改成桌面端自己的局域网地址 |
 | `[Errno 48] Address already in use` | 上一次进程没退干净 | `lsof -i :19177` 后结束进程 |
 | 桌面端卡在输入提示不动 | `getpass` 在非终端环境读不到输入 | 在终端里直接启动 |
 | Linux 上桌面端起不来、报 Qt 平台插件错误 | 无显示器 | `QT_QPA_PLATFORM=offscreen`，或用 X11 转发 |
 
 ## 5. 证据采集
 
-- 车端事件日志：`--event-log <新文件>`，CSV，一次运行一个新文件，历史记录不被覆盖。
+- 车端事件日志：`--event-log <新文件>`，CSV，一次运行一个新文件，历史记录不被覆盖；父目录必须已存在。
 - 管理 RTT 与重连计时：`examples/demo_management_metrics.py --output <CSV>`，同时给出样本数、P50/P95。
 - 实验归档沿用 `local/a-tests/`、`local/n-tests/` 的编号，原始 CSV 与配置留在本地，不进版本库。
-- 报告中标注实际命令、操作系统、Python 版本、Git 提交与连接方式（本机回环 / VMware / 物理双机）。
+- 报告中标注实际命令、操作系统版本（本机 `macOS 26.0.1`，`uname -sr` 可复核）、Python 版本、OpenSSL 版本、Git 提交与连接方式（本机回环 / VMware / 物理双机）。
 
 ## 6. 已知限制
 
-- 桌面 GUI 与非 Windows 全量回归尚未实测，本文档的 GUI 命令按源码参数整理，未经运行验证。
+- 桌面 GUI 只验证到「PySide6 装成功 + cocoa 平台能创建可见窗口 + 29 项桌面测试通过」，**没有做人工点击与端到端操作验证**；Linux 与 Windows 上的 GUI 未实测。
+- 双机路径（Linux 车端 + macOS 桌面）按源码参数与默认值整理，未在本机实测。
 - `scripts/new_local_tls.sh` 只覆盖首次准备，不处理证书续期与轮换；续期需要重新生成并同步两端的信任文件。
 - TLS 是单向认证：车端出示证书，桌面端用 `client_id/credential` 做应用层认证，桌面端不提供客户端证书。

@@ -9,6 +9,9 @@
 #
 # 默认有效期与 PowerShell 版一致：CA 365 天，服务器证书 90 天。
 # 目录中已有 TLS 材料时拒绝覆盖（本脚本只负责首次准备，不做续期）。
+# 材料先在临时目录生成并自检，全部通过后才落到输出目录；中途失败不会留下半套材料。
+#
+# 依赖 OpenSSL 3.0 或更高（用到 3.x 的 -noenc 参数，以及 1.1.1+ 的 -verify_ip）。
 
 set -euo pipefail
 
@@ -16,10 +19,16 @@ OPENSSL="${OPENSSL:-openssl}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_DIR="$SCRIPT_DIR/../local/certs"
 SERVER_IP=""
+WORK_DIR=""
 
 usage() {
-    sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+    sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//'
     exit "${1:-0}"
+}
+
+fail() {
+    echo "$1" >&2
+    exit 1
 }
 
 while getopts ":ho:i:" opt; do
@@ -31,22 +40,54 @@ while getopts ":ho:i:" opt; do
     esac
 done
 
-command -v "$OPENSSL" >/dev/null 2>&1 || {
-    echo "找不到 OpenSSL: $OPENSSL" >&2
-    exit 1
+# ---- 前置检查：都在写任何文件之前完成 ----
+
+command -v "$OPENSSL" >/dev/null 2>&1 || fail "找不到 OpenSSL: $OPENSSL"
+
+OPENSSL_VERSION="$("$OPENSSL" version 2>/dev/null || true)"
+case "$OPENSSL_VERSION" in
+    LibreSSL*)
+        fail "需要 OpenSSL 3.0 或更高，当前是 LibreSSL: $OPENSSL_VERSION
+macOS 自带的 /usr/bin/openssl 就是 LibreSSL。先安装 OpenSSL 3（例如 brew install openssl@3），
+再用 OPENSSL=/opt/homebrew/opt/openssl@3/bin/openssl 重跑，或把它放进 PATH 靠前的位置。"
+        ;;
+    "OpenSSL "*)
+        OPENSSL_MAJOR="${OPENSSL_VERSION#OpenSSL }"
+        OPENSSL_MAJOR="${OPENSSL_MAJOR%%.*}"
+        if ! printf '%s' "$OPENSSL_MAJOR" | grep -Eq '^[0-9]+$' || [ "$OPENSSL_MAJOR" -lt 3 ]; then
+            fail "需要 OpenSSL 3.0 或更高，当前版本: $OPENSSL_VERSION"
+        fi
+        ;;
+    *)
+        fail "无法识别 OpenSSL 版本输出: ${OPENSSL_VERSION:-<空>}"
+        ;;
+esac
+
+# IPv4 校验：四段十进制、每段 0-255、不带前导零（带前导零在部分工具里会被当作八进制）
+is_ipv4() {
+    local ip="$1" octet
+    printf '%s' "$ip" | grep -Eq '^[0-9]{1,3}(\.[0-9]{1,3}){3}$' || return 1
+    local IFS=.
+    for octet in $ip; do
+        if [ "${#octet}" -gt 1 ] && [ "${octet#0}" != "$octet" ]; then
+            return 1
+        fi
+        [ "$octet" -le 255 ] || return 1
+    done
+    return 0
 }
 
 # 服务器证书里的 IP 列表：回环始终在内，另可追加一个具体 IPv4
 SERVER_IPS=("127.0.0.1")
 if [ -n "$SERVER_IP" ]; then
-    if ! printf '%s' "$SERVER_IP" | grep -Eq '^([0-9]{1,3}\.){3}[0-9]{1,3}$'; then
-        echo "ServerIp 必须是具体 IPv4 地址，例如 192.168.1.20" >&2
-        exit 1
+    if ! is_ipv4 "$SERVER_IP"; then
+        fail "ServerIp 必须是具体 IPv4 地址（四段 0-255、不带前导零），例如 192.168.1.20
+收到: $SERVER_IP"
     fi
-    if [ "$SERVER_IP" = "0.0.0.0" ]; then
-        echo "ServerIp 不能是 0.0.0.0" >&2
-        exit 1
-    fi
+    case "$SERVER_IP" in
+        0.0.0.0) fail "ServerIp 不能是 0.0.0.0，它不是可连接的具体地址" ;;
+        255.255.255.255) fail "ServerIp 不能是广播地址 255.255.255.255" ;;
+    esac
     if [ "$SERVER_IP" != "127.0.0.1" ]; then
         SERVER_IPS+=("$SERVER_IP")
     fi
@@ -58,22 +99,38 @@ for ip in "${SERVER_IPS[@]}"; do
 done
 
 # 相对路径按调用者的当前目录解析，避免 cd 到脚本目录后输出位置错乱
-mkdir -p "$OUT_DIR"
-OUT_DIR="$(cd "$OUT_DIR" && pwd)"
+PARENT_DIR="$(dirname "$OUT_DIR")"
+mkdir -p "$PARENT_DIR"
+PARENT_DIR="$(cd "$PARENT_DIR" && pwd)"
+OUT_DIR="$PARENT_DIR/$(basename "$OUT_DIR")"
 
-for name in ca.key ca.pem ca.srl server.key server.csr server.pem tls.cnf; do
+if [ -e "$OUT_DIR" ] && [ ! -d "$OUT_DIR" ]; then
+    fail "输出路径已存在且不是目录: $OUT_DIR"
+fi
+
+MATERIALS=(ca.key ca.pem ca.srl server.key server.csr server.pem tls.cnf)
+for name in "${MATERIALS[@]}"; do
     if [ -e "$OUT_DIR/$name" ]; then
-        echo "TLS 材料已存在，请换一个输出目录: $OUT_DIR" >&2
-        exit 1
+        fail "TLS 材料已存在，请换一个输出目录: $OUT_DIR"
     fi
 done
 
-TLS_CNF="$OUT_DIR/tls.cnf"
-CA_KEY="$OUT_DIR/ca.key"
-CA_CERT="$OUT_DIR/ca.pem"
-SERVER_KEY="$OUT_DIR/server.key"
-SERVER_CSR="$OUT_DIR/server.csr"
-SERVER_CERT="$OUT_DIR/server.pem"
+# ---- 在临时目录里生成，全部通过后再落地 ----
+
+WORK_DIR="$(mktemp -d "$PARENT_DIR/.tls-build.XXXXXX")"
+cleanup() {
+    if [ -n "${WORK_DIR:-}" ] && [ -d "$WORK_DIR" ]; then
+        rm -rf "$WORK_DIR"
+    fi
+}
+trap cleanup EXIT
+
+TLS_CNF="$WORK_DIR/tls.cnf"
+CA_KEY="$WORK_DIR/ca.key"
+CA_CERT="$WORK_DIR/ca.pem"
+SERVER_KEY="$WORK_DIR/server.key"
+SERVER_CSR="$WORK_DIR/server.csr"
+SERVER_CERT="$WORK_DIR/server.pem"
 
 cat >"$TLS_CNF" <<EOF
 [req]
@@ -96,7 +153,7 @@ authorityKeyIdentifier = keyid,issuer
 EOF
 
 run_openssl() {
-    "$OPENSSL" "$@"
+    "$OPENSSL" "$@" || fail "OpenSSL 命令失败: $OPENSSL $*"
 }
 
 run_openssl req -x509 -newkey rsa:2048 -noenc -sha256 \
@@ -111,6 +168,8 @@ run_openssl x509 -req -in "$SERVER_CSR" -CA "$CA_CERT" -CAkey "$CA_KEY" \
     -CAcreateserial -out "$SERVER_CERT" -days 90 -sha256 \
     -extfile "$TLS_CNF" -extensions server_ext
 
+# ---- 自检：链、用途、名称、每个 SAN 里的 IP 都要过 ----
+
 run_openssl verify -CAfile "$CA_CERT" -purpose sslserver \
     -verify_hostname localhost "$SERVER_CERT"
 
@@ -119,8 +178,21 @@ for ip in "${SERVER_IPS[@]}"; do
         -verify_ip "$ip" "$SERVER_CERT"
 done
 
-# 只保留车端启动需要读的文件，中间产物（CSR、CA 序号、配置）一并留下便于复核
-run_openssl x509 -in "$SERVER_CERT" -noout -dates -ext subjectAltName
+chmod 600 "$CA_KEY" "$SERVER_KEY"
+
+# ---- 自检全过，才把材料落到输出目录 ----
+
+if [ -d "$OUT_DIR" ]; then
+    mv "$WORK_DIR"/* "$OUT_DIR"/
+    rmdir "$WORK_DIR"
+else
+    mv "$WORK_DIR" "$OUT_DIR"
+fi
+WORK_DIR=""
+
+"$OPENSSL" x509 -in "$OUT_DIR/server.pem" -noout -dates -ext subjectAltName
 
 echo "TLS files: $OUT_DIR"
+echo "已生成的私钥权限为 600（仅本人可读）。"
 echo "接下来创建 $OUT_DIR/../trusted_clients.json，内容形如 {\"desktop-a\": \"test-secret-a\"}"
+echo "桌面端只需要 $OUT_DIR/ca.pem，不要复制 ca.key / server.key。"
