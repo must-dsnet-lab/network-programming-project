@@ -130,6 +130,10 @@ class DesktopConsole(QWidget):
         self.control_sock = None #发送
 
         try:
+            # Windows can otherwise bind a specific IPv4 address over a wildcard receiver.
+            exclusive = getattr(socket, "SO_EXCLUSIVEADDRUSE", None)
+            if exclusive is not None:
+                self.sock.setsockopt(socket.SOL_SOCKET, exclusive, 1)
             self.sock.setblocking(False)
             self.sock.bind(self.listen_address)
             if self.listen_address[1] == 0:
