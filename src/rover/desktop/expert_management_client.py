@@ -105,6 +105,8 @@ class ExpertManagementClient:
             self._invalid_reply("invalid account role")
         if "telemetry_registered" in reply and type(reply["telemetry_registered"]) is not bool:
             self._invalid_reply("invalid telemetry registration status")
+        if "drive_input_supported" in reply and type(reply["drive_input_supported"]) is not bool:
+            self._invalid_reply("invalid driving input capability")
         if "transfer_candidates" in reply:
             candidates = reply["transfer_candidates"]
             if (

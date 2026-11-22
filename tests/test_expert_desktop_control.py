@@ -3,6 +3,7 @@ from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
+from PySide6.QtCore import QEvent
 from PySide6.QtWidgets import QApplication
 
 from rover.core.control_target import ControlTarget
@@ -118,6 +119,52 @@ class TestExpertDesktopControl(unittest.TestCase):
         self.assertEqual(window.operator_label.text(), "当前账号：desk-a · 观察员（只读）")
         self.assertIn("停止接收遥测", window.disconnect_button.toolTip())
         self.assertEqual(self.window.windowTitle(), "虚拟小车 · 专家控制台")
+
+    def test_product_driving_requires_vehicle_support_and_rearms_after_focus_loss(self):
+        self.set_status(phase="held", allowed=("set_authority_enabled",), owns=True, number=1, holder="desk-a")
+        authority = self.worker.status.return_value.authority
+        authority.account_role = "operator"
+        window = DesktopConsole(secure_worker=self.worker, expert_mode=True, register_expert_telemetry=True)
+        self.addCleanup(dispose_widget, window)
+        self.assertTrue(window.drive_mode_picker.isHidden())
+        authority.drive_input_supported = True
+        window.last_received_s = 1.0
+        window.poll_secure_status()
+        self.assertFalse(window.drive_mode_picker.isHidden())
+        window.drive_mode_picker.setCurrentIndex(1)
+        self.assertFalse(window.driving_controls.isEnabled())
+        window.start_control()
+        self.assertTrue(window.driving_controls.isEnabled())
+        self.assertEqual(window.current_target.brake, 0.0)
+
+        QApplication.sendEvent(window, QEvent(QEvent.Type.WindowDeactivate))
+        self.assertFalse(window.driving_controls.isEnabled())
+        self.assertEqual(window.current_target.brake, 1.0)
+        self.assertEqual(self.worker.apply_target.call_args.args[0], window.current_target)
+        window._sample_driving_input()
+        self.assertEqual(self.worker.apply_target.call_count, 2)
+
+        window.start_control()
+        self.assertTrue(window.driving_controls.isEnabled())
+        self.assertEqual(window.current_target.brake, 0.0)
+        stopped = self.worker.status.return_value
+        stopped.state = "stopped"
+        stopped.detail = "control window unavailable"
+        window.poll_secure_status()
+        self.assertFalse(window.driving_controls.isEnabled())
+        self.assertIsNone(window.current_target)
+        window._sample_driving_input()
+        self.assertEqual(self.worker.apply_target.call_count, 3)
+
+        stopped.state = "ready"
+        stopped.detail = ""
+        window.poll_secure_status()
+        window.start_control()
+        self.assertTrue(window.driving_controls.isEnabled())
+        self.set_status(phase="idle")
+        window.poll_secure_status()
+        self.assertFalse(window.driving_controls.isEnabled())
+        self.assertIsNone(window.current_target)
 
     def test_renewal_pending_leaves_local_stop_available(self):
         self.report_telemetry()

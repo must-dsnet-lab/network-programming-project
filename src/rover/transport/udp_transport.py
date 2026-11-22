@@ -1,6 +1,7 @@
 import socket
 from collections.abc import Callable
 
+from rover.core.driving import ControlIntent
 from rover.protocol.control_codec import (
     ControlCommand,
     decode_authenticated_command,
@@ -14,7 +15,6 @@ from rover.protocol.control_codec import (
     encode_target,
     encode_windowed_command,
 )
-from rover.core.control_target import ControlTarget
 from rover.protocol.telemetry_codec import (
     TelemetrySnapshot,
     decode_telemetry,
@@ -33,7 +33,7 @@ class NoActiveControlKeyError(ValueError):
 # 发送一份期望状态，返回发送字节数
 def send_target(
     sock: socket.socket,  # 网络电话机
-    target: ControlTarget,
+    target: ControlIntent,
     address: tuple[str, int],  # IP + 端口
 ) -> int:  # 返回发送的字节数
     packet = encode_target(target)
@@ -43,7 +43,7 @@ def send_target(
 
 def receive_target(
     sock: socket.socket,
-) -> tuple[ControlTarget, tuple[str, int]]:
+) -> tuple[ControlIntent, tuple[str, int]]:
     # recvfrom() 返回收到的字节和发送端地址，再交给 decode_target() 校验、还原
     # 真正的数据由 recvfrom() 从操作系统的 Socket 接收队列中取得
     packet, peer = sock.recvfrom(UDP_RECEIVE_BUFFER_BYTES)
@@ -53,7 +53,7 @@ def receive_target(
 
 def try_receive_target(
     sock: socket.socket,
-) -> tuple[ControlTarget, tuple[str, int]] | None:
+) -> tuple[ControlIntent, tuple[str, int]] | None:
     """尝试接收一次；要求调用方已设置 sock.setblocking(False)。"""
     try:
         return receive_target(sock)

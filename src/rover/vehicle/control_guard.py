@@ -1,6 +1,6 @@
 from dataclasses import dataclass, field, replace
 
-from rover.core.control_target import ControlTarget
+from rover.core.driving import ControlIntent
 from rover.vehicle.control_watchdog import CONTROL_TIMEOUT_S, AcceptedTarget
 from rover.protocol.control_codec import ControlCommand
 from rover.vehicle.control_authority import AuthorityPhase, ControlAuthority
@@ -27,7 +27,7 @@ class ControlGuardState:
 def update_control_guard(
     guard: ControlGuardState,
     now_s: float,
-    incoming: ControlTarget | None = None,  # 速度、朝向
+    incoming: ControlIntent | None = None,
 ) -> ControlGuardState:
     if guard.fault_latched:
         return guard #封锁之后，返回原状态

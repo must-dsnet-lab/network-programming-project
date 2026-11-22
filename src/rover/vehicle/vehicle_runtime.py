@@ -1,4 +1,5 @@
 from rover.core.control_target import apply_target
+from rover.core.driving import DriveInput, advance_driving
 from rover.vehicle.control_watchdog import AcceptedTarget, target_for_tick
 from rover.core.vehicle_model import VehicleState, advance
 
@@ -12,5 +13,7 @@ def step_vehicle(
     dt_s: float,
 ) -> VehicleState:
     target = target_for_tick(state, last_accepted, now_s)
+    if isinstance(target, DriveInput):
+        return advance_driving(state, target, dt_s)
     controlled_state = apply_target(state, target)
     return advance(controlled_state, dt_s)

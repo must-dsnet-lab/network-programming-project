@@ -7,6 +7,7 @@ from pathlib import Path
 from PySide6.QtCore import QObject, QStandardPaths, QTimer, Slot
 from PySide6.QtWidgets import QDialog, QMessageBox
 
+from rover.core.driving import DriveInput
 from rover.desktop.connection_dialog import ConnectionDialog, ConnectionSelection
 from rover.desktop.connection_profile import (
     DesktopConnectionSettings,
@@ -118,7 +119,12 @@ class DesktopConnectionFlow(QObject):
         if self._window is None or self._pending is not None:
             return
         current = self._window.current_target
-        if current is not None and current.speed_mps != 0.0:
+        if isinstance(current, DriveInput):
+            state = self._window.map.state
+            moving = current.brake < 1.0 or state is None or state.speed_mps != 0.0
+        else:
+            moving = current is not None and current.speed_mps != 0.0
+        if moving:
             QMessageBox.information(self._window, "车辆控制进行中", "请先停车或断开连接，再打开连接设置。")
             return
 

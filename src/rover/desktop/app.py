@@ -8,10 +8,12 @@ from math import radians
 from collections.abc import Callable
 
 from rover.core.control_target import ControlTarget
-from PySide6.QtCore import Qt, QTime, QTimer, Signal, Slot
+from rover.core.driving import ControlIntent, DriveInput
+from PySide6.QtCore import QEvent, Qt, QTime, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
+    QComboBox,
     QFormLayout,
     QFrame,
     QGridLayout,
@@ -20,6 +22,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QMessageBox,
     QPlainTextEdit,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
     QDoubleSpinBox,
@@ -34,6 +37,7 @@ from rover.desktop.appearance import CONSOLE_STYLE, STATUS_COLORS, desktop_font
 from rover.desktop.connection_flow import DesktopConnectionFlow
 from rover.desktop.connection_profile import DesktopConnectionSettings
 from rover.desktop.control_worker import SecureControlWorker
+from rover.desktop.driving_controls import DrivingControls
 from rover.desktop.expert_control_worker import ExpertAuthorityStatus, ExpertControlWorker
 from rover.desktop.local_vehicle import LocalVehicleProcess, LocalVehicleStartupError
 from rover.desktop.secure_connection import connect_expert_management, connect_management
@@ -95,6 +99,7 @@ class DesktopConsole(QWidget):
         self.expert_mode = expert_mode
         self.read_only = read_only
         self.local_demo = local_demo
+        self.driving_controls: DrivingControls | None = None
         self._local_vehicle: LocalVehicleProcess | None = None
         self._local_telemetry_source: tuple[str, int] | None = None
         self._require_initial_telemetry = expert_mode or require_initial_telemetry
@@ -127,7 +132,7 @@ class DesktopConsole(QWidget):
         self.telemetry_timeout_s = 1.0
 
         self.control_address = ("127.0.0.1", 9999)
-        self.current_target: ControlTarget | None = None
+        self.current_target: ControlIntent | None = None
 
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #接收
         self.control_sock = None #发送
@@ -294,13 +299,13 @@ class DesktopConsole(QWidget):
         self.stop_sending_button.setEnabled(enabled)
         if not enabled:
             self.control_timer.stop()
-            self.current_target = None
+            self._clear_current_target()
 
     @Slot()
     def disconnect_management(self) -> None:
         if self.secure_worker is None or self._secure_close_pending:
             return
-        self.current_target = None
+        self._clear_current_target()
         self.secure_worker.close()
         self.poll_secure_status()
 
@@ -339,7 +344,9 @@ class DesktopConsole(QWidget):
             setattr(self, attribute, button)
             self._authority_buttons[action] = button
             actions.addWidget(button)
-        self.auto_renew_checkbox = QCheckBox("移动时自动续期")
+        self.auto_renew_checkbox = QCheckBox(
+            "操纵期间自动续期" if self._register_expert_telemetry else "移动时自动续期"
+        )
         self.auto_renew_checkbox.setToolTip("发送控制目标期间通过 TLS 续期")
         self.auto_renew_checkbox.toggled.connect(self.secure_worker.set_auto_renew)
         self.auto_renew_checkbox.setEnabled(False)
@@ -431,7 +438,9 @@ class DesktopConsole(QWidget):
 
     def _build_controls(self, side):
         side.addWidget(self._label("控制目标", size=17, bold=True))
-        form = QFormLayout()
+        numeric_controls = QWidget()
+        form = QFormLayout(numeric_controls)
+        form.setContentsMargins(0, 0, 0, 0)
         form.setVerticalSpacing(7)
         self.speed_input = QDoubleSpinBox()
         self.speed_input.setRange(-2.0, 2.0)
@@ -447,7 +456,23 @@ class DesktopConsole(QWidget):
         self.heading_input.setMinimumHeight(32)
         form.addRow("目标速度", self.speed_input)
         form.addRow("目标朝向", self.heading_input)
-        side.addLayout(form)
+        if self.local_demo or self._register_expert_telemetry:
+            self.drive_mode_picker = QComboBox()
+            self.drive_mode_picker.setAccessibleName("操纵方式")
+            self.drive_mode_picker.addItems(("数值控制", "二维驾驶"))
+            self.drive_mode_picker.setVisible(self.local_demo)
+            side.addWidget(self.drive_mode_picker)
+            self.driving_controls = DrivingControls()
+            self.driving_controls.setEnabled(False)
+            self._control_pages = QStackedWidget()
+            self._control_pages.addWidget(numeric_controls)
+            self._control_pages.addWidget(self.driving_controls)
+            side.addWidget(self._control_pages)
+            self._drive_update_timer = QTimer(self, interval=50)
+            self._drive_update_timer.timeout.connect(self._sample_driving_input)
+            self.drive_mode_picker.currentIndexChanged.connect(self._set_control_page)
+        else:
+            side.addWidget(numeric_controls)
 
         actions = QGridLayout()
         actions.setColumnStretch(0, 1)
@@ -504,21 +529,74 @@ class DesktopConsole(QWidget):
     def start_control(self):
         if self.read_only or (self.local_demo and not self.start_button.isEnabled()):
             return
+        if self.secure_worker is not None and (
+            self._secure_motion_blocked() or (self.expert_mode and not self.start_button.isEnabled())
+        ):
+            return
+        if self.driving_controls is not None and self.drive_mode_picker.currentIndex() == 1:
+            self._disarm_driving()
+            if self._apply_motion_intent(DriveInput(0.0, 0.0, 0.0)):
+                self.driving_controls.setEnabled(True)
+                self.driving_controls.setFocus()
+                self._drive_update_timer.start()
+                self._append_event("二维驾驶已启用，操作摇杆和踏板")
+            return
         target = ControlTarget(
             speed_mps=self.speed_input.value(),
             heading_rad=radians(self.heading_input.value()),
         )
+        self._apply_motion_intent(target)
+
+    def _apply_motion_intent(self, target: ControlIntent, *, driving_paused: bool = False) -> bool:
         if self.secure_worker is not None:
-            if self._secure_motion_blocked() or (self.expert_mode and not self.start_button.isEnabled()):
-                return
-            if self.secure_worker.apply_target(target):
+            if driving_paused:
+                accepted = self.secure_worker.apply_target(target, driving_paused=True)
+            else:
+                accepted = self.secure_worker.apply_target(target)
+            if accepted:
                 self.current_target = target
             self.poll_secure_status()
-            return
+            return accepted and self.current_target is not None
 
         self.current_target = target
-        self.control_timer.start()  # 进入100ms倒计时，每隔100ms就send_control
-        self.send_control()  # 立即send_control -> 零延迟响应
+        self.control_timer.start()
+        self.send_control()
+        return self.current_target is not None
+
+    def _set_control_page(self, index: int) -> None:
+        self.stop_motion()
+        self._control_pages.setCurrentIndex(index)
+        self.start_button.setToolTip("启用摇杆和踏板" if index else "应用当前输入的目标速度和朝向")
+        self.stop_button.setToolTip("全力制动并暂停驾驶" if index else "将已应用的速度设为零，继续周期发包")
+
+    def _disarm_driving(self) -> None:
+        if self.driving_controls is not None and self._drive_update_timer.isActive():
+            self._drive_update_timer.stop()
+            self.driving_controls.setEnabled(False)
+            self.driving_controls.reset_inputs()
+
+    def _clear_current_target(self) -> None:
+        self.current_target = None
+        self._disarm_driving()
+
+    def _sample_driving_input(self) -> None:
+        if not self._drive_update_timer.isActive():
+            return
+        if self._secure_motion_blocked():
+            self.stop_control()
+            return
+        controls = self.driving_controls.input_value()
+        if controls != self.current_target:
+            self._apply_motion_intent(controls)
+
+    def event(self, event):
+        if (
+            event.type() == QEvent.Type.WindowDeactivate
+            and self.driving_controls is not None and self._drive_update_timer.isActive()
+        ):
+            self.stop_motion()
+            self._append_event("窗口失焦，已暂停驾驶")
+        return super().event(event)
 
     def send_control(self):
         if self.control_sock is None:
@@ -534,10 +612,17 @@ class DesktopConsole(QWidget):
         # 发送端可能因为断网等原因无法发送数据,但桌面不能因此系统崩溃，仍需保留接收车端遥测的能力
         except OSError as exc:
             self.control_timer.stop()
-            self.current_target = None
+            self._clear_current_target()
             self.control_status.setText(f"发送失败：{exc}")
             return
 
+        if isinstance(self.current_target, DriveInput):
+            self.control_status.setText(
+                "已提交全力制动，重新驾驶需点「开始／应用」"
+                if not self._drive_update_timer.isActive() and self.current_target.brake == 1.0
+                else "二维驾驶已启用，按车端遥测确认运动"
+            )
+            return
         self.control_status.setText(
             f"周期发送中：{sent} 字节／包\n"
             f"已应用速度 {self.current_target.speed_mps:.2f} m/s\n"
@@ -547,6 +632,13 @@ class DesktopConsole(QWidget):
     # 保留 current_target 中已应用的朝向，所以输入框里尚未应用的不会生效。
     # 它立即发出零速目标，原定时器继续周期发送。
     def stop_motion(self):
+        if isinstance(self.current_target, DriveInput):
+            self._disarm_driving()
+            if self._apply_motion_intent(DriveInput(0.0, 1.0, 0.0), driving_paused=True):
+                self._append_event("正常停车：已提交全力制动，重新驾驶需点「开始／应用」")
+            else:
+                self.stop_control()
+            return
         if self.secure_worker is not None:
             if self.current_target is None or (self.expert_mode and not self.stop_button.isEnabled()):
                 return
@@ -574,7 +666,7 @@ class DesktopConsole(QWidget):
     # 之后即使触发发送回调，send_control() 的入口检查也会阻止发包。
     def stop_control(self):
         if self.secure_worker is not None:
-            self.current_target = None
+            self._clear_current_target()
             self.secure_worker.stop_sending()
             self.poll_secure_status()
             return
@@ -583,18 +675,18 @@ class DesktopConsole(QWidget):
             return
 
         self.control_timer.stop()
-        self.current_target = None
+        self._clear_current_target()
         self.control_status.setText("已停止发包")
         self._append_event("已停止发包，继续接收遥测")
 
     def request_emergency_stop(self):
         if self.secure_worker.emergency_stop():
-            self.current_target = None
+            self._clear_current_target()
         self.poll_secure_status()
 
     def request_reset(self):
         if self.secure_worker.reset_control():
-            self.current_target = None
+            self._clear_current_target()
             self._reset_feedback = "requested"
         self.poll_secure_status()
 
@@ -621,7 +713,7 @@ class DesktopConsole(QWidget):
         else:
             accepted = getattr(self.secure_worker, action)()
         if accepted and action in ("release_authority", "transfer_authority"):
-            self.current_target = None
+            self._clear_current_target()
         self.poll_secure_status()
 
     def _update_authority_panel(self, authority, allowed_actions, pending):
@@ -697,11 +789,12 @@ class DesktopConsole(QWidget):
             self._reset_feedback = None
         reset_confirmed = self._reset_feedback in ("waiting_for_telemetry", "unlocked")
 
-        if state in (
+        driving_failed = state == "stopped" and bool(snapshot.detail) and isinstance(self.current_target, DriveInput)
+        if driving_failed or state in (
             "stopping", "latched", "resetting", "blocked",
             "failed", "closing", "closed",
         ):
-            self.current_target = None
+            self._clear_current_target()
 
         can_apply = state in ("ready", "sending", "stopped") and not self._secure_motion_blocked()
         can_stop_sending = can_apply and self.current_target is not None
@@ -711,7 +804,7 @@ class DesktopConsole(QWidget):
             owns = authority is not None and authority.owns_authority
             generation = authority.generation if owns else None
             if generation != self._motion_generation:
-                self.current_target = None
+                self._clear_current_target()
                 self._motion_generation = generation
             connected = state not in ("new", "connecting", "failed", "closing", "closed")
             actions = authority.allowed_actions if connected and authority is not None and not pending else frozenset()
@@ -722,10 +815,18 @@ class DesktopConsole(QWidget):
             can_emergency_stop = "emergency_stop" in actions
             can_reset = "reset_control" in actions and self.current_target is None
             self._update_authority_panel(authority if connected else None, actions, pending)
+            if self.driving_controls is not None:
+                can_drive = connected and (
+                    getattr(authority, "account_role", None) == "operator"
+                    and getattr(authority, "drive_input_supported", False) is True
+                )
+                self.drive_mode_picker.setVisible(can_drive)
+                if not can_drive:
+                    self.drive_mode_picker.setCurrentIndex(0)
         has_target = can_apply and self.current_target is not None
         self.start_button.setEnabled(can_apply)
         self.disconnect_button.setEnabled(state not in ("closing", "closed", "failed"))
-        self.stop_button.setEnabled(has_target)
+        self.stop_button.setEnabled(has_target or (can_stop_sending and isinstance(self.current_target, DriveInput)))
         self.stop_sending_button.setEnabled(can_stop_sending)
         self.emergency_stop_button.setEnabled(can_emergency_stop)
         self.reset_button.setEnabled(can_reset)
@@ -748,6 +849,11 @@ class DesktopConsole(QWidget):
         text = labels[state]
         if has_target and state in ("ready", "stopped"):
             text = "控制目标已提交，等待后台发送"
+        elif has_target and state == "sending" and isinstance(self.current_target, DriveInput):
+            text = (
+                "二维驾驶已启用，按车端遥测确认运动" if self.driving_controls.isEnabled()
+                else "已提交全力制动，重新驾驶需点「开始／应用」"
+            )
         elif has_target and state == "sending" and self.current_target.speed_mps == 0:
             text = "正在发送零速目标，按车端遥测确认停车"
         elif reset_confirmed:
@@ -934,6 +1040,7 @@ class DesktopConsole(QWidget):
             return
         self.connection_settings_button.setEnabled(False)
         self.disconnect_button.setEnabled(False)
+        self._disarm_driving()
         if self.secure_worker is not None:
             if not self._secure_close_pending:
                 self._secure_close_pending = True

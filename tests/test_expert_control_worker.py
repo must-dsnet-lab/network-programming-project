@@ -5,6 +5,7 @@ import unittest
 from unittest.mock import MagicMock, patch
 
 from rover.core.control_target import ControlTarget
+from rover.core.driving import DriveInput
 from rover.desktop import expert_control_worker as module
 from rover.protocol.control_codec import AuthorityGeneration
 
@@ -21,6 +22,7 @@ class FakeExpertClient:
         self.window_release = Event()
         self.window_release.set()
         self.window_denial = None
+        self.drive_input_supported = False
 
     def generation(self):
         return {"epoch": "test-run", "number": self.number}
@@ -35,6 +37,7 @@ class FakeExpertClient:
             "phase": self.phase, "owns_authority": owns, "holder_client_id": self.holder,
             "authority_generation": self.generation() if self.holder is not None else None,
             "allowed_actions": actions, "last_authority_result": self.result,
+            **({"drive_input_supported": True} if self.drive_input_supported else {}),
             **({"generation": self.generation(), "lease_remaining_s": self.remaining,
                 "target_session_ids": ["session-b"]} if owns else {}),
         }
@@ -148,6 +151,35 @@ class TestExpertControlWorker(unittest.TestCase):
         packet = self.send.call_args.args[1]
         self.assertEqual(packet.generation.number, 2)
         self.assertEqual(packet.seq, 0)
+
+    def test_driving_waits_for_capability_and_uses_the_current_authority(self):
+        self.setup_worker()
+        self.acquire()
+        controls = DriveInput(0.6, 0.0, -0.2)
+        self.assertFalse(self.worker.apply_target(controls))
+        self.send.assert_not_called()
+
+        self.client.drive_input_supported = True
+        self.wait_until(lambda: self.worker.status().authority.drive_input_supported)
+        self.assertTrue(self.worker.apply_target(controls))
+        self.wait_until(lambda: self.send.called)
+        packet = self.send.call_args.args[1]
+        self.assertEqual(packet.target, controls)
+        self.assertEqual(packet.generation, AuthorityGeneration("test-run", 1))
+
+    def test_full_pedal_can_renew_while_paused_driving_does_not(self):
+        client = FakeExpertClient()
+        client.drive_input_supported = True
+        client.remaining = 0.8
+        self.setup_worker(client)
+        self.acquire()
+        self.worker.set_auto_renew(True)
+        brake = DriveInput(0.0, 1.0, 0.0)
+        self.assertTrue(self.worker.apply_target(brake, driving_paused=True))
+        self.wait_until(lambda: self.send.call_count >= 2)
+        self.assertFalse(any(request[0] == "renew_authority" for request in client.requests))
+        self.assertTrue(self.worker.apply_target(brake))
+        self.wait_until(lambda: any(request[0] == "renew_authority" for request in client.requests))
 
     def test_stop_cancels_first_datagram_while_tls_window_is_pending(self):
         self.setup_worker()

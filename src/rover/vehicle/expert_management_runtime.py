@@ -311,6 +311,7 @@ class ExpertManagementRuntime:
         }
         if self._accounts is not None:
             result["account_role"] = session.role
+            result["drive_input_supported"] = True
             result["telemetry_registered"] = (
                 self._telemetry is not None and self._telemetry.destination(session.session_id) is not None
             )
