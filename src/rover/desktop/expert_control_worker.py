@@ -126,9 +126,12 @@ class ExpertControlWorker:
         self,
         connect: Callable[[], AbstractContextManager[ExpertManagementClient]],
         address: tuple[str, int],
+        *,
+        use_management_peer: bool = False,
     ):
         self._connect = connect
         self._address = address
+        self._use_management_peer = use_management_peer
         self._condition = Condition()
         self._thread = Thread(target=self._run, name="desktop-expert-control")
         self._status = ExpertWorkerStatus("new")
@@ -242,7 +245,8 @@ class ExpertControlWorker:
         try:
             with self._connect() as client, socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
                 udp.setblocking(False)
-                self._run_loop(client, client.open_session(), udp)
+                address = (client.peer_host, self._address[1]) if self._use_management_peer else self._address
+                self._run_loop(client, client.open_session(), udp, address)
         except Exception as error:
             failure = f"{type(error).__name__}: {error}"
         finally:
@@ -310,6 +314,7 @@ class ExpertControlWorker:
 
     def _run_loop(
         self, client: ExpertManagementClient, session_id: str, udp: socket.socket,
+        address: tuple[str, int],
     ) -> None:
         motion = _ExpertMotion()
         next_poll_s = next_send_s = monotonic()
@@ -355,7 +360,7 @@ class ExpertControlWorker:
                     continue
                 if monotonic() >= motion.window_expires_at_s:
                     continue
-                send_expert_control_command(udp, command, self._address, key=motion.key)
+                send_expert_control_command(udp, command, address, key=motion.key)
                 motion.seq += 1
                 sent_intent = intent
                 self._status = replace(self._status, state="sending", detail="")

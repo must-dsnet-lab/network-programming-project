@@ -4,9 +4,10 @@ import socket
 import sys
 from time import monotonic
 from math import radians
+from collections.abc import Callable
 
 from rover.core.control_target import ControlTarget
-from PySide6.QtCore import Qt, QTime, QTimer, Slot
+from PySide6.QtCore import Qt, QTime, QTimer, Signal, Slot
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -28,6 +29,8 @@ from getpass import getpass
 from pathlib import Path
 
 from rover.desktop.appearance import CONSOLE_STYLE, STATUS_COLORS, desktop_font
+from rover.desktop.connection_flow import DesktopConnectionFlow
+from rover.desktop.connection_profile import DesktopConnectionSettings
 from rover.desktop.control_worker import SecureControlWorker
 from rover.desktop.expert_control_worker import ExpertControlWorker
 from rover.desktop.secure_connection import connect_expert_management, connect_management
@@ -67,6 +70,9 @@ AUTHORITY_REASON_LABELS = {
 
 
 class DesktopConsole(QWidget):
+    connection_settings_requested = Signal()
+    console_closed = Signal()
+
     def __init__(
         self,
         *,
@@ -74,15 +80,20 @@ class DesktopConsole(QWidget):
         telemetry_address: tuple[str, int] = ("127.0.0.1", 10000),
         operator_id: str | None = None,
         expert_mode: bool = False,
+        require_initial_telemetry: bool = False,
+        telemetry_peer_host: Callable[[], str | None] | None = None,
     ):
         super().__init__()
         self.secure_worker = secure_worker
         self.operator_id = operator_id
         self.expert_mode = expert_mode
+        self._require_initial_telemetry = expert_mode or require_initial_telemetry
+        self._telemetry_peer_host = telemetry_peer_host
         self._last_authority_overview = None
         self._last_authority_result = None
         self._motion_generation = None
         self._secure_close_pending = False
+        self._close_completed = False
         self._last_secure_state: str | None = None
         self._last_telemetry_fault_latched = False
         self._telemetry_control_suspended = False
@@ -204,6 +215,19 @@ class DesktopConsole(QWidget):
         side.addStretch()
         layout.addWidget(panel)
 
+    def show_connection_actions(self) -> None:
+        self.connection_settings_button.show()
+        if self.secure_worker is not None:
+            self.disconnect_button.show()
+
+    @Slot()
+    def disconnect_management(self) -> None:
+        if self.secure_worker is None or self._secure_close_pending:
+            return
+        self.current_target = None
+        self.secure_worker.close()
+        self.poll_secure_status()
+
     def _build_authority_panel(self, canvas):
         panel = QFrame()
         panel.setFrameShape(QFrame.Shape.StyledPanel)
@@ -305,6 +329,17 @@ class DesktopConsole(QWidget):
         side.addWidget(self.operator_label)
         host, port = self.listen_address
         side.addWidget(self._label(f"遥测监听  {host}:{port}", muted=True))
+        connection_actions = QHBoxLayout()
+        self.connection_settings_button = self._button("连接设置", "选择车端、证书和登录账号")
+        self.connection_settings_button.clicked.connect(self.connection_settings_requested)
+        self.connection_settings_button.hide()
+        connection_actions.addWidget(self.connection_settings_button)
+        self.disconnect_button = self._button("断开", "停止发包并关闭 TLS 管理连接，继续查看遥测")
+        self.disconnect_button.clicked.connect(self.disconnect_management)
+        self.disconnect_button.hide()
+        connection_actions.addWidget(self.disconnect_button)
+        connection_actions.addStretch()
+        side.addLayout(connection_actions)
 
     def _build_controls(self, side):
         side.addWidget(self._label("控制目标", size=17, bold=True))
@@ -582,6 +617,7 @@ class DesktopConsole(QWidget):
             self._update_authority_panel(authority if connected else None, actions, pending)
         has_target = can_apply and self.current_target is not None
         self.start_button.setEnabled(can_apply)
+        self.disconnect_button.setEnabled(state not in ("closing", "closed", "failed"))
         self.stop_button.setEnabled(has_target)
         self.stop_sending_button.setEnabled(can_stop_sending)
         self.emergency_stop_button.setEnabled(can_emergency_stop)
@@ -614,7 +650,7 @@ class DesktopConsole(QWidget):
         elif state in ("ready", "stopped") and self._last_telemetry_fault_latched:
             text = "车端故障已锁存，等待显式复位"
         if snapshot.detail and not reset_confirmed:
-            text += f"：{snapshot.detail}"
+            text += f"：{snapshot.detail.removeprefix('ConnectionSetupError: ')}"
         self.control_status.setText(text)
 
         if state != self._last_secure_state:
@@ -654,7 +690,7 @@ class DesktopConsole(QWidget):
             self._telemetry_control_suspended
             or self._last_telemetry_fault_latched
             or self._reset_feedback == "waiting_for_telemetry"
-            or (self.expert_mode and self.last_received_s is None)
+            or (self._require_initial_telemetry and self.last_received_s is None)
         )
 
     def _set_telemetry_control_suspended(self, suspended: bool) -> None:
@@ -692,7 +728,10 @@ class DesktopConsole(QWidget):
             if received is None:
                 break
 
-            latest, peer = received
+            snapshot, source = received
+            if self._telemetry_peer_host is not None and self._telemetry_peer_host() != source[0]:
+                continue
+            latest, peer = snapshot, source
             self.last_received_s = monotonic()
 
             # 每个合法状态都交给地图，保留中间位置
@@ -727,7 +766,7 @@ class DesktopConsole(QWidget):
         else:
             self._set_telemetry_status("遥测可用", fresh=True)
             self._set_telemetry_control_suspended(False)
-            if self.expert_mode and not had_telemetry:
+            if self._require_initial_telemetry and not had_telemetry:
                 self.poll_secure_status()
             if (
                 awaiting_reset
@@ -740,6 +779,11 @@ class DesktopConsole(QWidget):
 
     # 操作系统会捕捉到用户用鼠标点击窗口右上角的“❌”的动作，并把它告诉 Qt 框架。Qt 框架会自动去寻找 closeEvent 方法
     def closeEvent(self, event):
+        if self._close_completed:
+            event.accept()
+            return
+        self.connection_settings_button.setEnabled(False)
+        self.disconnect_button.setEnabled(False)
         if self.secure_worker is not None:
             if not self._secure_close_pending:
                 self._secure_close_pending = True
@@ -769,12 +813,16 @@ class DesktopConsole(QWidget):
         if self.control_sock is not None:
             self.control_sock.close()
         self.sock.close()
+        self._close_completed = True
         event.accept()
+        self.console_closed.emit()
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="虚拟小车桌面控制台")
-    parser.add_argument("--secure", action="store_true", help="启用安全控制")
+    startup = parser.add_mutually_exclusive_group()
+    startup.add_argument("--secure", action="store_true", help="通过命令行参数启用安全控制")
+    startup.add_argument("--connect", action="store_true", help="打开图形化连接设置")
     parser.add_argument("--expert-management", action="store_true", help="启用专家控制权面板")
     parser.add_argument("--ca-file", type=Path, help="公开 CA 证书")
     parser.add_argument("--server-name", help="车端证书上的名称")
@@ -838,6 +886,11 @@ def main(argv: list[str] | None = None) -> int:
     # sys.argv：把程序参数传给 Qt
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
+    connection_flow = DesktopConnectionFlow(app, DesktopConsole)
+    if args.connect:
+        if not connection_flow.start_configured():
+            return 0
+        return app.exec()
 
     mode_options = {"expert_mode": True} if args.expert_management else {}
     try:
@@ -855,6 +908,20 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
+    settings = None
+    if args.secure:
+        try:
+            settings = DesktopConnectionSettings(
+                mode="expert" if args.expert_management else "advanced",
+                vehicle_host=vehicle_host, management_port=args.management_port or 19177,
+                control_port=args.control_port or 9999, telemetry_bind_host=telemetry_address[0],
+                telemetry_port=telemetry_address[1], server_name=args.server_name or args.vehicle_host or "localhost",
+                ca_file=args.ca_file or Path("local/certs/ca.pem"), client_id=client_id,
+            )
+        except ValueError:
+            # A connection entered via the legacy CLI may need editing in the form.
+            pass
+    connection_flow.attach(window, settings)
     # show()是QWidget的成员函数，window是DesktopConsole的实例，
     # DesktopConsole继承了QWidget，所以可以调用父类的show()函数
     window.show()

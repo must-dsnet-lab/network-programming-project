@@ -31,9 +31,12 @@ class SecureControlWorker:
         self,
         connect: Callable[[], AbstractContextManager[ManagementClient]],
         address: tuple[str, int],
+        *,
+        use_management_peer: bool = False,
     ):
         self._connect = connect
         self._address = address
+        self._use_management_peer = use_management_peer
         self._condition = Condition()  # Python 的条件变量, 让线程在没事做时睡眠
         self._target: ControlTarget | None = None
         self._generation = 0
@@ -133,7 +136,8 @@ class SecureControlWorker:
                 socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp,
             ):
                 udp.setblocking(False)
-                session = SecureControlSession(client, udp, self._address)
+                address = (client.peer_host, self._address[1]) if self._use_management_peer else self._address
+                session = SecureControlSession(client, udp, address)
                 with self._condition:
                     if self._closing:
                         return
