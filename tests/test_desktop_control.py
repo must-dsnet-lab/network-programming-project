@@ -143,7 +143,8 @@ class TestDesktopControl(unittest.TestCase):
 
     def test_failed_periodic_send_preserves_telemetry(self):
         self.apply_inputs(1.5, 90.0)
-        before_values = self.window.values.text()
+        readings = [self.window.speed_value, *self.window.pose_values, self.window.protection_value]
+        before_values = [label.text() for label in readings]
         before_status = self.window.status.text()
         before_state = self.window.map.state
 
@@ -159,7 +160,7 @@ class TestDesktopControl(unittest.TestCase):
         self.assertFalse(self.window.sock.closed)
         self.assertIn("发送失败", self.window.control_status.text())
 
-        self.assertEqual(self.window.values.text(), before_values)
+        self.assertEqual([label.text() for label in readings], before_values)
         self.assertEqual(self.window.status.text(), before_status)
         self.assertIs(self.window.map.state, before_state)
 
@@ -306,6 +307,26 @@ class TestSecureDesktopControl(unittest.TestCase):
         self.assertIn("TLS lost", self.window.control_status.text())
         self.assertTrue(self.window.timer.isActive())
         self.assertFalse(self.window.sock.closed)
+
+    def test_stale_readings_are_preserved_and_labeled_as_the_last_report(self):
+        vehicle = VehicleState(x_m=3, y_m=-1, heading_rad=0.25, speed_mps=1.25)
+        peer = ("127.0.0.1", 9999)
+        self.poll_telemetry_at(10.0, (TelemetrySnapshot(vehicle, False), peer))
+        self.assertEqual(self.window.speed_value.text(), "1.25")
+        self.assertTrue(self.window.map.telemetry_fresh)
+
+        self.poll_telemetry_at(11.0)
+        self.assertEqual(self.window.speed_caption.text(), "最后上报速度")
+        self.assertEqual(self.window.protection_value.text(), "未锁存")
+        self.assertEqual(self.window.speed_value.text(), "1.25")
+        self.assertFalse(self.window.map.telemetry_fresh)
+        self.assertEqual(self.window.map.state, vehicle)
+
+        self.poll_telemetry_at(11.5, self.telemetry_packet(fault_latched=True))
+        self.assertEqual(self.window.speed_caption.text(), "实测速度")
+        self.assertEqual(self.window.protection_value.text(), "已锁存")
+        self.assertTrue(self.window.map.telemetry_fresh)
+        self.assertIsNone(self.window.current_target)
 
     def test_telemetry_expiry_stops_secure_control_once_at_timeout(self):
         self.poll_telemetry_at(10.0, self.telemetry_packet())
@@ -494,6 +515,35 @@ class TestSecureDesktopControl(unittest.TestCase):
         self.assertTrue(reset.isEnabled())
         reset.click()
         self.worker.reset_control.assert_called_once_with()
+
+    def test_reset_reply_waits_for_fresh_unlocked_telemetry(self):
+        self.worker.status.return_value = WorkerStatus("latched")
+        self.poll_telemetry_at(10.0, self.telemetry_packet(fault_latched=True))
+
+        def queue_reset():
+            self.worker.status.return_value = WorkerStatus("resetting")
+            return True
+
+        self.worker.reset_control.side_effect = queue_reset
+        self.window.reset_button.click()
+        self.assertEqual(self.window.control_status.text(), "正在复位")
+
+        self.worker.status.return_value = WorkerStatus("ready", "复位成功，请重新应用")
+        self.window.poll_secure_status()
+        self.assertEqual(self.window.control_status.text(), "复位已确认，等待遥测更新")
+        self.assertEqual(self.window.protection_value.text(), "已锁存")
+        self.assertFalse(self.window.start_button.isEnabled())
+
+        self.poll_telemetry_at(10.1, self.telemetry_packet(fault_latched=True))
+        self.assertEqual(self.window.control_status.text(), "复位已确认，等待遥测更新")
+        self.assertFalse(self.window.start_button.isEnabled())
+
+        self.poll_telemetry_at(10.2, self.telemetry_packet(fault_latched=False))
+        self.assertEqual(self.window.control_status.text(), "遥测已确认解锁，请重新应用")
+        self.assertEqual(self.window.protection_value.text(), "未锁存")
+        self.assertTrue(self.window.start_button.isEnabled())
+        self.assertIsNone(self.window.current_target)
+        self.worker.apply_target.assert_not_called()
 
     def test_secure_cli_routes_lan_addresses(self):
         with (

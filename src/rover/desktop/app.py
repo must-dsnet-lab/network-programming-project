@@ -9,6 +9,9 @@ from rover.core.control_target import ControlTarget
 from PySide6.QtCore import Qt, QTime, QTimer
 from PySide6.QtWidgets import (
     QApplication,
+    QFormLayout,
+    QFrame,
+    QGridLayout,
     QHBoxLayout,
     QLabel,
     QMessageBox,
@@ -23,6 +26,7 @@ from functools import partial
 from getpass import getpass
 from pathlib import Path
 
+from rover.desktop.appearance import CONSOLE_STYLE, STATUS_COLORS, desktop_font
 from rover.desktop.control_worker import SecureControlWorker
 from rover.desktop.secure_connection import connect_management
 from rover.desktop.desktop_map import VehicleMap
@@ -32,7 +36,7 @@ from rover.transport.udp_transport import send_target, try_receive_telemetry
 EVENT_LOG_LIMIT = 100
 
 
-class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
+class DesktopConsole(QWidget):
     def __init__(
         self,
         *,
@@ -47,12 +51,12 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         self._last_secure_state: str | None = None
         self._last_telemetry_fault_latched = False
         self._telemetry_control_suspended = False
-        self.setWindowTitle("虚拟小车遥测观察台")
-        self.resize(1000, 600)
-        self.setStyleSheet(
-            "QWidget { background: #111827; color: #e5e7eb; }"
-            "QLabel { font-size: 14px; }"
-        )
+        self._reset_feedback: str | None = None
+        self.setObjectName("console")
+        self.setWindowTitle("虚拟小车控制台")
+        self.resize(1140, 740)
+        self.setFont(desktop_font(13))
+        self.setStyleSheet(CONSOLE_STYLE)
 
         self.listen_address = telemetry_address
         self.last_received_s = None
@@ -61,91 +65,8 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         self.control_address = ("127.0.0.1", 9999)
         self.current_target: ControlTarget | None = None
 
-        side = QVBoxLayout()  # V代表Vertical：创建一个垂直的布局盒子
-        layout = QHBoxLayout(self)  # H代表Horizontal：创建一个水平的布局盒子
+        self._build_ui()
 
-        """地图"""
-        self.map = VehicleMap()
-        self.event_log = QPlainTextEdit()
-        self.event_log.setReadOnly(True)
-        self.event_log.setMaximumBlockCount(EVENT_LOG_LIMIT)
-        self.event_log.setFixedHeight(96)
-
-        """"遥测显示标签（self.status, self.values）"""
-        self.status = QLabel("等待遥测")# QLabel 默认不换行,所以要设置setWordWrap为自动换行
-        self.status.setWordWrap(True)
-
-        self.values = QLabel("x：—\ny：—\n朝向：—\n速度：—\n保护：—")
-        self.values.setMinimumWidth(250)
-        self.values.setWordWrap(True)
-        initial_operator = "待认证" if secure_worker is not None else "本地演示"
-        self.operator_label = QLabel(f"当前操作员：{initial_operator}")
-        self.operator_label.setTextFormat(Qt.TextFormat.PlainText)
-        self.operator_label.setWordWrap(True)
-
-        """"遥测显示标签 添加到右侧的side"""
-        # addWidget：往盒子里放控件
-        side.addWidget(QLabel("最近收到的车辆状态"))  # 标题文字
-        side.addWidget(self.status)  # 状态标签
-        side.addWidget(  # 监听地址
-            QLabel(f"监听 {self.listen_address[0]}:{self.listen_address[1]}")
-        )
-        side.addWidget(self.values)  # 数值标签
-        side.addWidget(self.operator_label)
-        side.addStretch()
-
-        """"控制输入区（speed_input、heading_input、_button、control_status）"""
-        self.speed_input = QDoubleSpinBox()
-        self.speed_input.setRange(-2.0, 2.0)  # 允许范围
-        self.speed_input.setDecimals(2)  # 小数位数
-        self.speed_input.setSingleStep(0.1)  # 点击上下箭头时的增量
-        self.speed_input.setValue(0.0)  # 初始值
-        self.speed_input.setSuffix(" m/s")  # 单位后缀
-
-        self.heading_input = QDoubleSpinBox()
-        self.heading_input.setRange(-180.0, 180.0)  # 允许范围
-        self.heading_input.setDecimals(1)  # 小数位数
-        self.heading_input.setSingleStep(5.0)  # 点击上下箭头时的增量
-        self.heading_input.setValue(0.0)  # 初始值
-        self.heading_input.setSuffix(" °")  # 单位后缀
-
-        self.start_button = QPushButton("开始／应用")
-
-        self.stop_button = QPushButton("正常停车")
-
-        # 停止发包只会使保护锁定，但是不会停止遥控，因此遥测不会过期，
-        # 因为停止接收信息只是不能更新状态，但是终端B会一直上传不变的小车信息
-        self.stop_sending_button = QPushButton("停止发包")
-
-        self.control_status = QLabel("未发送控制")
-        self.control_status.setWordWrap(True)
-
-        """"控制输入区 添加到右侧的side"""
-        side.addWidget(QLabel("控制目标（输入值）"))
-        side.addWidget(QLabel("目标速度"))
-        side.addWidget(self.speed_input)
-        side.addWidget(QLabel("目标朝向（度）"))
-        side.addWidget(self.heading_input)
-        side.addWidget(self.start_button)
-        side.addWidget(self.stop_button)
-        side.addWidget(self.stop_sending_button)
-        if self.secure_worker is not None:
-            self.emergency_stop_button = QPushButton("急停")
-            self.reset_button = QPushButton("显式复位")
-            self.emergency_stop_button.clicked.connect(self.request_emergency_stop)
-            self.reset_button.clicked.connect(self.request_reset)
-            side.addWidget(self.emergency_stop_button)
-            side.addWidget(self.reset_button)
-        side.addWidget(self.control_status)
-
-        map_panel = QVBoxLayout()
-        map_panel.addWidget(self.map, 1)
-        map_panel.addWidget(QLabel("事件日志"))
-        map_panel.addWidget(self.event_log)
-        layout.addLayout(map_panel, 1)
-        layout.addLayout(side)  # 右边状态控件
-
-        ####################### 两个Socket #######################
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #接收
         self.control_sock = None #发送
 
@@ -185,6 +106,192 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             self.secure_worker.start()
             self.poll_secure_status()
             self.secure_status_timer.start(50)
+        self.speed_input.setFocus()
+
+    def _build_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(16)
+
+        canvas = QVBoxLayout()
+        canvas.setSpacing(8)
+        toolbar = QHBoxLayout()
+        toolbar.addWidget(self._label("车辆地图", size=21, bold=True))
+        toolbar.addStretch()
+        self.map = VehicleMap()
+        for title, hint, action in (
+            ("−", "缩小地图", self.map.zoom_out),
+            ("+", "放大地图", self.map.zoom_in),
+            ("定位车辆", "将最后上报的位置移到地图中心", self.map.center_vehicle),
+            ("清除轨迹", "从车辆的当前位置重新绘制轨迹", self.map.clear_trajectory),
+        ):
+            button = self._button(title, hint)
+            button.clicked.connect(action)
+            if title in ("−", "+"):
+                button.setFixedWidth(33)
+                button.setAccessibleName(hint)
+            toolbar.addWidget(button)
+        canvas.addLayout(toolbar)
+
+        frame = QFrame()
+        frame.setObjectName("mapFrame")
+        frame_layout = QVBoxLayout(frame)
+        frame_layout.setContentsMargins(1, 1, 1, 1)
+        frame_layout.addWidget(self.map)
+        canvas.addWidget(frame, 1)
+
+        map_info = QHBoxLayout()
+        map_info.addWidget(self._label("滚轮缩放，拖拽平移", muted=True))
+        map_info.addStretch()
+        self.source_label = self._label("遥测来源：—", muted=True)
+        map_info.addWidget(self.source_label)
+        canvas.addLayout(map_info)
+        canvas.addWidget(self._label("事件日志", size=14, bold=True))
+        self.event_log = QPlainTextEdit()
+        self.event_log.setAccessibleName("事件日志")
+        self.event_log.setReadOnly(True)
+        self.event_log.setMaximumBlockCount(EVENT_LOG_LIMIT)
+        self.event_log.setFixedHeight(98)
+        canvas.addWidget(self.event_log)
+        layout.addLayout(canvas, 1)
+
+        panel = QFrame()
+        panel.setObjectName("sidebar")
+        panel.setFixedWidth(340)
+        side = QVBoxLayout(panel)
+        side.setContentsMargins(16, 15, 16, 15)
+        side.setSpacing(9)
+        self._build_readouts(side)
+        side.addWidget(self._divider())
+        self._build_controls(side)
+        side.addStretch()
+        layout.addWidget(panel)
+
+    def _build_readouts(self, side):
+        title = QHBoxLayout()
+        title.addWidget(self._label("车辆遥测", size=17, bold=True))
+        title.addStretch()
+        self.status = self._label("等待遥测", muted=True)
+        self.status.setWordWrap(True)
+        title.addWidget(self.status)
+        side.addLayout(title)
+
+        self.speed_caption = self._label("实测速度", muted=True)
+        side.addWidget(self.speed_caption)
+        speed = QHBoxLayout()
+        self.speed_value = self._label("—", size=34, bold=True, numeric=True)
+        self.speed_value.setAccessibleName("实测速度，米每秒")
+        speed.addWidget(self.speed_value)
+        speed.addWidget(self._label("m/s", muted=True))
+        speed.addStretch()
+        protection = QVBoxLayout()
+        protection.setSpacing(2)
+        self.protection_caption = self._label("车端保护", muted=True)
+        protection.addWidget(self.protection_caption)
+        self.protection_value = self._label("—", size=14, bold=True)
+        self.protection_value.setAccessibleName("车端保护")
+        protection.addWidget(self.protection_value)
+        speed.addLayout(protection)
+        side.addLayout(speed)
+
+        pose = QHBoxLayout()
+        self.pose_values = []
+        for name in ("X / m", "Y / m", "朝向 / rad"):
+            metric = QVBoxLayout()
+            metric.setSpacing(2)
+            metric.addWidget(self._label(name, muted=True))
+            value = self._label("—", size=15, numeric=True)
+            value.setAccessibleName(name)
+            metric.addWidget(value)
+            self.pose_values.append(value)
+            pose.addLayout(metric, 1)
+        side.addLayout(pose)
+
+        side.addWidget(self._divider())
+        connection = QHBoxLayout()
+        connection.addWidget(self._label("管理连接" if self.secure_worker else "运行模式", size=14, bold=True))
+        connection.addStretch()
+        self.connection_value = self._label("待认证" if self.secure_worker else "教学 UDP", muted=True)
+        connection.addWidget(self.connection_value)
+        side.addLayout(connection)
+        initial_operator = "待认证" if self.secure_worker else "本地演示"
+        self.operator_label = self._label(f"当前操作员：{initial_operator}", muted=True)
+        self.operator_label.setWordWrap(True)
+        side.addWidget(self.operator_label)
+        host, port = self.listen_address
+        side.addWidget(self._label(f"遥测监听  {host}:{port}", muted=True))
+
+    def _build_controls(self, side):
+        side.addWidget(self._label("控制目标", size=17, bold=True))
+        form = QFormLayout()
+        form.setVerticalSpacing(7)
+        self.speed_input = QDoubleSpinBox()
+        self.speed_input.setRange(-2.0, 2.0)
+        self.speed_input.setDecimals(2)
+        self.speed_input.setSingleStep(0.1)
+        self.speed_input.setSuffix(" m/s")
+        self.speed_input.setMinimumHeight(32)
+        self.heading_input = QDoubleSpinBox()
+        self.heading_input.setRange(-180.0, 180.0)
+        self.heading_input.setDecimals(1)
+        self.heading_input.setSingleStep(5.0)
+        self.heading_input.setSuffix(" °")
+        self.heading_input.setMinimumHeight(32)
+        form.addRow("目标速度", self.speed_input)
+        form.addRow("目标朝向", self.heading_input)
+        side.addLayout(form)
+
+        actions = QGridLayout()
+        actions.setColumnStretch(0, 1)
+        actions.setColumnStretch(1, 1)
+        self.start_button = self._button("开始／应用", "应用当前输入的目标速度和朝向", role="primary")
+        self.stop_button = self._button("正常停车", "将已应用的速度设为零，继续周期发包")
+        self.stop_sending_button = self._button("停止发包", "结束周期发包，继续接收车辆遥测")
+        actions.addWidget(self.start_button, 0, 0)
+        actions.addWidget(self.stop_button, 0, 1)
+        actions.addWidget(self.stop_sending_button, 1, 0)
+        if self.secure_worker is not None:
+            self.reset_button = self._button("显式复位", "申请解除车端锁存；复位后需重新应用目标")
+            self.emergency_stop_button = self._button("急停", "通过安全连接请求车端立即停车并锁存", role="danger")
+            self.reset_button.clicked.connect(self.request_reset)
+            self.emergency_stop_button.clicked.connect(self.request_emergency_stop)
+            actions.addWidget(self.reset_button, 1, 1)
+            actions.addWidget(self.emergency_stop_button, 2, 0, 1, 2)
+        side.addLayout(actions)
+        self.control_status = self._label("未发送控制")
+        self.control_status.setObjectName("controlStatus")
+        self.control_status.setWordWrap(True)
+        side.addWidget(self.control_status)
+
+    @staticmethod
+    def _label(text, *, size=None, bold=False, numeric=False, muted=False):
+        label = QLabel(text)
+        label.setTextFormat(Qt.TextFormat.PlainText)
+        if size is not None:
+            label.setFont(desktop_font(size, bold=bold, numeric=numeric))
+        if muted:
+            label.setProperty("role", "muted")
+        return label
+
+    @staticmethod
+    def _button(text, hint, *, role="secondary"):
+        button = QPushButton(text)
+        button.setProperty("role", role)
+        button.setToolTip(hint)
+        button.setCursor(Qt.CursorShape.PointingHandCursor)
+        return button
+
+    @staticmethod
+    def _divider():
+        line = QFrame()
+        line.setObjectName("divider")
+        return line
+
+    @staticmethod
+    def _set_tone(label, tone):
+        style = f"color: {STATUS_COLORS[tone]};" if tone else ""
+        if label.styleSheet() != style:
+            label.setStyleSheet(style)
 
     def start_control(self):
         target = ControlTarget(
@@ -236,6 +343,7 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             if self.secure_worker.apply_target(target):
                 self.current_target = target
                 self.speed_input.setValue(0.0)
+                self._append_event("正常停车：已提交零速目标，继续发包")
             self.poll_secure_status()
             return
 
@@ -248,6 +356,8 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         )
         self.speed_input.setValue(0.0)
         self.send_control()
+        if self.control_timer.isActive():
+            self._append_event("正常停车：已发送零速目标，继续发包")
 
     # 停止控制定时器，保留两个 Socket 和遥测轮询。
     # 之后即使触发发送回调，send_control() 的入口检查也会阻止发包。
@@ -263,6 +373,7 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
 
         self.control_timer.stop()
         self.control_status.setText("已停止发包")
+        self._append_event("已停止发包，继续接收遥测")
 
     def request_emergency_stop(self):
         if self.secure_worker.emergency_stop():
@@ -272,6 +383,7 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
     def request_reset(self):
         if self.secure_worker.reset_control():
             self.current_target = None
+            self._reset_feedback = "requested"
         self.poll_secure_status()
 
     def poll_secure_status(self):
@@ -285,6 +397,15 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
 
         snapshot = worker.status()
         state = snapshot.state
+        if self._reset_feedback == "requested":
+            if state == "ready":
+                self._reset_feedback = "waiting_for_telemetry"
+            elif state != "resetting":
+                self._reset_feedback = None
+        elif state not in ("ready", "stopped"):
+            self._reset_feedback = None
+        reset_confirmed = self._reset_feedback in ("waiting_for_telemetry", "unlocked")
+
         if state in (
             "stopping", "latched", "resetting", "blocked",
             "failed", "closing", "closed",
@@ -320,17 +441,31 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         text = labels[state]
         if has_target and state in ("ready", "stopped"):
             text = "控制目标已提交，等待后台发送"
-        if snapshot.detail:
+        elif has_target and state == "sending" and self.current_target.speed_mps == 0:
+            text = "正在发送零速目标，按车端遥测确认停车"
+        elif reset_confirmed:
+            text = "复位已确认，等待遥测更新" if self._secure_motion_blocked() else "遥测已确认解锁，请重新应用"
+        elif state in ("ready", "sending", "stopped") and self._telemetry_control_suspended:
+            text = "遥测不可用，已停止发包"
+        elif state in ("ready", "stopped") and self._last_telemetry_fault_latched:
+            text = "车端故障已锁存，等待显式复位"
+        if snapshot.detail and not reset_confirmed:
             text += f"：{snapshot.detail}"
         self.control_status.setText(text)
 
         if state != self._last_secure_state:
             if state in ("new", "connecting"):
                 operator = "待认证"
+                connection, tone = "认证中", "quiet"
             elif state in ("failed", "closing", "closed"):
                 operator = "—"
+                connection = {"failed": "连接失败", "closing": "关闭中", "closed": "已关闭"}[state]
+                tone = "alert" if state == "failed" else "quiet"
             else:
                 operator = self.operator_id or "—"
+                connection, tone = "TLS 已认证", "live"
+            self.connection_value.setText(connection)
+            self._set_tone(self.connection_value, tone)
             self.operator_label.setText(f"当前操作员：{operator}")
             self._append_event(labels[state])
             self._last_secure_state = state
@@ -339,13 +474,23 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         timestamp = QTime.currentTime().toString("HH:mm:ss")
         self.event_log.appendPlainText(f"[{timestamp}] {message}")
 
-    def _set_telemetry_status(self, text: str, event_message: str | None = None) -> None:
+    def _set_telemetry_status(self, text: str, event_message: str | None = None, *, fresh=False) -> None:
+        last_report = self.last_received_s is not None and not fresh
+        self.map.set_telemetry_fresh(fresh)
+        self._set_tone(self.speed_value, "alert" if last_report else None)
+        self._set_tone(self.status, "live" if fresh else "alert" if last_report or event_message else "quiet")
+        self.speed_caption.setText("最后上报速度" if last_report else "实测速度")
+        self.protection_caption.setText("最后上报保护" if last_report else "车端保护")
         if self.status.text() != text:
             self.status.setText(text)
             self._append_event(event_message or text)
 
     def _secure_motion_blocked(self) -> bool:
-        return self._telemetry_control_suspended or self._last_telemetry_fault_latched
+        return (
+            self._telemetry_control_suspended
+            or self._last_telemetry_fault_latched
+            or self._reset_feedback == "waiting_for_telemetry"
+        )
 
     def _set_telemetry_control_suspended(self, suspended: bool) -> None:
         if (
@@ -361,6 +506,7 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
             self.poll_secure_status()
 
     def poll_telemetry(self):
+        awaiting_reset = self._reset_feedback == "waiting_for_telemetry"
         latest = None
         receive_error = None
 
@@ -393,16 +539,12 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
 
         if latest is not None:
             state = latest.state
-            fault_text = "已锁定" if latest.fault_latched else "未锁定"
-
-            self.values.setText(
-                f"x = {state.x_m:.3f} m\n"
-                f"y = {state.y_m:.3f} m\n"
-                f"朝向 = {state.heading_rad:.3f} rad\n"
-                f"速度 = {state.speed_mps:.1f} m/s\n"
-                f"保护 = {fault_text}\n"
-                f"来源 = {peer[0]}:{peer[1]}"
-            )
+            self.speed_value.setText(f"{state.speed_mps:.2f}")
+            for label, reading in zip(self.pose_values, (state.x_m, state.y_m, state.heading_rad)):
+                label.setText(f"{reading:.3f}")
+            self.protection_value.setText("已锁存" if latest.fault_latched else "未锁存")
+            self._set_tone(self.protection_value, "alert" if latest.fault_latched else "quiet")
+            self.source_label.setText(f"遥测来源：{peer[0]}:{peer[1]}")
 
         # 报错前若收到过合法数据，先同步读数，再显示错误
         if receive_error is not None:
@@ -414,13 +556,19 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
         if self.last_received_s is None:
             self._set_telemetry_status("等待遥测")
         elif monotonic() - self.last_received_s >= self.telemetry_timeout_s:
-            self._set_telemetry_status(
-                f"遥测过期（{self.telemetry_timeout_s:.1f}秒未收到合法报文）", "遥测过期"
-            )
+            self._set_telemetry_status("遥测过期", "遥测过期")
             self._set_telemetry_control_suspended(True)
         else:
-            self._set_telemetry_status("遥测可用")
+            self._set_telemetry_status("遥测可用", fresh=True)
             self._set_telemetry_control_suspended(False)
+            if (
+                awaiting_reset
+                and latest is not None
+                and not latest.fault_latched
+                and self._reset_feedback == "waiting_for_telemetry"
+            ):
+                self._reset_feedback = "unlocked"
+                self.poll_secure_status()
 
     # 操作系统会捕捉到用户用鼠标点击窗口右上角的“❌”的动作，并把它告诉 Qt 框架。Qt 框架会自动去寻找 closeEvent 方法
     def closeEvent(self, event):
@@ -429,6 +577,8 @@ class DesktopConsole(QWidget):  # 继承了 QWidget 这个超级父类
                 self._secure_close_pending = True
                 self.secure_worker.close()
                 self.control_status.setText("正在关闭安全连接")
+                self.connection_value.setText("关闭中")
+                self._set_tone(self.connection_value, "quiet")
                 self.operator_label.setText("当前操作员：—")
                 self._append_event("正在关闭安全连接")
                 self.start_button.setEnabled(False)
@@ -509,6 +659,7 @@ def main(argv: list[str] | None = None) -> int:
     # QApplication 负责管理整个程序的全局资源
     # sys.argv：把程序参数传给 Qt
     app = QApplication(sys.argv)
+    app.setStyle("Fusion")
 
     try:
         window = DesktopConsole(
