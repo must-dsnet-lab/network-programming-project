@@ -47,7 +47,7 @@
 
 #### 协议路线 · 高级向专家推进
 
-物理双机和真实断网由组员在有设备时补测。专家路线先推进可在本机验证的任务，现场验收结果单独记录。 [协议任务依赖与验收](docs/development-roadmap.md#protocol-delivery) · [组员复跑索引](docs/expert-control-authority.md#组员复跑索引)
+物理双机和真实断网由组员在有设备时补测。专家路线先推进可在本机验证的任务，现场验收结果单独记录。 [协议任务依赖与验收](docs/development-roadmap.md#protocol-delivery) · [组员集中验收清单](docs/team-acceptance.md) · [组员复跑索引](docs/expert-control-authority.md#组员复跑索引)
 
 - [ ] A01 完成两台物理电脑的局域网联调，验证 TLS 认证、UDP 控制、车端运动和遥测回传。 [双机验收要求](docs/development-roadmap.md#advanced-protocol-acceptance)
 - [ ] A08/A09 保持车端运行，实际断网并验证停车。网络恢复后确认车辆保持静止，再重建会话，若已锁存则显式复位，再次使能并明确应用目标后验证重新运动。 [断网与恢复验收](docs/development-roadmap.md#advanced-protocol-acceptance)
@@ -58,7 +58,8 @@
 - [x] P4 将授权代次接入 UDP 准入，本机验证旧授权被拒绝。 [UDP v3 规则与复现](docs/expert-control-authority.md#7-p4-udp-授权代次准入)
 - [x] P5 实现租约续期、到期撤销与停车，本机验证租约与 UDP 断流分别生效。 [P5 规则与复跑](docs/expert-control-authority.md#8-p5-授权租约与到期停车)
 - [x] P6 发布控制权状态并接入双端操作，已通过 Windows 本机联调。 [P6 复跑](docs/expert-control-authority.md#91-组员本机复现) · [图 11](#expert-authority-flow)
-- [ ] P7 完成机制对照、双端实测和回归留证。
+- [x] P7 完成本机机制对照、双端实测和回归留证。 [P7 对照与复现](docs/expert-control-authority.md#10-p7-高级与专家机制对照) · [图 12 与测量结果](docs/expert-control-authority.md#102-本机结果)
+- [ ] P7-LAN 由组员在物理双机验证专家模式的交接、租约与恢复。 [现场步骤](docs/team-acceptance.md#3-物理双机与实际断网)
 
 <a id="experience-checklist"></a>
 
