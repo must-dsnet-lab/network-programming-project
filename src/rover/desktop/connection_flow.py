@@ -15,6 +15,8 @@ from rover.desktop.connection_profile import (
 )
 from rover.desktop.control_worker import SecureControlWorker
 from rover.desktop.expert_control_worker import ExpertControlWorker
+from rover.desktop.launch_dialog import choose_launch_role
+from rover.desktop.observer_dialog import choose_telemetry_address
 from rover.desktop.secure_connection import connect_configured_management
 
 
@@ -22,6 +24,12 @@ def default_profile_path() -> Path:
     directory = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.GenericConfigLocation)
     base = Path(directory) if directory else Path.home() / ".config"
     return base / "Rover" / "desktop-connection.json"
+
+
+def local_vehicle_log_directory() -> Path:
+    directory = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.GenericDataLocation)
+    base = Path(directory) if directory else Path.home()
+    return base / "Rover" / "logs"
 
 
 class DesktopConnectionFlow(QObject):
@@ -47,6 +55,35 @@ class DesktopConnectionFlow(QObject):
             if self._create_configured_console(selection):
                 return True
         return False
+
+    def start_launcher(self) -> bool:
+        while (role := choose_launch_role()) is not None:
+            if role == "connect" and self.start_configured():
+                return True
+            if role == "local" and self._start_local():
+                return True
+            if role == "observe":
+                address = choose_telemetry_address(None, ("127.0.0.1", 10001))
+                if address is not None and self.start_observer(address):
+                    return True
+        return False
+
+    def start_observer(self, address: tuple[str, int]) -> bool:
+        window = self._open_console(read_only=True, telemetry_address=address)
+        if window is None:
+            return False
+        self.attach(window)
+        window.show()
+        return True
+
+    def _start_local(self) -> bool:
+        window = self._open_console(local_demo=True, telemetry_address=("127.0.0.1", 0))
+        if window is None:
+            return False
+        window.start_local_vehicle(local_vehicle_log_directory())
+        self.attach(window)
+        window.show()
+        return True
 
     def _ask_for_selection(self) -> ConnectionSelection | None:
         try:
@@ -125,18 +162,22 @@ class DesktopConnectionFlow(QObject):
             return peer_host
 
         worker = worker_type(connect, settings.control_address, use_management_peer=True)
+        window = self._open_console(
+            secure_worker=worker, telemetry_address=settings.telemetry_address,
+            operator_id=settings.client_id, expert_mode=expert, require_initial_telemetry=True,
+            telemetry_peer_host=telemetry_peer_host,
+        )
+        if window is None:
+            return False
+        self.attach(window, settings)
+        window.show()
+        return True
+
+    def _open_console(self, **options):
         try:
-            window = self._console_factory(
-                secure_worker=worker, telemetry_address=settings.telemetry_address,
-                operator_id=settings.client_id, expert_mode=expert, require_initial_telemetry=True,
-                telemetry_peer_host=telemetry_peer_host,
-            )
+            return self._console_factory(**options)
         except OSError:
             QMessageBox.critical(
                 self._window, "遥测监听失败", "请核对本机监听地址和端口，并确认端口未被占用。",
             )
-            return False
-
-        self.attach(window, settings)
-        window.show()
-        return True
+            return None

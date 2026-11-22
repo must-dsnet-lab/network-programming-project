@@ -2,6 +2,7 @@
 
 import socket
 import sys
+from ipaddress import IPv4Address
 from time import monotonic
 from math import radians
 from collections.abc import Callable
@@ -33,6 +34,7 @@ from rover.desktop.connection_flow import DesktopConnectionFlow
 from rover.desktop.connection_profile import DesktopConnectionSettings
 from rover.desktop.control_worker import SecureControlWorker
 from rover.desktop.expert_control_worker import ExpertControlWorker
+from rover.desktop.local_vehicle import LocalVehicleProcess, LocalVehicleStartupError
 from rover.desktop.secure_connection import connect_expert_management, connect_management
 from rover.desktop.desktop_map import VehicleMap
 from rover.transport.udp_transport import send_target, try_receive_telemetry
@@ -82,11 +84,17 @@ class DesktopConsole(QWidget):
         expert_mode: bool = False,
         require_initial_telemetry: bool = False,
         telemetry_peer_host: Callable[[], str | None] | None = None,
+        read_only: bool = False,
+        local_demo: bool = False,
     ):
         super().__init__()
         self.secure_worker = secure_worker
         self.operator_id = operator_id
         self.expert_mode = expert_mode
+        self.read_only = read_only
+        self.local_demo = local_demo
+        self._local_vehicle: LocalVehicleProcess | None = None
+        self._local_telemetry_source: tuple[str, int] | None = None
         self._require_initial_telemetry = expert_mode or require_initial_telemetry
         self._telemetry_peer_host = telemetry_peer_host
         self._last_authority_overview = None
@@ -100,6 +108,10 @@ class DesktopConsole(QWidget):
         self._reset_feedback: str | None = None
         self.setObjectName("console")
         self.setWindowTitle("虚拟小车 · 专家控制台" if expert_mode else "虚拟小车控制台")
+        if read_only:
+            self.setWindowTitle("虚拟小车 · 只读观察")
+        elif local_demo:
+            self.setWindowTitle("虚拟小车 · 本地模拟")
         self.resize(1140, 740)
         self.setFont(desktop_font(13))
         self.setStyleSheet(CONSOLE_STYLE)
@@ -111,16 +123,16 @@ class DesktopConsole(QWidget):
         self.control_address = ("127.0.0.1", 9999)
         self.current_target: ControlTarget | None = None
 
-        self._build_ui()
-
         self.sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM) #接收
         self.control_sock = None #发送
 
         try:
             self.sock.setblocking(False)
             self.sock.bind(self.listen_address)
+            if self.listen_address[1] == 0:
+                self.listen_address = self.sock.getsockname()
 
-            if self.secure_worker is None:
+            if self.secure_worker is None and not self.read_only:
                 self.control_sock = socket.socket(
                     socket.AF_INET,
                     socket.SOCK_DGRAM,
@@ -133,6 +145,8 @@ class DesktopConsole(QWidget):
                 self.control_sock.close()
             raise
 
+        self._build_ui()
+
         ####################### 两个定时器 #######################
         # self.timer：接收定时器。每 20 毫秒触发一次，跑去 self.sock 里看看有没有新数据，有就更新地图。
         self.timer = QTimer(self)  # Qt的定时器
@@ -143,16 +157,22 @@ class DesktopConsole(QWidget):
         self.control_timer = QTimer(self)
         self.control_timer.setInterval(100)
         self.control_timer.timeout.connect(self.send_control) #timeout就是setInterval的时间，建立每100ms send_control 的连接
-        self.start_button.clicked.connect(self.start_control) #通过人点击触发
-        self.stop_button.clicked.connect(self.stop_motion)
-        self.stop_sending_button.clicked.connect(self.stop_control)
+        if not self.read_only:
+            self.start_button.clicked.connect(self.start_control) #通过人点击触发
+            self.stop_button.clicked.connect(self.stop_motion)
+            self.stop_sending_button.clicked.connect(self.stop_control)
+            self.speed_input.setFocus()
+        if self.local_demo:
+            self._local_vehicle_timer = QTimer(self)
+            self._local_vehicle_timer.setInterval(50)
+            self._local_vehicle_timer.timeout.connect(self._poll_local_vehicle)
+            self._set_local_control_enabled(False)
         if self.secure_worker is not None:
             self.secure_status_timer = QTimer(self)
             self.secure_status_timer.timeout.connect(self.poll_secure_status)
             self.secure_worker.start()
             self.poll_secure_status()
             self.secure_status_timer.start(50)
-        self.speed_input.setFocus()
 
     def _build_ui(self):
         layout = QHBoxLayout(self)
@@ -210,8 +230,9 @@ class DesktopConsole(QWidget):
         side.setContentsMargins(16, 15, 16, 15)
         side.setSpacing(9)
         self._build_readouts(side)
-        side.addWidget(self._divider())
-        self._build_controls(side)
+        if not self.read_only:
+            side.addWidget(self._divider())
+            self._build_controls(side)
         side.addStretch()
         layout.addWidget(panel)
 
@@ -219,6 +240,49 @@ class DesktopConsole(QWidget):
         self.connection_settings_button.show()
         if self.secure_worker is not None:
             self.disconnect_button.show()
+
+    def start_local_vehicle(self, log_directory: Path) -> bool:
+        try:
+            self._local_vehicle = LocalVehicleProcess.start(self.listen_address[1], log_directory)
+        except (OSError, LocalVehicleStartupError) as exc:
+            self._local_vehicle_failed(f"无法启动本机车端。{exc}")
+            return False
+        self.connection_value.setText("正在启动")
+        self.control_status.setText("等待本机车端和首条遥测")
+        self.control_status.setToolTip(str(self._local_vehicle.log_path))
+        self._local_vehicle_timer.start()
+        return True
+
+    def _poll_local_vehicle(self) -> None:
+        if self._local_vehicle is None:
+            return
+        try:
+            ports = self._local_vehicle.poll_ready()
+        except LocalVehicleStartupError as exc:
+            self._local_vehicle_failed(str(exc))
+            return
+        if ports is not None and self._local_telemetry_source is None:
+            self.control_address = ("127.0.0.1", ports.control_port)
+            self._local_telemetry_source = ("127.0.0.1", ports.telemetry_source_port)
+            self.connection_value.setText("本机车端已启动")
+            self._append_event("本机车端已启动")
+
+    def _local_vehicle_failed(self, message: str) -> None:
+        self._local_vehicle_timer.stop()
+        self._local_telemetry_source = None
+        self._set_local_control_enabled(False)
+        self.connection_value.setText("本机车端不可用")
+        self._set_tone(self.connection_value, "alert")
+        self.control_status.setText(message)
+        self._append_event(message)
+
+    def _set_local_control_enabled(self, enabled: bool) -> None:
+        self.start_button.setEnabled(enabled)
+        self.stop_button.setEnabled(enabled)
+        self.stop_sending_button.setEnabled(enabled)
+        if not enabled:
+            self.control_timer.stop()
+            self.current_target = None
 
     @Slot()
     def disconnect_management(self) -> None:
@@ -320,11 +384,18 @@ class DesktopConsole(QWidget):
         connection = QHBoxLayout()
         connection.addWidget(self._label("管理连接" if self.secure_worker else "运行模式", size=14, bold=True))
         connection.addStretch()
-        self.connection_value = self._label("待认证" if self.secure_worker else "教学 UDP", muted=True)
+        if self.read_only:
+            mode = "只读观察"
+        elif self.local_demo:
+            mode = "本地模拟"
+        else:
+            mode = "待认证" if self.secure_worker else "教学 UDP"
+        self.connection_value = self._label(mode, muted=True)
         connection.addWidget(self.connection_value)
         side.addLayout(connection)
         initial_operator = "待认证" if self.secure_worker else "本地演示"
-        self.operator_label = self._label(f"当前操作员：{initial_operator}", muted=True)
+        operator_text = "仅接收车端遥测" if self.read_only else f"当前操作员：{initial_operator}"
+        self.operator_label = self._label(operator_text, muted=True)
         self.operator_label.setWordWrap(True)
         side.addWidget(self.operator_label)
         host, port = self.listen_address
@@ -414,6 +485,8 @@ class DesktopConsole(QWidget):
             label.setStyleSheet(style)
 
     def start_control(self):
+        if self.read_only or (self.local_demo and not self.start_button.isEnabled()):
+            return
         target = ControlTarget(
             speed_mps=self.speed_input.value(),
             heading_rad=radians(self.heading_input.value()),
@@ -431,7 +504,7 @@ class DesktopConsole(QWidget):
         self.send_control()  # 立即send_control -> 零延迟响应
 
     def send_control(self):
-        if self.secure_worker is not None:
+        if self.control_sock is None:
             return
         if not self.control_timer.isActive() or self.current_target is None:
             return
@@ -444,6 +517,7 @@ class DesktopConsole(QWidget):
         # 发送端可能因为断网等原因无法发送数据,但桌面不能因此系统崩溃，仍需保留接收车端遥测的能力
         except OSError as exc:
             self.control_timer.stop()
+            self.current_target = None
             self.control_status.setText(f"发送失败：{exc}")
             return
 
@@ -492,6 +566,7 @@ class DesktopConsole(QWidget):
             return
 
         self.control_timer.stop()
+        self.current_target = None
         self.control_status.setText("已停止发包")
         self._append_event("已停止发包，继续接收遥测")
 
@@ -729,6 +804,8 @@ class DesktopConsole(QWidget):
                 break
 
             snapshot, source = received
+            if self.local_demo and self._local_telemetry_source != source:
+                continue
             if self._telemetry_peer_host is not None and self._telemetry_peer_host() != source[0]:
                 continue
             latest, peer = snapshot, source
@@ -755,6 +832,10 @@ class DesktopConsole(QWidget):
         if receive_error is not None:
             self._set_telemetry_status(f"接收错误：{receive_error}", "遥测接收错误")
             self._set_telemetry_control_suspended(True)
+            if self.local_demo:
+                self._set_local_control_enabled(False)
+                if self._local_telemetry_source is not None:
+                    self.control_status.setText("遥测接收失败，已停止发包。")
             return
 
         # 没有新包时，也继续检查显示状态是否过期
@@ -763,9 +844,20 @@ class DesktopConsole(QWidget):
         elif monotonic() - self.last_received_s >= self.telemetry_timeout_s:
             self._set_telemetry_status("遥测过期", "遥测过期")
             self._set_telemetry_control_suspended(True)
+            if self.local_demo:
+                self._set_local_control_enabled(False)
+                if self._local_telemetry_source is not None:
+                    self.control_status.setText("遥测过期，已停止发包。")
         else:
             self._set_telemetry_status("遥测可用", fresh=True)
             self._set_telemetry_control_suspended(False)
+            if self.local_demo and latest is not None:
+                was_enabled = self.start_button.isEnabled()
+                self._set_local_control_enabled(not latest.fault_latched)
+                if latest.fault_latched:
+                    self.control_status.setText("本地模拟已锁存。关闭此窗口后可重新启动本地模拟。")
+                elif not was_enabled:
+                    self.control_status.setText("等待应用控制目标")
             if self._require_initial_telemetry and not had_telemetry:
                 self.poll_secure_status()
             if (
@@ -810,6 +902,9 @@ class DesktopConsole(QWidget):
 
         self.control_timer.stop()
         self.timer.stop()
+        if self._local_vehicle is not None:
+            self._local_vehicle_timer.stop()
+            self._local_vehicle.stop()
         if self.control_sock is not None:
             self.control_sock.close()
         self.sock.close()
@@ -823,6 +918,8 @@ def main(argv: list[str] | None = None) -> int:
     startup = parser.add_mutually_exclusive_group()
     startup.add_argument("--secure", action="store_true", help="通过命令行参数启用安全控制")
     startup.add_argument("--connect", action="store_true", help="打开图形化连接设置")
+    startup.add_argument("--launcher", action="store_true", help="选择本地模拟、连接车端或只读观察")
+    startup.add_argument("--observe", action="store_true", help="打开只读观察窗口")
     parser.add_argument("--expert-management", action="store_true", help="启用专家控制权面板")
     parser.add_argument("--ca-file", type=Path, help="公开 CA 证书")
     parser.add_argument("--server-name", help="车端证书上的名称")
@@ -841,17 +938,20 @@ def main(argv: list[str] | None = None) -> int:
     if not args.secure and any(value is not None for value in tls_args):
         parser.error("--ca-file、--server-name 和 --client-id 需要 --secure")
 
-    lan_args = (
-        args.vehicle_host,
-        args.management_port,
-        args.control_port,
-        args.telemetry_bind_host,
-        args.telemetry_port,
-    )
+    lan_args = (args.vehicle_host, args.management_port, args.control_port)
     if not args.secure and any(value is not None for value in lan_args):
         parser.error("局域网参数需要 --secure")
+    if not (args.secure or args.observe) and (
+        args.telemetry_bind_host is not None or args.telemetry_port is not None
+    ):
+        parser.error("遥测监听参数需要 --secure 或 --observe")
     if args.vehicle_host == "" or args.telemetry_bind_host == "":
         parser.error("--vehicle-host 和 --telemetry-bind-host 的地址不能为空")
+    if args.observe and args.telemetry_bind_host is not None:
+        try:
+            args.telemetry_bind_host = str(IPv4Address(args.telemetry_bind_host))
+        except ValueError:
+            parser.error("只读观察的遥测监听地址需要 IPv4 地址")
     for option, port in (
         ("--management-port", args.management_port),
         ("--control-port", args.control_port),
@@ -863,7 +963,7 @@ def main(argv: list[str] | None = None) -> int:
     vehicle_host = args.vehicle_host or "127.0.0.1"
     telemetry_address = (
         args.telemetry_bind_host or "127.0.0.1",
-        args.telemetry_port or 10000,
+        args.telemetry_port or (10001 if args.observe else 10000),
     )
 
     worker = None
@@ -887,6 +987,10 @@ def main(argv: list[str] | None = None) -> int:
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
     connection_flow = DesktopConnectionFlow(app, DesktopConsole)
+    if args.launcher:
+        return app.exec() if connection_flow.start_launcher() else 0
+    if args.observe:
+        return app.exec() if connection_flow.start_observer(telemetry_address) else 1
     if args.connect:
         if not connection_flow.start_configured():
             return 0

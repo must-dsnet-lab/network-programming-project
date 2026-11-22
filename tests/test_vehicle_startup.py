@@ -113,6 +113,30 @@ class TestVehicleStartup(unittest.TestCase):
                     observer_address=None,
                 )
 
+    def test_auto_control_port_routes_a_loopback_demo_with_parent_lifetime(self):
+        with (
+            patch.object(app, "main") as main,
+            patch.object(app, "Thread") as thread,
+        ):
+            app.cli(["--auto-control-port", "--telemetry-port", "42000"])
+        options = main.call_args.kwargs
+        self.assertEqual(options["address"], ("127.0.0.1", 0))
+        self.assertEqual(options["telemetry_address"], ("127.0.0.1", 42000))
+        self.assertIsNone(options["management"])
+        self.assertIs(thread.call_args.kwargs["args"][0], options["stop_event"])
+        thread.return_value.start.assert_called_once_with()
+
+    def test_auto_control_port_rejects_security_or_non_loopback_addresses(self):
+        for arguments in (
+            [*self.secure_args],
+            ["--bind-host", "0.0.0.0"],
+            ["--telemetry-host", "192.0.2.40"],
+            ["--observer-host", "127.0.0.1"],
+            ["--control-port", "9999"],
+        ):
+            with self.subTest(arguments=arguments):
+                self.assert_rejected_without_startup(["--auto-control-port", *arguments])
+
     def test_invalid_and_incomplete_arguments_do_not_start_runtime(self):
         cases = [
             ["--secure"], ["--secure", "--cert-dir", str(self.cert_dir)],

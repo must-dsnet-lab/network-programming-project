@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "mode": "advanced",
+  "vehicle_host": "127.0.0.1",
+  "management_port": 19177,
+  "control_port": 9999,
+  "telemetry_bind_host": "127.0.0.1",
+  "telemetry_port": 10000,
+  "server_name": "",
+  "ca_file": "C:/Rover/ca.pem",
+  "client_id": "desktop-a"
+}
