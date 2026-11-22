@@ -72,16 +72,24 @@ bash scripts/new_local_tls.sh -o local/certs-lan -i 192.168.1.20
 
 ### 2.3 可信客户端
 
-`local/trusted_clients.json` 是客户端 ID 到凭据字符串的 JSON 映射，车端启动时**必须**存在（缺失会 `vehicle startup failed: [Errno 2]`）：
+`local/trusted_clients.json` 是客户端 ID 到凭据字符串的 JSON 映射，车端启动时**必须**存在（缺失会 `vehicle startup failed: [Errno 2]`）。
+
+首次创建用下面这段：**文件已存在时只提示、不改写**，避免把机器上已有的账号配置整份替换成示例内容：
 
 ```bash
 mkdir -p local
-cat > local/trusted_clients.json <<'JSON'
+if [ -e local/trusted_clients.json ]; then
+  echo "local/trusted_clients.json 已存在，复用现有配置（要改凭据请手动编辑这个文件）"
+else
+  cat > local/trusted_clients.json <<'JSON'
 {
   "desktop-a": "test-secret-a"
 }
 JSON
+fi
 ```
+
+用示例账号跑完演示后，记得把 `test-secret-a` 换成自己的凭据，或直接编辑已有文件增减 `client-id`。示例内容只是让它能启动，不代表推荐配置。
 
 `local/` 已被根目录 `.gitignore` 排除。提交前用 `git check-ignore -v local/certs/server.key` 复核私钥不在版本库里。
 
@@ -138,7 +146,7 @@ PYTHONPATH=src python3 -B -m unittest -v tests.test_management_codec tests.test_
 mkdir -p local/events
 ```
 
-同时确认 `local/trusted_clients.json` 已按 [2.3](#23-可信客户端) 建好，缺失同样会在启动阶段报 `[Errno 2]`。
+同时确认 `local/trusted_clients.json` 已按 [2.3](#23-可信客户端) 建好（已有就复用，别覆盖），缺失同样会在启动阶段报 `[Errno 2]`。
 
 车端：
 
