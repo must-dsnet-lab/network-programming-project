@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="420" viewBox="0 0 1100 420" role="img" aria-labelledby="watchdog-title">
+<title id="watchdog-title">高级与专家模式的 UDP 看门狗停车时间</title>
+<rect x="0" y="0" width="1100" height="420" rx="0" fill="#f5f8fc" stroke="none" stroke-width="1.4"/>
+<rect x="24" y="22" width="1052" height="376" rx="16" fill="#ffffff" stroke="#d5deeb" stroke-width="1.4"/>
+<text x="53" y="54" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="700" fill="#4b6078" text-anchor="start">图 12   /   P7 机制对照</text>
+<text x="53" y="93" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="34" font-weight="700" fill="#172b4d" text-anchor="start">UDP 看门狗停车时间</text>
+<text x="54" y="121" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="20" font-weight="400" fill="#4b6078" text-anchor="start">每个圆点对应一轮。起点为车端最后接受指令，终点为首次零速并锁存。</text>
+<polyline points="185.0,163 185.0,343" fill="none" stroke="#dfe6ef" stroke-width="1" stroke-linejoin="round"/>
+<text x="185.0" y="369" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="middle">490</text>
+<polyline points="345.0,163 345.0,343" fill="none" stroke="#dfe6ef" stroke-width="1" stroke-linejoin="round"/>
+<text x="345.0" y="369" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="middle">500</text>
+<polyline points="505.0,163 505.0,343" fill="none" stroke="#dfe6ef" stroke-width="1" stroke-linejoin="round"/>
+<text x="505.0" y="369" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="middle">510</text>
+<polyline points="665.0,163 665.0,343" fill="none" stroke="#dfe6ef" stroke-width="1" stroke-linejoin="round"/>
+<text x="665.0" y="369" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="middle">520</text>
+<polyline points="825.0,163 825.0,343" fill="none" stroke="#dfe6ef" stroke-width="1" stroke-linejoin="round"/>
+<text x="825.0" y="369" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="middle">530</text>
+<polyline points="345.0,163 345.0,343" fill="none" stroke="#75668d" stroke-width="2" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<text x="345.0" y="151" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#625477" text-anchor="middle">500 ms 配置值</text>
+<polyline points="185,343 825,343" fill="none" stroke="#a5b8d0" stroke-width="1.5" stroke-linejoin="round"/>
+<text x="845" y="369" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="400" fill="#4b6078" text-anchor="start">ms</text>
+<text x="55" y="217" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#2563a6" text-anchor="start">高级模式</text>
+<polyline points="345.0,187 345.0,235" fill="none" stroke="#2563a6" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="601.00" cy="199.67" r="5.8" fill="#2563a6" stroke="#ffffff" stroke-width="1.4"><title>516.000 ms</title></circle>
+<circle cx="345.00" cy="211.00" r="5.8" fill="#2563a6" stroke="#ffffff" stroke-width="1.4"><title>500.000 ms</title></circle>
+<circle cx="345.00" cy="222.33" r="5.8" fill="#2563a6" stroke="#ffffff" stroke-width="1.4"><title>500.000 ms</title></circle>
+<text x="854" y="210" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="700" fill="#2563a6" text-anchor="start">3 轮 · 中位数 500.0 ms</text>
+<text x="854" y="233" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">500.0–516.0 ms</text>
+<text x="55" y="300" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#087262" text-anchor="start">专家模式</text>
+<polyline points="345.0,270 345.0,318" fill="none" stroke="#087262" stroke-width="3" stroke-linejoin="round"/>
+<circle cx="345.00" cy="282.67" r="5.8" fill="#087262" stroke="#ffffff" stroke-width="1.4"><title>500.000 ms</title></circle>
+<circle cx="345.00" cy="294.00" r="5.8" fill="#087262" stroke="#ffffff" stroke-width="1.4"><title>500.000 ms</title></circle>
+<circle cx="345.00" cy="305.33" r="5.8" fill="#087262" stroke="#ffffff" stroke-width="1.4"><title>500.000 ms</title></circle>
+<text x="854" y="293" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="17" font-weight="700" fill="#087262" text-anchor="start">3 轮 · 中位数 500.0 ms</text>
+<text x="854" y="316" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="18" font-weight="400" fill="#4b6078" text-anchor="start">500.0–500.0 ms</text>
+</svg>

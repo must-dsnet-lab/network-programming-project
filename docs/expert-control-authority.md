@@ -2,7 +2,7 @@
 
 [开发路线](development-roadmap.md#protocol-delivery) · [控制权模型](../src/rover/vehicle/control_authority.py) · [验收用例](../tests/test_control_authority.py)
 
-P1 用独立的 `ControlAuthority` 表达车端控制权裁决。P2 接入双 TLS 管理会话，P3 接入零速交接，P4 在控制报文上验证授权代次，P5 加入授权租约，P6 把控制权接入桌面控制台。物理双机与断网验收按集中试验计划执行。
+P1 用独立的 `ControlAuthority` 表达车端控制权裁决。P2 接入双 TLS 管理会话，P3 接入零速交接，P4 在控制报文上验证授权代次，P5 加入授权租约，P6 把控制权接入桌面控制台。P7 对照两种安全模式并合并验收证据。物理双机与断网验收按集中试验计划执行。
 
 ## 组员复跑索引
 
@@ -15,6 +15,7 @@ P1 用独立的 `ControlAuthority` 表达车端控制权裁决。P2 接入双 TL
 | P3／P4 | [当前版本零速交接](#71-组员本机复现)，核对零速授予与显式使能，运行 UDP v3 准入专项 |
 | P5 | [租约与看门狗](#81-组员本机复现)，核对续期后的继续行驶、到期撤权与断流锁存 |
 | P6 | [双端控制台](#91-组员本机复现)，核对 A/B 的权限、遥测、显式使能和操作反馈 |
+| P7 | [重复对照](#101-运行对照)，核对高级与专家的停车行为并回收证据。现场任务见 [组员集中验收清单](team-acceptance.md) |
 
 ## 1. 身份、会话和授权
 
@@ -385,3 +386,58 @@ Windows 专项回归 **89 项**通过。Qt 测试夹具在测试结束时显式�
 | 到期与断流 | 代次 3 到期后在 `7.781 s` 停车且未锁存，距末条有效指令 `93 ms`。独立的代次 4 断流用例在最后有效指令后 `516 ms` 归零并锁存，待命端 B 可显式复位 |
 
 车端事件、两端检查点和界面截图保存在本机 `local/p6-tests/loopback-20261123-013034240066/`。
+
+## 10. P7 高级与专家机制对照
+
+对照使用同一版本的正式车端和桌面后台，分别启动高级与专家模式。每轮应用 `1.0 m/s`，正常应用零速目标后再次起步，再停止 UDP 发送并保持 TLS 管理连接。看门狗时长取同一份车端 CSV 中最后一条 `control_accepted` 到首次零速且 `fault_latched=true` 的时间差。此口径包含仿真循环的观测时间。本机对照对应主动停发，现场实际断网作为独立用例。
+
+| 核对项 | 高级模式 | 专家模式 |
+| --- | --- | --- |
+| 启动 | 两端 `--secure` | 两端 `--secure --expert-management` |
+| 管理与运动 | TLS 管理 v1，安全 UDP v2，单控制会话 | TLS 管理 v2，安全 UDP v3，两条管理连接可在线，同一时刻一份授权 |
+| 正常停车 | 提交零速，维持有效控制与管理连接 | 提交零速，维持有效控制与管理连接 |
+| UDP 断流 | 车端看门狗归零并锁存 | 租约有效期间，车端看门狗锁存并撤权，车辆归零 |
+| 交接和到期 | 会话与显式复位按高级入口处理 | 先零速再授予下一代次。UDP 仍有效时租约到期会撤权并归零，保护未锁存 |
+
+### 10.1 运行对照
+
+在项目根目录使用 PowerShell。复用能验证 `localhost` 的回环证书和 `desktop-a` 实验账号。对照脚本在回环地址自行启动独立车端，按提示输入实验凭据。每种模式三轮，原始 CSV 和环境记录写到新的本地目录。
+
+```powershell
+$p7Run = '.\local\p7-tests\comparison-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff')
+.\.venv\Scripts\python.exe -X utf8 -B -m examples.demo_expert_comparison --output-dir $p7Run --runs 3
+if ($LASTEXITCODE -eq 0) {
+    .\.venv\Scripts\python.exe -X utf8 -B -m examples.summarize_expert_trials --root $p7Run --runs 3 --output (Join-Path $p7Run 'summary.csv')
+}
+```
+
+过期授权、旧窗口、重复序号和版本隔离由进程内测试核对。测试直接提供合成状态和数据给准入逻辑，并检查拒绝后目标、序号和看门狗计时。
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B -m unittest -q tests.test_expert_comparison_demo tests.test_expert_trial_summary tests.test_expert_control tests.test_expert_control_codec tests.test_windowed_vehicle_app tests.test_expert_control_worker
+```
+
+需要演示高级模式时，结束本次桌面和车端，再按 [高级安全启动](../README.md#secure-desktop-local-acceptance) 重新启动两端，选择 `--secure` 和相应实验配置。专家双端复跑使用 [P6 正式入口](#91-组员本机复现)。
+
+### 10.2 本机结果
+
+2026-11-23，Windows 11、Python 3.12.10，车端和桌面应用代码基线 `846cded`。对照使用正式车端的两种启动模式、现有桌面工作线程和本机回环 TLS/UDP。两种模式的三轮都完成了正常停车、停发后归零并锁存、同一条 TLS 连接内显式复位，以及重新应用目标后起步。专家模式在复位后重新申请控制权。
+
+专项回归 **49 项**、Windows 离屏全量回归 **502 项**通过。全量使用 `$env:QT_QPA_PLATFORM = 'offscreen'` 后运行 `.\.venv\Scripts\python.exe -X utf8 -X faulthandler -B -m unittest discover -s tests -t . -q`，退出码为 0。
+
+| 模式 | 轮数 | 各轮看门狗停车时间（ms） | 中位数（ms） | 范围（ms） |
+| --- | ---: | --- | ---: | ---: |
+| 高级 | 3 | 516、500、500 | 500 | 500–516 |
+| 专家 | 3 | 500、500、500 | 500 | 500–500 |
+
+[![图 12：高级和专家模式的 UDP 看门狗停车时间](../reference_image/diagrams/12-watchdog-comparison.png)](../reference_image/diagrams/12-watchdog-comparison.svg)
+
+车端原始 CSV、逐轮操作检查点及环境记录保存在本机 `local/p7-tests/comparison-20261123-014637614457/`。[公开汇总数据](../reference_image/diagrams/p7-watchdog-samples.csv) · [图 12 生成源](../reference_image/diagrams/render_watchdog_comparison.py)
+
+运行 `.\.venv\Scripts\python.exe -X utf8 -B reference_image/diagrams/render_watchdog_comparison.py` 可用公开汇总数据重新生成图 12。
+
+### 10.3 双端录像与集中验收
+
+同一基线通过真实 TLS、UDP 驱动两个离屏 Qt 控制台。车端在 `4.578 s` 归零并授予 B 代次 2，B 显式应用后在 `5.343 s` 起步。另一轮租约到期在 `9.000 s` 归零且未锁存，距末条有效 UDP 指令 `16 ms`。断流轮在 `10.515 s` 归零并锁存，待命端 B 显式复位，再以代次 5 申请并应用，车端在 `12.359 s` 恢复运动。
+
+本机 `local/p7-tests/loopback-20261123-014631481842/` 保留双端录屏 `dual-console-p7.mp4`、车端 CSV、两端事件和截图。由组员按 [集中验收清单](team-acceptance.md) 追加物理双机、实际断网和现场恢复证据。
