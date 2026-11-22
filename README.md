@@ -69,7 +69,7 @@
 
 - [ ] U1 优化桌面 GUI 布局、控制操作、状态提示和地图使用。 [界面和控件验收](#desktop-ui-acceptance)
 - [x] U2 增加图形化连接配置，已通过 Windows 本机联调。 [操作与复跑](#desktop-graphical-connection)
-- [ ] U3 跑通二维启动与只读观察，验证最小 Windows EXE。
+- [ ] U3 跑通二维启动与只读观察，最小 Windows EXE 待无开发环境验收。 [操作与打包](#desktop-windows-starter)
 - [ ] U4 接入方向摇杆、油门与刹车，定义回中、失焦和断开行为。
 - [ ] U5 在二维车端验证加速、滑行、制动与转向模型。
 - [ ] U6 建立真实三维坐标与遥测，验证高度变化和兼容性。
@@ -86,7 +86,7 @@
 | [1. 环境准备与项目结构](#environment) | 安装、测试、目录职责与应用入口 |
 | [2. 车辆运动与UDP控制](#motion-control) | 离线运动 → 单包UDP控制 → 持续运行与本地保护 |
 | [3. 遥测回传](#telemetry) | 三终端运行、状态观察与图2 |
-| [4. 桌面控制台](#desktop-console) | 启动与状态 → 地图/轨迹/坐标 → 数值控制与验收 → [图形化连接](#desktop-graphical-connection) |
+| [4. 桌面控制台](#desktop-console) | 启动与状态 → 地图/轨迹/坐标 → 数值控制与验收 → [图形化连接](#desktop-graphical-connection) → [Windows 启动与只读观察](#desktop-windows-starter) |
 | [5. 协议分层、TCP 分帧与 TLS 会话](#network-layers) | 控制信封 → 管理编解码与分帧 → TLS 与线程交接 |
 | [6. 安全控制、管理动作与保护恢复](#secure-control-evolution) | HMAC、有效窗口 → 管理请求、急停 → 复位与运行时 |
 | [7. 正式入口、桌面整合与跨系统联调](#secure-desktop-integration) | 正式启动 → 安全桌面 → VMware 与只读观察 → [专家版双端控制时序](#expert-authority-flow) |
@@ -152,7 +152,7 @@ LICENSE          项目许可证
 | `transport` | `udp_transport.py`衔接编解码与Socket收发，区分空闲、坏包和系统错误；`tcp_records.py`编解码TCP应用记录并从分次到达的字节中提取完整正文；`tcp_transport.py`负责本机TCP收发、EOF及读取期限。 |
 | `vehicle` | `control_watchdog.py`选择有效或零速目标；`control_guard.py`管理会话、密钥、使能、接受记录及超时；`management_session.py`处理身份和会话归属，`management_connection.py`处理管理消息流，`management_runtime.py`负责TLS监听、网络线程与主线程队列交接；`vehicle_runtime.py`组合受保护步进，`app.py`运行车端循环。 |
 | `desktop` | `app.py`组合窗口、按钮、定时器与网络；`desktop_map.py`绘制地图；`map_geometry.py`换算坐标；`trajectory.py`保存世界轨迹；`management_client.py`封装TLS管理请求、自动编号及回复配对；`secure_connection.py`统一证书校验、账号认证和连接清理；`secure_control.py`组织桌面会话、窗口与签名发包；`control_worker.py`负责后台连接、周期发送、保活和状态更新。 |
-| `tests` | 最近全量回归 351 项，覆盖模型、控制/遥测/管理消息、管理客户端、安全连接入口、桌面安全发包与后台线程、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动与网络地址配置、遥测双发、控制断流和车端计时、真实UDP、本机TCP、TCP应用记录、保护、会话状态与两种桌面启动路径和界面行为。 |
+| `tests` | U3 本机全量回归 556 项，覆盖模型、控制/遥测/管理消息、管理客户端、安全连接入口、桌面安全发包与后台线程、HMAC、会话密钥、短期窗口、急停、正式复位、管理运行时线程交接、启动与网络地址配置、遥测双发、控制断流和车端计时、真实 UDP、本机 TCP、TCP 应用记录、保护、会话状态及桌面各启动角色。 |
 | `examples` | 教学示例，可单独观察离线运动、单包与周期控制、超时、命令行遥测和安全管理连接。 |
 | `reference_image` | 文档图片和生成源；当前应用画面由代码绘制，不依赖这些参考图运行。 |
 
@@ -603,6 +603,35 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 **项目负责人手测（2026-11-23）**。在 Windows 本机用 `eeff448` 简单试跑高级和专家模式，反馈两种模式均正常。此轮记录为本机手动试跑。双端交接与物理双机现场用例详见集中验收。
 
 [组员复跑清单](docs/team-acceptance.md#2-组内复跑) · [表单](src/rover/desktop/connection_dialog.py) · [配置读写](src/rover/desktop/connection_profile.py)
+
+<a id="desktop-windows-starter"></a>
+
+### 4.7 U3 二维启动、只读观察和 Windows EXE
+
+使用 Windows 包时，解压整个 `RoverDesktop` 目录并双击 `RoverDesktop.exe`。开发环境可在项目根目录运行同一界面。
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B -m rover.desktop.app --launcher
+```
+
+| 入口 | 操作与结果 |
+| --- | --- |
+| 本地模拟 | 自动启动本机二维虚拟车，等到遥测可用后应用目标。控制和遥测使用操作系统分配的回环端口。关窗结束该虚拟车，重新打开可启动新实例。日志保存在当前用户数据目录下的 `Rover/logs/`，路径可在状态说明的提示中查看 |
+| 连接车端 | 沿用 [U2 连接设置](#desktop-graphical-connection)。选择已运行车端的高级或专家模式，导入对应公开 CA 并登录。连接配置可选保存。 [公开配置模板](examples/desktop-connection.example.json) |
+| 只读观察 | 填写本机遥测接收地址和 UDP 端口，默认 `127.0.0.1:10001`。界面显示地图、轨迹和车端状态。车端第二路遥测目的地应与观察台一致，回环时在车端命令追加 `--observer-host 127.0.0.1 --observer-port 10001`。 [遥测双发复现](#telemetry-observer-acceptance) |
+
+打包人员在 Windows 项目根目录执行：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -r .\scripts\requirements-windows-build.txt
+.\scripts\build_windows_desktop.ps1
+```
+
+输出为 `dist/RoverDesktop/`，交付时保留 EXE 旁的 `_internal/`。开发者可用 `-OutputDirectory` 生成另一个输出目录。组员使用该目录运行，连接已有车端所需的公开 CA 和登录账号由测试负责人单独提供。
+
+**源码本机证据（2026-11-23）**。Windows 11、Python 3.12.10，离屏 Qt 通过启动界面进入三个角色。本地模拟连续两次观测到 `0.00 → 0.65 → 0.00 m/s`，停发后归零锁存并禁用应用，退出后控制端口可以立即重绑。高级连接通过 TLS 认证并保存公开配置，独立只读窗口收到 `0.00 → 0.80 → 0.00 m/s`。专项 77 项、全量 556 项通过。截图与原始日志见本机 `local/u3-tests/source-20261123-025436997/`。
+
+**EXE 本机证据（2026-11-23）**。PyInstaller 6.22.3 生成的 Windows x64 包在项目目录外解压。在未继承 Python 或 Qt 开发路径的进程环境中，启动页两次打开并退出，Qt 和 Python 运行库从包内加载。打包后的本地模拟子进程完成 UDP 起步、停车与退出。压缩包及原始记录留在本机 `local/u3-tests/packaging-final/`。单独的无开发环境 Windows 验收由组员执行。 [组员 EXE 验收 R06](docs/team-acceptance.md#2-组内复跑)
 
 <a id="network-layers"></a>
 

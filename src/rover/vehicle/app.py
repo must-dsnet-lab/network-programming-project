@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from ipaddress import IPv4Address
 import socket
+import sys
+from threading import Event, Thread
 from time import monotonic, sleep
 from contextlib import nullcontext
 from rover.vehicle.control_guard import (
@@ -37,6 +39,7 @@ def main(
     telemetry_address: tuple[str, int] = ("127.0.0.1", 10000),
     observer_address: tuple[str, int] | None = None,
     event_log: Path | None = None,
+    stop_event: Event | None = None,
 ) -> None:
     telemetry_destinations = (telemetry_address,)
     if observer_address is not None and observer_address != telemetry_address:
@@ -122,10 +125,17 @@ def main(
             writer.writerow(("elapsed_s", "event", "seq", "speed_mps", "fault_latched", "detail"))
             record(started_at_s, "state", detail="initial")
 
-        print(f"waiting for UDP on {address}; Ctrl+C to exit", flush=True)
+        if address[1] == 0:
+            print(
+                f"Local rover ready: control_port={sock.getsockname()[1]} "
+                f"telemetry_source_port={telemetry_sock.getsockname()[1]}",
+                flush=True,
+            )
+        else:
+            print(f"waiting for UDP on {address}; Ctrl+C to exit", flush=True)
 
         try:
-            while True:
+            while stop_event is None or not stop_event.is_set():
                 # 1. 记录本轮起点，先检查保护状态
                 tick_started_s = monotonic()
                 previous_session_id = guard.session_id
@@ -306,6 +316,16 @@ def _host_argument(value: str) -> str:
     return host
 
 
+def _stop_on_parent_exit(stop_event: Event) -> None:
+    try:
+        if sys.stdin is not None:
+            sys.stdin.read()
+    except OSError:
+        pass
+    finally:
+        stop_event.set()
+
+
 def cli(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(
         description="Run the vehicle demo or TLS-managed vehicle."
@@ -318,7 +338,9 @@ def cli(argv: list[str] | None = None) -> None:
     parser.add_argument("--cert-dir", type=Path)
     parser.add_argument("--credentials-file", type=Path)
     parser.add_argument("--bind-host", type=_host_argument, default="127.0.0.1")
-    parser.add_argument("--control-port", type=_port_argument, default=9999)
+    control_port = parser.add_mutually_exclusive_group()
+    control_port.add_argument("--control-port", type=_port_argument, default=9999)
+    control_port.add_argument("--auto-control-port", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--management-port", type=_port_argument, default=19177)
     parser.add_argument("--telemetry-host", type=_host_argument, default="127.0.0.1")
     parser.add_argument("--telemetry-port", type=_port_argument, default=10000)
@@ -339,6 +361,11 @@ def cli(argv: list[str] | None = None) -> None:
         observer_address = (str(args.observer_host), args.observer_port or 10001)
     elif args.observer_port is not None:
         parser.error("--observer-port requires --observer-host")
+    if args.auto_control_port and (
+        args.secure or args.bind_host != "127.0.0.1"
+        or args.telemetry_host != "127.0.0.1" or observer_address is not None
+    ):
+        parser.error("--auto-control-port requires the local loopback demo")
     management = None
     try:
         if args.secure:
@@ -353,13 +380,17 @@ def cli(argv: list[str] | None = None) -> None:
                 address=(args.bind_host, args.management_port),
             )
 
-        log_options = {"event_log": args.event_log} if args.event_log is not None else {}
+        runtime_options = {"event_log": args.event_log} if args.event_log is not None else {}
+        if args.auto_control_port:
+            stop_event = Event()
+            Thread(target=_stop_on_parent_exit, args=(stop_event,), daemon=True).start()
+            runtime_options["stop_event"] = stop_event
         main(
-            address=(args.bind_host, args.control_port),
+            address=(args.bind_host, 0 if args.auto_control_port else args.control_port),
             telemetry_address=(args.telemetry_host, args.telemetry_port),
             management=management,
             observer_address=observer_address,
-            **log_options,
+            **runtime_options,
         )
     except (OSError, ValueError) as error:
         parser.error(f"vehicle startup failed: {error}")
