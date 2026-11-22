@@ -157,3 +157,12 @@ $env:PYTHONPATH = 'src'
 $env:QT_QPA_PLATFORM = 'offscreen'
 .\.venv\Scripts\python.exe -X utf8 -B -m unittest discover -s tests -t . -q
 ```
+
+### 5.3 用户动手验收
+
+2026-11-23 收到用户的 Windows PowerShell 本机运行结果，对应 P2 实现提交 `e00f1c2`。按 5.1 的默认命令建立两条 TLS 连接，两端都查询到 2 个不同会话。示例关闭 A 后，B 查询到在线数降为 1，并继续使用原会话。
+
+```text
+P2 online sessions: A=2 B=2, distinct session IDs
+P2 A closed: B=1, B session unchanged
+```
