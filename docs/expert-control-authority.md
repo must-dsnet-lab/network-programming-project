@@ -2,7 +2,18 @@
 
 [开发路线](development-roadmap.md#protocol-delivery) · [控制权模型](../src/rover/vehicle/control_authority.py) · [验收用例](../tests/test_control_authority.py)
 
-P1 用独立的 `ControlAuthority` 表达车端控制权裁决。P2 接入双 TLS 管理会话，P3 接入零速交接，P4 在控制报文上验证授权代次。租约时钟属于 P5。物理双机与断网验收按集中试验计划执行。
+P1 用独立的 `ControlAuthority` 表达车端控制权裁决。P2 接入双 TLS 管理会话，P3 接入零速交接，P4 在控制报文上验证授权代次，P5 加入授权租约。物理双机与断网验收按集中试验计划执行。
+
+## 组员复跑索引
+
+每阶段维护运行命令、预期现象和证据位置。集中验收时统一登记测试提交、环境、执行人、通过或失败及对应日志。
+
+| 阶段 | 复跑入口与核对项 |
+| --- | --- |
+| P1 | [单终端状态机](#41-单终端动手测试)，核对竞争、交接和复位 |
+| P2 | [双 TLS 会话](#51-手动复现)，核对独立会话和单端断开 |
+| P3／P4 | [当前版本零速交接](#71-组员本机复现)，核对零速授予与显式使能，运行 UDP v3 准入专项 |
+| P5 | [租约与看门狗](#81-组员本机复现)，核对续期后的继续行驶、到期撤权与断流锁存 |
 
 ## 1. 身份、会话和授权
 
@@ -38,13 +49,13 @@ P1 用独立的 `ControlAuthority` 表达车端控制权裁决。P2 接入双 TL
 
 | 请求类型 | 公共字段外的参数 | 受理条件及成功结果 |
 | --- | --- | --- |
-| `acquire_authority` | `session_id` | 活跃会话在 `idle` 可获新代次，返回 `phase` 和 `generation`。 |
+| `acquire_authority` | `session_id` | 活跃会话在 `idle` 可获新代次，返回 `phase`、`generation` 和 `lease_remaining_s`。 |
 | `set_authority_enabled` | `session_id`、`generation`、`enabled` | 当前持有者在 `held` 或 `controlling` 可切换使能，返回变更后的 `phase`。使能成功的回复经当前连接返回 `control_key`。 |
 | `issue_control_window` | `session_id`、`generation` | 使能后的持有者可申请短期控制窗口，返回 `window_id` 和 `lifetime_s`。 |
 | `release_authority` | `session_id`、`generation` | 当前持有者进入 `stopping`。回复报告撤权已受理，归零由仿真步进确认。 |
 | `transfer_authority` | `session_id`、`generation`、`target_session_id` | 当前持有者选择另一条连接的在线候选。车端按签发的候选会话 ID 查找，并在开始停车时回复 `phase`。 |
-| `renew_authority` | `session_id`、`generation` | P5 接入后，当前持有者在到期前可续约。返回此刻计算的剩余时长 `lease_remaining_s`。 |
-| `query_authority` | `session_id` | 活跃会话可查询 `phase`、当前授权代次、是否由本会话持有和可执行动作。仅向有转让权限的操作者返回在线候选的 `target_session_id`。 |
+| `renew_authority` | `session_id`、`generation` | 当前持有者在到期前可续约，保留代次，返回剩余时长 `lease_remaining_s`。 |
+| `query_authority` | `session_id` | 活跃会话可查询 `phase` 和本会话是否持有授权。持有者可读取代次、剩余时长及在线交接候选的会话 ID。 |
 | `emergency_stop` | `session_id`、`generation` | 当前持有者可请求急停，车端进入 `fault_latched` 并撤掉授权。车端保护也可自行触发锁存。 |
 | `reset_control` | `session_id` | 车端通过本页复位检查后解除故障锁存，返回 `phase: idle`。 |
 
@@ -58,9 +69,9 @@ P1 用独立的 `ControlAuthority` 表达车端控制权裁决。P2 接入双 TL
 
 ### 3.2 队列与租约边界
 
-网络处理线程将管理事件交给车端仿真线程统一裁决。同一轮先处理急停和故障，再处理租约到期、断开和归还，再处理申请、续期等剩余动作。同一优先级按车端入队顺序裁决。已撤销授权的同一代次不能被后到的续期或使能恢复。
+网络线程提交请求，仿真线程先检查看门狗、已有锁存和租约，再清理已知断开的会话。每轮最多按入队顺序处理一条管理请求，并在实际处理时重新读取车端时钟。收完 UDP 后再次检查守护状态和租约，随后裁决指令。
 
-P5 草案以车端单调时钟计算租约，授予时确定到期点。以车端处理时刻判定续期，`now < expires_at` 时才允许续期，等于或超过即到期。后续续期使用当前车端处理时刻重新计算到期点。仿真线程使用当前到期点判定是否调用 `lease_expired`，避免旧到期点在续期后撤销授权。管理保活、查询和 UDP 指令都不自动续期。租约到期和 UDP 看门狗分别计时、分别验收。
+P5 以车端单调时钟计算租约，授予时设置截止时间。`now < expires_at` 才允许当前持有者续期，到达等号即撤权。成功续期以本次处理时刻加租约时长更新截止点。UDP 看门狗与租约独立计时，两者在同轮到期时先执行故障锁存。 [P5 复跑](#8-p5-授权租约与到期停车)
 
 ## 4. P1 复现
 
@@ -259,3 +270,56 @@ $env:QT_QPA_PLATFORM = 'offscreen'
 2026-11-23，基线 `7a8cea1` 加 P4 工作区改动。Windows 专项与相关入口回归 68 项、离屏全量回归 465 项通过。专项覆盖代次字段参与 HMAC、两种安全报文的版本隔离、会话与代次失效，以及窗口、序号和看门狗保护。
 
 同日在 Windows 本机回环运行正式车端和交接示例，使用临时 CA、两个独立的测试账号、两条 TLS 连接及真实 UDP 收发。车端 CSV 记录 A 行驶至 1.0 m/s、交接后 B 以代次 2 在 0.0 m/s 待使能、B 显式使能后行驶至 1.0 m/s、释放后归零。全程未触发故障锁存。原始日志保存在本机 `local/p4-tests/loopback-20261123-005915320/`。
+
+## 8. P5 授权租约与到期停车
+
+当前租约时长为 **3 秒**。首次申请获授时开始计时。交接则从车端确认归零、授予新持有者时开始。租约在待使能和控制中两个状态都会计时。只有当前持有者通过 TLS 发送正确代次的 `renew_authority` 能延长截止时间。查询、窗口签发和有效 UDP 控制各自按原用途处理。
+
+租约到期时车端撤权并清空目标、窗口、密钥和序号。车辆归零后回到 `idle`，TLS 会话可继续查询和申请新代次。最近一次过期授权的原持有者续期会收到 `lease_expired`。UDP 看门狗超时另行触发故障锁存，复位仍按已有流程处理。
+
+### 8.1 组员本机复现
+
+记录 `git log -1 --oneline`。在 Windows 项目根目录开两个 PowerShell 窗口，沿用回环证书和测试账号。终端 A 启动正式车端并保存事件。
+
+```powershell
+New-Item -ItemType Directory -Path '.\local\p5-tests' -Force | Out-Null
+$p5Log = '.\local\p5-tests\lease-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '.csv'
+.\.venv\Scripts\python.exe -X utf8 -B -m rover.vehicle.app --secure --expert-management --cert-dir '.\local\certs' --credentials-file '.\local\trusted_clients.json' --event-log $p5Log
+```
+
+终端 B 运行复跑示例，按提示输入测试凭据。
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B -m examples.demo_expert_lease
+```
+
+| 用例 | 通过条件 |
+| --- | --- |
+| 显式续期 | 在原截止点前续期，保持同一代次，车辆在原截止点后仍可行驶 |
+| 到期停车 | 停止续期，继续发送正常指令。车端在续期后的截止点撤权、归零，遥测 `fault_latched=False`，TLS 会话继续可用 |
+| 过期后恢复控制资格 | 原代次续期被拒绝。显式申请拿到新代次，初始待使能 |
+| UDP 断流 | 在另一轮租约有效时停止发送 UDP，车辆归零且遥测 `fault_latched=True`，同一 TLS 会话仍能查询 |
+
+默认顺序执行两种情形并保留最后一次故障锁存。`--scenario lease` 和 `--scenario watchdog` 可分别运行。重跑前重启本轮仿真车端并使用新的日志文件。
+
+验收交回两端输出、车端 CSV 和运行版本。车端的 `authority_lease_started`、`authority_lease_renewed` 和 `authority_lease_expired` 记录对应代次，`detail` 的 `deadline_elapsed_s` 与 CSV 的 `elapsed_s` 使用同一车端时间基准。用 `elapsed_s` 对齐同轮事件，并以 `state` 行核对归零和锁存。
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B -m unittest -q tests.test_expert_control tests.test_expert_management_runtime tests.test_expert_management_client tests.test_windowed_vehicle_app tests.test_expert_lease_demo
+$env:QT_QPA_PLATFORM = 'offscreen'
+.\.venv\Scripts\python.exe -X utf8 -B -m unittest discover -s tests -t . -q
+```
+
+### 8.2 本机证据
+
+2026-11-23，基线 `57f0acd` 加 P5 工作区改动。Windows 专项 **53 项**、离屏全量 **475 项**通过。专项包含截止时刻已到却尚未处理的排队续期和 UDP 指令。
+
+同日通过 Windows 本机回环运行正式车端和 P5 示例，使用临时 CA、测试账号和真实 TLS、UDP。以下时间均为同一次运行的车端 `elapsed_s`。
+
+| 场景 | 实测结果 |
+| --- | --- |
+| 续期与到期 | 代次 1 的原截止为 `3.156 s`，在 `1.672 s` 续期至 `4.672 s`，过原截止仍行驶。车端在 `4.672 s` 撤权并记录零速、未锁存，末条有效指令距撤权 `31 ms` |
+| 同一 TLS 会话继续使用 | 到期后查询成功，原代次续期返回 `lease_expired`。显式申请使代次从 1 变为 2，状态为 `held` |
+| UDP 看门狗 | 代次 3 的续期后截止为 `8.078 s`，断流后在 `5.578 s` 已归零并锁存，原 TLS 会话仍能查询 |
+
+原始证据保存在本机 `local/p5-tests/loopback-20261123-011231283766/`。

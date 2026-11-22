@@ -30,6 +30,7 @@ class ControlSession:
 class AuthorityGrant:
     session: ControlSession
     generation: AuthorityGeneration
+    lease_expires_at_s: float | None = None
 
 
 @dataclass(frozen=True)

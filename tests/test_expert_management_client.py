@@ -206,6 +206,12 @@ class TestExpertManagementClient(unittest.TestCase):
         actions = (
             ("acquire_authority", (session,), {}, {"generation": generation, "phase": "held"}),
             (
+                "renew_authority",
+                (session, generation),
+                {"generation": generation},
+                {"lease_remaining_s": 3.0, "phase": "held"},
+            ),
+            (
                 "set_authority_enabled",
                 (session, generation, True),
                 {"generation": generation, "enabled": True},
@@ -260,15 +266,27 @@ class TestExpertManagementClient(unittest.TestCase):
         )
 
     def test_authority_denial_keeps_connection_usable(self):
-        denial = self._reply(
-            "issue_control_window_result", 1,
-            accepted=False, reason="not_authority_holder", phase="held",
+        for action, reason, phase in (
+            ("issue_control_window", "not_authority_holder", "held"),
+            ("renew_authority", "lease_expired", "idle"),
+        ):
+            with self.subTest(action=action):
+                denial = self._reply(
+                    f"{action}_result", 1, accepted=False, reason=reason, phase=phase,
+                )
+                tls = self._socket(denial, self._reply("query_authority_result", 2, **self.status))
+                client = ExpertManagementClient(tls)
+                self.assertEqual(getattr(client, action)("session-a", self.generation), denial)
+                self.assertTrue(client.query_authority("session-a")["accepted"])
+                self.assertEqual([p["request_id"] for p in self._sent(tls)], [1, 2])
+
+    def test_acquire_preserves_optional_lease_remaining(self):
+        reply = self._reply(
+            "acquire_authority_result", 1, accepted=True, reason=None,
+            phase="held", generation=self.generation, lease_remaining_s=3.0,
         )
-        tls = self._socket(denial, self._reply("query_authority_result", 2, **self.status))
-        client = ExpertManagementClient(tls)
-        self.assertEqual(client.issue_control_window("session-a", self.generation), denial)
-        self.assertTrue(client.query_authority("session-a")["accepted"])
-        self.assertEqual([p["request_id"] for p in self._sent(tls)], [1, 2])
+        client = ExpertManagementClient(self._socket(reply))
+        self.assertEqual(client.acquire_authority("session-a"), reply)
 
     def test_malformed_authority_reply_stops_reuse(self):
         for name, args, result in (
@@ -279,6 +297,15 @@ class TestExpertManagementClient(unittest.TestCase):
             ("reset_control", ("session-a",), {"phase": " "}),
             ("acquire_authority", ("session-a",), {}),
             ("acquire_authority", ("session-a",), {"generation": {"epoch": "run", "number": True}}),
+            (
+                "acquire_authority", ("session-a",),
+                {"generation": self.generation, "lease_remaining_s": 0},
+            ),
+            ("renew_authority", ("session-a", self.generation), {}),
+            ("renew_authority", ("session-a", self.generation), {"lease_remaining_s": 0}),
+            ("renew_authority", ("session-a", self.generation), {"lease_remaining_s": -1.0}),
+            ("renew_authority", ("session-a", self.generation), {"lease_remaining_s": True}),
+            ("renew_authority", ("session-a", self.generation), {"lease_remaining_s": "3.0"}),
             (
                 "set_authority_enabled",
                 ("session-a", self.generation, True),
@@ -327,20 +354,25 @@ class TestExpertManagementClient(unittest.TestCase):
         waiting = {**self.status, "generation": None, "target_session_ids": []}
         replies = (
             self._reply("query_authority_result", 1, **owner),
-            self._reply("query_authority_result", 2, **waiting),
+            self._reply("query_authority_result", 2, **owner, lease_remaining_s=0.0),
+            self._reply("query_authority_result", 3, **waiting),
         )
         client = ExpertManagementClient(self._socket(*replies))
         self.assertEqual(client.query_authority("session-a"), replies[0])
-        self.assertEqual(client.query_authority("session-b"), replies[1])
+        self.assertEqual(client.query_authority("session-a"), replies[1])
+        self.assertEqual(client.query_authority("session-b"), replies[2])
 
     def test_query_rejects_malformed_or_out_of_scope_holder_fields(self):
         for fields in (
             {"generation": self.generation},
             {"target_session_ids": ["session-b"]},
+            {"lease_remaining_s": 3.0},
             {"owns_authority": True, "generation": {"epoch": "", "number": 1}},
             {"owns_authority": True, "generation": {"epoch": "run", "number": 0}},
             {"owns_authority": True, "target_session_ids": "session-b"},
             {"owns_authority": True, "target_session_ids": ["session-b", " "]},
+            {"owns_authority": True, "lease_remaining_s": -0.1},
+            {"owns_authority": True, "lease_remaining_s": False},
         ):
             with self.subTest(fields=fields):
                 status = {**self.status, **fields}
@@ -360,6 +392,8 @@ class TestExpertManagementClient(unittest.TestCase):
             client.release_authority("session-a", {"epoch": "run", "number": True})
         with self.assertRaises(ValueError):
             client.set_authority_enabled("session-a", self.generation, 1)
+        with self.assertRaises(ValueError):
+            client.renew_authority("session-a", {"epoch": "run", "number": 0})
         tls.sendall.assert_not_called()
         self.assertEqual(client.reset_control("session-a"), reply)
         self.assertEqual([p["request_id"] for p in self._sent(tls)], [1])
