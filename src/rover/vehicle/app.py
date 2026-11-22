@@ -14,6 +14,7 @@ from rover.vehicle.control_guard import (
     update_windowed_command_guard_with_reason,
 )
 from rover.vehicle.management_runtime import management_listener
+from rover.vehicle.expert_management_runtime import expert_management_listener
 from rover.protocol.control_codec import ControlMacVerificationError
 from rover.protocol.telemetry_codec import TelemetrySnapshot
 from rover.transport.udp_transport import (
@@ -254,6 +255,10 @@ def cli(argv: list[str] | None = None) -> None:
         description="Run the vehicle demo or TLS-managed vehicle."
     )
     parser.add_argument("--secure", action="store_true")
+    parser.add_argument(
+        "--expert-management", action="store_true",
+        help="use the expert TLS management protocol and allow two sessions",
+    )
     parser.add_argument("--cert-dir", type=Path)
     parser.add_argument("--credentials-file", type=Path)
     parser.add_argument("--bind-host", type=_host_argument, default="127.0.0.1")
@@ -266,6 +271,8 @@ def cli(argv: list[str] | None = None) -> None:
     parser.add_argument("--event-log", type=Path, help="write vehicle events to a new CSV file")
     args = parser.parse_args(argv)
 
+    if args.expert_management and not args.secure:
+        parser.error("--expert-management requires --secure")
     if args.secure: # 命令中带 --secure
         if args.cert_dir is None or args.credentials_file is None:
             parser.error("--secure requires --cert-dir and --credentials-file")
@@ -283,7 +290,8 @@ def cli(argv: list[str] | None = None) -> None:
                 if not (args.cert_dir / name).is_file():
                     parser.error(f"missing certificate file: {args.cert_dir / name}")
             trusted = load_trusted_credentials(args.credentials_file)
-            management = management_listener(
+            listener = expert_management_listener if args.expert_management else management_listener
+            management = listener(
                 args.cert_dir,
                 trusted,
                 address=(args.bind_host, args.management_port),

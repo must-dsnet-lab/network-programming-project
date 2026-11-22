@@ -32,7 +32,7 @@ P1 用独立的 `ControlAuthority` 表达车端控制权裁决。状态机和用
 
 ## 3. 管理与 UDP 接口草案
 
-候选方案使用显式选入的专家入口，复用已验证的 TLS 校验、应用认证和 TCP 分帧。专家管理报文拟用 `version: 2`，专家安全 UDP 拟用 `version: 3`。现有高级入口继续使用管理 v1 和安全 UDP v2。专家端和高级端的版本不一致时明确提示协议不兼容。高级管理端当前遇到未知类型或版本会结束连接，专家客户端应能提示检查双方启动模式。专家 UDP 候选格式须完整性校验覆盖会话、授权代次、窗口、序号和指令目标，专家授权路径拒绝缺少代次的高级报文。
+专家入口显式启用，复用 TLS 校验、应用认证和 TCP 分帧。P2 采用专家管理报文 `version: 2`，专家安全 UDP 拟用 `version: 3`。高级入口使用管理 v1 和安全 UDP v2。管理版本不兼容时结束当前连接，排查时核对两端的启动模式。专家 UDP 候选格式须完整性校验覆盖会话、授权代次、窗口、序号和指令目标，专家授权路径拒绝缺少代次的高级报文。
 
 连接完成 TLS 握手后，经 `authenticate` 提交 `client_id` 和 `credential`。认证成功的连接用 `open_session` 取得各自的 `session_id`，重复打开时复用本连接的会话。打开管理会话不授予控制权。请求使用 UTF-8 JSON，包含整数 `version`、请求类型 `type` 和递增的 `request_id`。车端从认证连接取得操作者身份，并核对请求中的 `session_id` 绑定当前连接。`generation` 携带 `epoch` 和 `number`。下表的回复包含 `version` 和 `type`，回复类型为对应请求类型加 `_result`，并附原编号、布尔值 `accepted` 及 `reason`。成功时 `reason` 为 `null`。
 
@@ -110,3 +110,50 @@ $env:QT_QPA_PLATFORM = 'offscreen'
 Windows 本机预检使用 Python 3.12.10，基线 `544b247` 加 `feat/expert-control-authority` 工作区改动。状态机初版专项 12 项、离屏全量 404 项通过。加入 [交互示例](../examples/demo_control_authority.py) 后，命令行三个分支均跑通，专项 15 项、离屏全量 407 项通过。
 
 专项用例覆盖独占申请、连接归属、启停、转让与候选断开、旧代次事件、撤权后等待归零和故障恢复。用例直接调用状态机，后续的线上报文、队列、计时和物理双机均需对应阶段的独立验收。
+
+## 5. P2 双 TLS 本机联调
+
+`--secure --expert-management` 启用管理 v2。本阶段支持两个桌面端各自认证、建立管理会话和查询授权状态。连接线程分别处理 TLS 和读写，车端主循环每轮最多处理一个排队请求，并清理已断开的连接实例。查询回复包含管理会话数、排队耗时和仿真节拍间隔。授权申请、使能、交接和专家 UDP 仍按 P3/P4 接入，本阶段的专家车端保持零速并持续发送遥测。
+
+| 项目 | P2 行为 |
+| --- | --- |
+| 并发名额 | 最多两条连接，各有独立的 TLS 握手和协议状态。名额占满时关闭新连接。 |
+| 请求编号 | 编号从 1 开始按连接递增，重复和倒退均返回可关联的拒绝。同账号可以建立两个独立会话。 |
+| 状态查询 | 以本条连接登记的会话为准。返回 `phase`、`owns_authority`、`online_sessions`、`queue_wait_ms` 和 `tick_interval_ms`。 |
+| 超时与清理 | 连接 I/O 超时为 5 秒，单帧拼装上限为 1 秒。队列容量为 2。未开始的操作等待仿真超过 1 秒时取消，分别报告 `simulation_timeout` 或 `queue_full`。断开清理对应会话，其余连接可以继续查询。 |
+
+### 5.1 手动复现
+
+在 Windows 项目根目录开两个 PowerShell 窗口，从同一个工作区运行。已有可用的回环证书与 `local/trusted_clients.json` 可直接复用。
+
+窗口 A · 启动车端：
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B -m rover.vehicle.app --secure --expert-management --cert-dir '.\local\certs' --credentials-file '.\local\trusted_clients.json'
+```
+
+窗口 B · 运行 [双连接示例](../examples/demo_expert_management.py)：
+
+```powershell
+.\.venv\Scripts\python.exe -X utf8 -B -m examples.demo_expert_management
+```
+
+默认用同一个 `desktop-a` 账号建立两条经过证书验证的 TLS 连接，凭据在终端隐藏输入。已有另一账号时可添加 `--client-id-b desktop-b` 分别输入。证书在其他目录时，对应替换车端的 `--cert-dir` 和示例的 `--ca-file`。预期输出：
+
+```text
+P2 online sessions: A=2 B=2, distinct session IDs
+P2 A closed: B=1, B session unchanged
+```
+
+### 5.2 本机证据
+
+2026-11-23 在 Windows 用正式车端进程、隔离实验 CA 和两个临时账号通过本机回环实际验证。第一条连接还在等待握手时，第二条可完成 TLS 和登记。两条已认证连接同时在线、会话不同，两个 UDP 遥测接收端均收到零速数据。关闭 A 后，B 看到在线会话数降为 1，原会话可继续查询。示例入口同样通过。该证据覆盖本机 TLS 与 UDP 遥测。
+
+Windows Python 3.12.10，基线 `fe0ebc0` 加 P2 工作区改动。P2 专项及相关入口回归 44 项、离屏全量 432 项通过。本机 TCP 测试覆盖重复编号、等待超时和队列满，独立的真实 TLS/UDP 联调覆盖上段场景。
+
+```powershell
+$env:PYTHONPATH = 'src'
+.\.venv\Scripts\python.exe -X utf8 -B -m unittest -q tests.test_expert_management_runtime tests.test_parallel_tls_server tests.test_expert_management_client tests.test_expert_management_demo tests.test_secure_connection tests.test_vehicle_startup
+$env:QT_QPA_PLATFORM = 'offscreen'
+.\.venv\Scripts\python.exe -X utf8 -B -m unittest discover -s tests -t . -q
+```

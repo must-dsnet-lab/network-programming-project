@@ -53,7 +53,7 @@
 - [ ] A08/A09 保持车端运行，实际断网并验证停车。网络恢复后确认车辆保持静止，再重建会话，若已锁存则显式复位，再次使能并明确应用目标后验证重新运动。 [断网与恢复验收](docs/development-roadmap.md#advanced-protocol-acceptance)
 
 - [ ] P1 定义控制权状态机、管理消息与拒绝结果。 [接口草案与本机实测](docs/expert-control-authority.md#41-单终端动手测试)
-- [ ] P2 支持两条 TLS 管理连接同时在线，保持车端串行裁决。
+- [ ] P2 支持两条 TLS 管理连接同时在线，保持车端串行裁决。 [双 TLS 本机联调](docs/expert-control-authority.md#5-p2-双-tls-本机联调)
 - [ ] P3 实现独占控制权和零速显式交接。
 - [ ] P4 将授权代次接入 UDP 准入，验证旧授权失效。
 - [ ] P5 实现租约续期、到期撤销与停车。
