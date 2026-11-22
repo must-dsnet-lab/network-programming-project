@@ -6,9 +6,10 @@ from time import monotonic
 from math import radians
 
 from rover.core.control_target import ControlTarget
-from PySide6.QtCore import Qt, QTime, QTimer
+from PySide6.QtCore import Qt, QTime, QTimer, Slot
 from PySide6.QtWidgets import (
     QApplication,
+    QCheckBox,
     QFormLayout,
     QFrame,
     QGridLayout,
@@ -28,32 +29,66 @@ from pathlib import Path
 
 from rover.desktop.appearance import CONSOLE_STYLE, STATUS_COLORS, desktop_font
 from rover.desktop.control_worker import SecureControlWorker
-from rover.desktop.secure_connection import connect_management
+from rover.desktop.expert_control_worker import ExpertControlWorker
+from rover.desktop.secure_connection import connect_expert_management, connect_management
 from rover.desktop.desktop_map import VehicleMap
 from rover.transport.udp_transport import send_target, try_receive_telemetry
 
 
 EVENT_LOG_LIMIT = 100
 
+AUTHORITY_PHASE_LABELS = {
+    "idle": "无人持有",
+    "held": "已授权，等待应用",
+    "controlling": "控制中",
+    "stopping": "撤权，等待归零",
+    "fault_latched": "故障已锁存",
+}
+AUTHORITY_ACTION_LABELS = {
+    "acquire_authority": "申请控制权",
+    "renew_authority": "续期",
+    "release_authority": "归还",
+    "transfer_authority": "交接",
+    "set_authority_enabled": "使能",
+    "issue_control_window": "控制窗口",
+    "emergency_stop": "急停",
+    "reset_control": "显式复位",
+}
+AUTHORITY_REASON_LABELS = {
+    "authority_busy": "已有控制者",
+    "fault_latched": "车端故障已锁存",
+    "invalid_transfer_target": "对端会话不可用",
+    "lease_expired": "租约已过期",
+    "not_authority_holder": "本台已失去控制权",
+    "stale_generation": "授权代次已变更",
+    "vehicle_not_stopped": "车端尚未确认归零",
+    "vehicle_stopping": "车端正在停车",
+}
+
 
 class DesktopConsole(QWidget):
     def __init__(
         self,
         *,
-        secure_worker: SecureControlWorker | None = None,
+        secure_worker: SecureControlWorker | ExpertControlWorker | None = None,
         telemetry_address: tuple[str, int] = ("127.0.0.1", 10000),
         operator_id: str | None = None,
+        expert_mode: bool = False,
     ):
         super().__init__()
         self.secure_worker = secure_worker
         self.operator_id = operator_id
+        self.expert_mode = expert_mode
+        self._last_authority_overview = None
+        self._last_authority_result = None
+        self._motion_generation = None
         self._secure_close_pending = False
         self._last_secure_state: str | None = None
         self._last_telemetry_fault_latched = False
         self._telemetry_control_suspended = False
         self._reset_feedback: str | None = None
         self.setObjectName("console")
-        self.setWindowTitle("虚拟小车控制台")
+        self.setWindowTitle("虚拟小车 · 专家控制台" if expert_mode else "虚拟小车控制台")
         self.resize(1140, 740)
         self.setFont(desktop_font(13))
         self.setStyleSheet(CONSOLE_STYLE)
@@ -146,6 +181,8 @@ class DesktopConsole(QWidget):
         self.source_label = self._label("遥测来源：—", muted=True)
         map_info.addWidget(self.source_label)
         canvas.addLayout(map_info)
+        if self.expert_mode:
+            self._build_authority_panel(canvas)
         canvas.addWidget(self._label("事件日志", size=14, bold=True))
         self.event_log = QPlainTextEdit()
         self.event_log.setAccessibleName("事件日志")
@@ -166,6 +203,54 @@ class DesktopConsole(QWidget):
         self._build_controls(side)
         side.addStretch()
         layout.addWidget(panel)
+
+    def _build_authority_panel(self, canvas):
+        panel = QFrame()
+        panel.setFrameShape(QFrame.Shape.StyledPanel)
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(10, 7, 10, 7)
+        layout.setSpacing(6)
+
+        row = QHBoxLayout()
+        row.addWidget(self._label("专家控制权", size=15, bold=True))
+        self.authority_status = self._label("等待车端授权状态")
+        self.authority_holder = self._label("持有者：—", muted=True)
+        self.authority_generation = self._label("代次：—", muted=True)
+        self.authority_lease = self._label("租约：—", muted=True)
+        for label in (self.authority_status, self.authority_holder, self.authority_generation, self.authority_lease):
+            label.setTextFormat(Qt.TextFormat.PlainText)
+            row.addWidget(label)
+        row.addStretch()
+        layout.addLayout(row)
+
+        actions = QHBoxLayout()
+        self._authority_buttons = {}
+        for action, attribute, hint in (
+            ("acquire_authority", "acquire_authority_button", "向车端申请独占控制权"),
+            ("renew_authority", "renew_authority_button", "延长当前授权租约"),
+            ("release_authority", "release_authority_button", "归还控制权并让车端停车"),
+            ("transfer_authority", "transfer_authority_button", "先停车，再将控制权交给另一已认证控制台"),
+        ):
+            button = self._button(AUTHORITY_ACTION_LABELS[action], hint)
+            button.setProperty("authorityAction", action)
+            button.clicked.connect(self._request_authority_action)
+            button.setEnabled(False)
+            setattr(self, attribute, button)
+            self._authority_buttons[action] = button
+            actions.addWidget(button)
+        self.auto_renew_checkbox = QCheckBox("移动时自动续期")
+        self.auto_renew_checkbox.setToolTip("发送控制目标期间通过 TLS 续期")
+        self.auto_renew_checkbox.toggled.connect(self.secure_worker.set_auto_renew)
+        self.auto_renew_checkbox.setEnabled(False)
+        actions.addWidget(self.auto_renew_checkbox)
+        actions.addStretch()
+        layout.addLayout(actions)
+
+        self.authority_result = self._label("最近操作：—", muted=True)
+        self.authority_result.setTextFormat(Qt.TextFormat.PlainText)
+        self.authority_result.setWordWrap(True)
+        layout.addWidget(self.authority_result)
+        canvas.addWidget(panel)
 
     def _build_readouts(self, side):
         title = QHBoxLayout()
@@ -299,7 +384,7 @@ class DesktopConsole(QWidget):
             heading_rad=radians(self.heading_input.value()),
         )
         if self.secure_worker is not None:
-            if self._secure_motion_blocked():
+            if self._secure_motion_blocked() or (self.expert_mode and not self.start_button.isEnabled()):
                 return
             if self.secure_worker.apply_target(target):
                 self.current_target = target
@@ -337,7 +422,7 @@ class DesktopConsole(QWidget):
     # 它立即发出零速目标，原定时器继续周期发送。
     def stop_motion(self):
         if self.secure_worker is not None:
-            if self.current_target is None:
+            if self.current_target is None or (self.expert_mode and not self.stop_button.isEnabled()):
                 return
             target = ControlTarget(0.0, self.current_target.heading_rad)
             if self.secure_worker.apply_target(target):
@@ -386,6 +471,62 @@ class DesktopConsole(QWidget):
             self._reset_feedback = "requested"
         self.poll_secure_status()
 
+    @Slot()
+    def _request_authority_action(self):
+        button = self.sender()
+        if button is None or not button.isEnabled():
+            return
+        action = button.property("authorityAction")
+        accepted = getattr(self.secure_worker, action)()
+        if accepted and action in ("release_authority", "transfer_authority"):
+            self.current_target = None
+        self.poll_secure_status()
+
+    def _update_authority_panel(self, authority, allowed_actions, pending):
+        for action, button in self._authority_buttons.items():
+            button.setEnabled(action in allowed_actions)
+        self.auto_renew_checkbox.setEnabled(authority is not None or self.auto_renew_checkbox.isChecked())
+
+        if authority is None:
+            phase = "等待车端授权状态"
+            holder = "—"
+            generation = None
+            lease = None
+            result = None
+        else:
+            phase = AUTHORITY_PHASE_LABELS.get(authority.phase, "等待车端授权状态")
+            if authority.owns_authority:
+                phase += "（本台）"
+            elif authority.holder_client_id:
+                phase += "（他台）"
+            holder = authority.holder_client_id or "—"
+            generation = authority.generation
+            lease = authority.lease_remaining_s
+            result = authority.last_result
+
+        holder_text = holder if len(holder) <= 24 else holder[:23] + "…"
+        self.authority_status.setText(phase)
+        self.authority_holder.setText(f"持有者：{holder_text}")
+        generation_text = f"{generation.number} · {generation.epoch[:8]}" if generation else "—"
+        self.authority_generation.setText(f"代次：{generation_text}")
+        lease_text = f"{lease:.1f} 秒" if lease is not None else "—"
+        self.authority_lease.setText(f"租约：{lease_text}")
+
+        overview = (phase, holder_text, generation)
+        if authority is not None and overview != self._last_authority_overview:
+            self._append_event(f"控制权 · {phase} · 持有者 {holder_text} · 代次 {generation_text}")
+        self._last_authority_overview = overview
+
+        result_text = "—"
+        if result is not None:
+            label = AUTHORITY_ACTION_LABELS.get(result.action, "授权操作")
+            outcome = "成功" if result.accepted else AUTHORITY_REASON_LABELS.get(result.reason, "车端拒绝")
+            result_text = f"{label} · {outcome}"
+            if result != self._last_authority_result:
+                self._append_event(result_text)
+        self._last_authority_result = result
+        self.authority_result.setText("等待车端处理" if pending else f"最近操作：{result_text}")
+
     def poll_secure_status(self):
         worker = self.secure_worker
         if worker is None:
@@ -397,10 +538,18 @@ class DesktopConsole(QWidget):
 
         snapshot = worker.status()
         state = snapshot.state
+        authority = snapshot.authority if self.expert_mode else None
+        pending = self.expert_mode and snapshot.pending
         if self._reset_feedback == "requested":
-            if state == "ready":
+            reset_result = authority.last_result if authority is not None else None
+            reset_accepted = (
+                not self.expert_mode or (
+                    reset_result is not None and reset_result.action == "reset_control" and reset_result.accepted
+                )
+            )
+            if state == "ready" and reset_accepted and not pending:
                 self._reset_feedback = "waiting_for_telemetry"
-            elif state != "resetting":
+            elif state != "resetting" and not pending:
                 self._reset_feedback = None
         elif state not in ("ready", "stopped"):
             self._reset_feedback = None
@@ -413,17 +562,30 @@ class DesktopConsole(QWidget):
             self.current_target = None
 
         can_apply = state in ("ready", "sending", "stopped") and not self._secure_motion_blocked()
+        can_stop_sending = can_apply and self.current_target is not None
+        can_emergency_stop = state in ("ready", "sending", "stopped", "latched", "blocked")
+        can_reset = state in ("ready", "stopped", "latched", "blocked") and self.current_target is None
+        if self.expert_mode:
+            owns = authority is not None and authority.owns_authority
+            generation = authority.generation if owns else None
+            if generation != self._motion_generation:
+                self.current_target = None
+                self._motion_generation = generation
+            connected = state not in ("new", "connecting", "failed", "closing", "closed")
+            actions = authority.allowed_actions if connected and authority is not None and not pending else frozenset()
+            if self._reset_feedback == "waiting_for_telemetry":
+                actions = actions.difference({"acquire_authority"})
+            can_apply = can_apply and owns and "set_authority_enabled" in actions
+            can_stop_sending = connected and owns and self.current_target is not None
+            can_emergency_stop = "emergency_stop" in actions
+            can_reset = "reset_control" in actions and self.current_target is None
+            self._update_authority_panel(authority if connected else None, actions, pending)
         has_target = can_apply and self.current_target is not None
         self.start_button.setEnabled(can_apply)
         self.stop_button.setEnabled(has_target)
-        self.stop_sending_button.setEnabled(has_target)
-        self.emergency_stop_button.setEnabled(
-            state in ("ready", "sending", "stopped", "latched", "blocked")
-        )
-        self.reset_button.setEnabled(
-            state in ("ready", "stopped", "latched", "blocked")
-            and self.current_target is None
-        )
+        self.stop_sending_button.setEnabled(can_stop_sending)
+        self.emergency_stop_button.setEnabled(can_emergency_stop)
+        self.reset_button.setEnabled(can_reset)
         labels = {
             "new": "安全连接尚未启动",
             "connecting": "正在连接和认证",
@@ -438,6 +600,8 @@ class DesktopConsole(QWidget):
             "resetting": "正在复位",
             "blocked": "安全控制已暂停",
         }
+        if self.expert_mode:
+            labels["latched"] = "车端故障已锁存，等待显式复位"
         text = labels[state]
         if has_target and state in ("ready", "stopped"):
             text = "控制目标已提交，等待后台发送"
@@ -490,6 +654,7 @@ class DesktopConsole(QWidget):
             self._telemetry_control_suspended
             or self._last_telemetry_fault_latched
             or self._reset_feedback == "waiting_for_telemetry"
+            or (self.expert_mode and self.last_received_s is None)
         )
 
     def _set_telemetry_control_suspended(self, suspended: bool) -> None:
@@ -507,6 +672,7 @@ class DesktopConsole(QWidget):
 
     def poll_telemetry(self):
         awaiting_reset = self._reset_feedback == "waiting_for_telemetry"
+        had_telemetry = self.last_received_s is not None
         latest = None
         receive_error = None
 
@@ -561,6 +727,8 @@ class DesktopConsole(QWidget):
         else:
             self._set_telemetry_status("遥测可用", fresh=True)
             self._set_telemetry_control_suspended(False)
+            if self.expert_mode and not had_telemetry:
+                self.poll_secure_status()
             if (
                 awaiting_reset
                 and latest is not None
@@ -586,6 +754,10 @@ class DesktopConsole(QWidget):
                 self.stop_sending_button.setEnabled(False)
                 self.emergency_stop_button.setEnabled(False)
                 self.reset_button.setEnabled(False)
+                if self.expert_mode:
+                    for button in self._authority_buttons.values():
+                        button.setEnabled(False)
+                    self.auto_renew_checkbox.setEnabled(False)
 
             if not self.secure_worker.wait_closed(0):
                 event.ignore()
@@ -603,6 +775,7 @@ class DesktopConsole(QWidget):
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="虚拟小车桌面控制台")
     parser.add_argument("--secure", action="store_true", help="启用安全控制")
+    parser.add_argument("--expert-management", action="store_true", help="启用专家控制权面板")
     parser.add_argument("--ca-file", type=Path, help="公开 CA 证书")
     parser.add_argument("--server-name", help="车端证书上的名称")
     parser.add_argument("--client-id", help="桌面账号")
@@ -612,6 +785,9 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--telemetry-bind-host", type=str.strip, help="桌面端监听遥测的本机地址")
     parser.add_argument("--telemetry-port", type=int, help="桌面端监听遥测的 UDP 端口")
     args = parser.parse_args(argv)
+
+    if args.expert_management and not args.secure:
+        parser.error("--expert-management 需要 --secure")
 
     tls_args = (args.ca_file, args.server_name, args.client_id)
     if not args.secure and any(value is not None for value in tls_args):
@@ -646,26 +822,30 @@ def main(argv: list[str] | None = None) -> int:
     client_id = args.client_id or "desktop-a"
     if args.secure:
         credential = getpass("Credential (hidden): ")
+        connector = connect_expert_management if args.expert_management else connect_management
+        worker_type = ExpertControlWorker if args.expert_management else SecureControlWorker
         connect = partial(
-            connect_management,
+            connector,
             (vehicle_host, args.management_port or 19177),
             ca_file=args.ca_file or Path("local/certs/ca.pem"),
             server_hostname=args.server_name or args.vehicle_host or "localhost",
             client_id=client_id,
             credential=credential,
         )
-        worker = SecureControlWorker(connect, (vehicle_host, args.control_port or 9999))
+        worker = worker_type(connect, (vehicle_host, args.control_port or 9999))
 
     # QApplication 负责管理整个程序的全局资源
     # sys.argv：把程序参数传给 Qt
     app = QApplication(sys.argv)
     app.setStyle("Fusion")
 
+    mode_options = {"expert_mode": True} if args.expert_management else {}
     try:
         window = DesktopConsole(
             secure_worker=worker,
             telemetry_address=telemetry_address,
             operator_id=client_id if worker is not None else None,
+            **mode_options,
         )  # 窗口的首次显示、鼠标拖拽拉伸：全靠 Qt 底层的操作系统事件
     except OSError as exc:
         QMessageBox.critical(

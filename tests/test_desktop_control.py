@@ -12,6 +12,7 @@ from rover.protocol.telemetry_codec import TelemetrySnapshot
 from PySide6.QtWidgets import QApplication
 
 from rover.desktop.app import DesktopConsole, main
+from tests.qt_fixture import dispose_widget
 
 # 用列表记录发送报文，不实际占用端口。按钮、窗口和项目里的编码逻辑仍真实运行
 class FakeSocket:
@@ -63,7 +64,7 @@ class TestDesktopControl(unittest.TestCase):
         self.addCleanup(socket_patch.stop)#addCleanup(...)：即使测试失败，也会关闭窗口、恢复替换
 
         self.window = DesktopConsole()
-        self.addCleanup(self.window.close)
+        self.addCleanup(dispose_widget, self.window)
 
     def control(self, name):
         # getattr 是反射函数：给对象（self.window），再给属性名字符串（name），
@@ -261,7 +262,7 @@ class TestSecureDesktopControl(unittest.TestCase):
         sockets.start()
         self.addCleanup(sockets.stop)
         self.window = DesktopConsole(secure_worker=self.worker)
-        self.addCleanup(self.window.close)
+        self.addCleanup(dispose_widget, self.window)
 
     def poll_telemetry_at(self, now, received=None):
         side_effect = [received] if received is None else [received, None]
@@ -402,7 +403,7 @@ class TestSecureDesktopControl(unittest.TestCase):
     def test_operator_label_tracks_authenticated_session(self):
         self.worker.status.return_value = WorkerStatus("connecting")
         window = DesktopConsole(secure_worker=self.worker, operator_id="desk-a02")
-        self.addCleanup(window.close)
+        self.addCleanup(dispose_widget, window)
         self.assertEqual(window.operator_label.text(), "当前操作员：待认证")
 
         for state in ("ready", "sending", "latched"):
@@ -599,7 +600,7 @@ class TestSecureDesktopControl(unittest.TestCase):
             window = DesktopConsole(
                 secure_worker=self.worker, telemetry_address=address
             )
-            self.addCleanup(window.close)
+            self.addCleanup(dispose_widget, window)
             create_socket.return_value.bind.assert_called_once_with(address)
 
     def test_cli_rejects_invalid_lan_options_before_prompt(self):

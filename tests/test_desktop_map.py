@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QApplication
 
 from rover.core.vehicle_model import VehicleState
 from rover.desktop.desktop_map import VehicleMap
+from tests.qt_fixture import dispose_widget
 
 
 class TestDesktopMap(unittest.TestCase):
@@ -17,7 +18,7 @@ class TestDesktopMap(unittest.TestCase):
         self.map = VehicleMap()
         self.map.resize(640, 480)
         self.map.show()
-        self.addCleanup(self.map.close)
+        self.addCleanup(dispose_widget, self.map)
 
     def test_zoom_anchors_the_world_point_under_the_cursor(self):
         position = self.map.screen_point(2, 3)

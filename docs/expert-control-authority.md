@@ -2,7 +2,7 @@
 
 [开发路线](development-roadmap.md#protocol-delivery) · [控制权模型](../src/rover/vehicle/control_authority.py) · [验收用例](../tests/test_control_authority.py)
 
-P1 用独立的 `ControlAuthority` 表达车端控制权裁决。P2 接入双 TLS 管理会话，P3 接入零速交接，P4 在控制报文上验证授权代次，P5 加入授权租约。物理双机与断网验收按集中试验计划执行。
+P1 用独立的 `ControlAuthority` 表达车端控制权裁决。P2 接入双 TLS 管理会话，P3 接入零速交接，P4 在控制报文上验证授权代次，P5 加入授权租约，P6 把控制权接入桌面控制台。物理双机与断网验收按集中试验计划执行。
 
 ## 组员复跑索引
 
@@ -14,6 +14,7 @@ P1 用独立的 `ControlAuthority` 表达车端控制权裁决。P2 接入双 TL
 | P2 | [双 TLS 会话](#51-手动复现)，核对独立会话和单端断开 |
 | P3／P4 | [当前版本零速交接](#71-组员本机复现)，核对零速授予与显式使能，运行 UDP v3 准入专项 |
 | P5 | [租约与看门狗](#81-组员本机复现)，核对续期后的继续行驶、到期撤权与断流锁存 |
+| P6 | [双端控制台](#91-组员本机复现)，核对 A/B 的权限、遥测、显式使能和操作反馈 |
 
 ## 1. 身份、会话和授权
 
@@ -323,3 +324,64 @@ $env:QT_QPA_PLATFORM = 'offscreen'
 | UDP 看门狗 | 代次 3 的续期后截止为 `8.078 s`，断流后在 `5.578 s` 已归零并锁存，原 TLS 会话仍能查询 |
 
 原始证据保存在本机 `local/p5-tests/loopback-20261123-011231283766/`。
+
+## 9. P6 双端控制台与授权状态
+
+[图 11：交接、续期与停车时序](../README.md#expert-authority-flow)
+
+车端处理 TLS v2 的 `query_authority` 时返回一份授权快照。桌面后台线程定期查询并发布快照，Qt 主线程用它更新按钮和标签。通过「开始／应用」显式使能后，后台才用当前授权代次、密钥和窗口发送 UDP v3。授权丢失或代次改变时丢弃旧运动意图。再次取得控制权时需重新应用目标。
+
+| 查询字段 | 接收范围与用途 |
+| --- | --- |
+| `phase`、`holder_client_id`、`authority_generation` | 活跃且已认证的两端均可读取当前状态、持有者账号和代次。无持有者时后两项为 `null` |
+| `owns_authority`、`allowed_actions` | 以当前 TLS 会话为准。按钮按对应动作启用，运动还须满足桌面遥测条件及车端准入 |
+| `generation`、`lease_remaining_s`、`target_session_ids` | 只发给持有会话。分别供发起授权动作、显示剩余时长、定位另一在线交接对象 |
+| `last_authority_result` | 当前会话最近一次授权操作的动作、成败和拒绝原因，或 `null`。内部窗口刷新独立处理 |
+
+控制台默认手动续期。勾选「移动时自动续期」后，后台只在持续发送非零速度目标时按剩余时长提交 TLS 续期。关闭选项或停止发包后，后台会取消尚未开始处理的自动续期。归还、交接或权限失效会停止旧目标的发送，接权不会启动发送。
+
+### 9.1 组员本机复现
+
+记录 `git log -1 --oneline`。在 Windows 项目根目录开三个 PowerShell 窗口。沿用回环证书，车端可信账号文件准备两个实验账号 `desktop-a`、`desktop-b`。车端把同一遥测状态发往 `127.0.0.1:10000` 和 `127.0.0.1:10001`。
+
+```powershell
+# 终端车端
+New-Item -ItemType Directory -Path '.\local\p6-tests' -Force | Out-Null
+$p6Log = '.\local\p6-tests\handoff-' + (Get-Date -Format 'yyyyMMdd-HHmmss-fff') + '.csv'
+.\.venv\Scripts\python.exe -X utf8 -B -m rover.vehicle.app --secure --expert-management --cert-dir '.\local\certs' --credentials-file '.\local\trusted_clients.json' --observer-host 127.0.0.1 --observer-port 10001 --event-log $p6Log
+
+# 终端 A
+.\.venv\Scripts\python.exe -X utf8 -B -m rover.desktop.app --secure --expert-management --client-id desktop-a --telemetry-port 10000
+
+# 终端 B
+.\.venv\Scripts\python.exe -X utf8 -B -m rover.desktop.app --secure --expert-management --client-id desktop-b --telemetry-port 10001
+```
+
+| 用例 | 通过条件 |
+| --- | --- |
+| A 申请并开始 | A 申请后显示持有，车速仍为零。A 应用 `1.0 m/s` 才起步。B 可看见 A 的账号和代次，不能应用目标 |
+| A 续期与交接 | A 续期后代次保持不变。A 点击交接后车端归零才授予 B 新代次。预演时可勾选移动自动续期，给交接操作留出时间 |
+| B 接权与归还 | B 接权时仍为零速。B 显式应用目标后以新代次起步，A 按钮按新权限更新。B 归还后车辆归零 |
+| 两种停车 | 关闭自动续期后等待租约到期，确认归零且未锁存。重新申请并起步，在租约内点「停止发包」，核对看门狗归零和锁存。随后按车端允许的状态显式复位 |
+
+交回 Git 版本、两端界面事件或截图，以及车端 CSV。用 `authority`、`authority_lease_*`、`control_accepted` 和 `state` 核对授权代次与速度顺序。双机和断网现场证据在集中验收时追加。
+
+```powershell
+$env:QT_QPA_PLATFORM = 'offscreen'
+.\.venv\Scripts\python.exe -X utf8 -X faulthandler -B -m unittest -q tests.test_expert_control_worker tests.test_expert_desktop_control tests.test_expert_management_client tests.test_expert_management_runtime tests.test_desktop_control tests.test_desktop_map tests.test_expert_control
+.\.venv\Scripts\python.exe -X utf8 -X faulthandler -B -m unittest discover -s tests -t . -q
+```
+
+### 9.2 本机证据
+
+2026-11-23，基线 `387a98a` 加 P6 工作区改动。在 Windows 本机启动独立车端进程和两个离屏 Qt 控制台。A、B 使用独立测试账号和经过校验的 TLS 连接，分别接收实际 UDP 遥测。通过生产界面的按钮进行操作，记录控制台事件与车端 CSV。
+
+Windows 专项回归 **89 项**通过。Qt 测试夹具在测试结束时显式销毁窗口，修复了回归进程的间歇退出错误。修复后两次全量回归均有 **493 项**通过，退出码均为 0。
+
+| 场景 | 实测结果 |
+| --- | --- |
+| A 持有与续期 | A 在代次 1 行驶，B 显示 A 持有且无法应用目标。A 手动续期后，再勾选自动续期，车端在同一代次下继续接受指令 |
+| 零速交接与归还 | 车端 `3.844 s` 归零并授予 B 代次 2，B 界面继续报告零速，直到点击「开始／应用」。B 起步后归还，车端在 `4.547 s` 再次归零 |
+| 到期与断流 | 代次 3 到期后在 `7.781 s` 停车且未锁存，距末条有效指令 `93 ms`。独立的代次 4 断流用例在最后有效指令后 `516 ms` 归零并锁存，待命端 B 可显式复位 |
+
+车端事件、两端检查点和界面截图保存在本机 `local/p6-tests/loopback-20261123-013034240066/`。

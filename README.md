@@ -57,7 +57,7 @@
 - [x] P3 实现独占控制权和零速显式交接，已在 Windows 本机验收。 [P3 实测记录](docs/expert-control-authority.md#63-用户动手验收)
 - [x] P4 将授权代次接入 UDP 准入，本机验证旧授权被拒绝。 [UDP v3 规则与复现](docs/expert-control-authority.md#7-p4-udp-授权代次准入)
 - [x] P5 实现租约续期、到期撤销与停车，本机验证租约与 UDP 断流分别生效。 [P5 规则与复跑](docs/expert-control-authority.md#8-p5-授权租约与到期停车)
-- [ ] P6 发布控制权状态，接入双端操作与反馈。
+- [x] P6 发布控制权状态并接入双端操作，已通过 Windows 本机联调。 [P6 复跑](docs/expert-control-authority.md#91-组员本机复现) · [图 11](#expert-authority-flow)
 - [ ] P7 完成机制对照、双端实测和回归留证。
 
 <a id="experience-checklist"></a>
@@ -88,7 +88,7 @@
 | [4. 桌面控制台](#desktop-console) | 启动与状态 → 地图/轨迹/坐标 → 数值控制与验收 → 实现要点 |
 | [5. 协议分层、TCP 分帧与 TLS 会话](#network-layers) | 控制信封 → 管理编解码与分帧 → TLS 与线程交接 |
 | [6. 安全控制、管理动作与保护恢复](#secure-control-evolution) | HMAC、有效窗口 → 管理请求、急停 → 复位与运行时 |
-| [7. 正式入口、桌面整合与跨系统联调](#secure-desktop-integration) | 正式启动 → 安全桌面 → VMware 与只读观察 |
+| [7. 正式入口、桌面整合与跨系统联调](#secure-desktop-integration) | 正式启动 → 安全桌面 → VMware 与只读观察 → [专家版双端控制时序](#expert-authority-flow) |
 | [8. 网络故障实验与高级验收](#fault-experiment-sequence) | 断流、丢包、延迟、乱序与重复 → 诊断 → 计时与证据 |
 | [9. 项目配置与文档维护](#project-maintenance) | 包配置、Git协作、目录迁移、导图维护与TDD开发方式 |
 
@@ -1023,7 +1023,7 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 仅修改桌面端，车端不会自动获得新业务处理逻辑；仅修改车端，也不会让现有桌面端自动发出新请求。物理上可以把代码集中到更少文件，但发送与接收两侧的职责仍然存在。
 
-安全桌面接入后的请求往返、业务分支与实际函数统一画在[图9](#management-request-flow)。图8仍用于逐步阅读认证和会话登记的双终端实验。专家版交接和租约完成后另作升级图。
+安全桌面接入后的请求往返、业务分支与实际函数统一画在[图9](#management-request-flow)。图8仍用于逐步阅读认证和会话登记的双终端实验。专家版的双端操作、零速交接与租约见[图11](#expert-authority-flow)。
 
 ### 6.3 复位与管理运行时
 
@@ -1307,6 +1307,14 @@ PYTHONPATH="$PWD/src" python3 -B -m rover.vehicle.app --secure --cert-dir ./loca
 [![图 10：桌面线程、TLS 管理、UDP 控制、车端仿真及遥测回传的核心函数调用](reference_image/diagrams/10-advanced-runtime.png)](reference_image/diagrams/10-advanced-runtime.svg)
 
 点击图片可打开矢量原图放大。也可按线程和模块查看[函数索引](docs/runtime-reference.md)。
+
+<a id="expert-authority-flow"></a>
+
+### 7.5 图 11：专家版控制权交接、续期与停车
+
+[![图 11：桌面 A、车端和桌面 B 的零速交接、租约到期与 UDP 看门狗时序](reference_image/diagrams/11-expert-authority-flow.png)](reference_image/diagrams/11-expert-authority-flow.svg)
+
+点击图片打开 SVG 矢量原图。[P6 双端复跑与通过条件](docs/expert-control-authority.md#91-组员本机复现) · [图 11 生成源](reference_image/diagrams/render_expert_authority_flow.py)
 
 <a id="fault-experiment-sequence"></a>
 
@@ -1697,6 +1705,7 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 .\.venv\Scripts\python.exe reference_image/diagrams/render_tcp_record_receive.py
 .\.venv\Scripts\python.exe reference_image/diagrams/render_tls_management.py
 .\.venv\Scripts\python.exe reference_image/diagrams/render_management_request_flow.py
+.\.venv\Scripts\python.exe reference_image/diagrams/render_expert_authority_flow.py
 ```
 
 每个命令各自更新对应的SVG与高清PNG，输出到生成源所在目录。图5至图9复用同目录图4生成源的绘图工具，须一并保留。README使用相对链接，图的位置和资源目录均可调整。

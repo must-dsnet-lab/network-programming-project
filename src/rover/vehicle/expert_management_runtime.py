@@ -16,7 +16,7 @@ from rover.protocol.expert_management_codec import (
 )
 from rover.transport.parallel_tls_server import parallel_tls_server
 from rover.transport.tcp_transport import iter_records, send_record
-from rover.vehicle.control_authority import ControlAuthority, ControlSession
+from rover.vehicle.control_authority import AuthorityPhase, ControlAuthority, ControlSession
 from rover.vehicle.control_guard import ControlGuardState
 from rover.vehicle.expert_control import (
     EXPERT_CONTROL_ACTIONS, AuthorityLeaseExpiry, ExpertVehicleControl,
@@ -40,6 +40,7 @@ class ExpertManagementRuntime:
         self._stopped = False
         self._closed_connections: list[str] = []
         self._sessions: dict[str, ControlSession] = {}
+        self._last_authority_results: dict[str, dict[str, object]] = {}
         self._control = ExpertVehicleControl()
         self._previous_tick_s: float | None = None
         self._tick_interval_ms = 0.0
@@ -77,6 +78,7 @@ class ExpertManagementRuntime:
             closed, self._closed_connections = self._closed_connections, []
         for connection_id in closed:
             session = self._sessions.pop(connection_id, None)
+            self._last_authority_results.pop(connection_id, None)
             if session is not None:
                 guard = self._control.disconnect(guard, session)
         return guard
@@ -137,7 +139,7 @@ class ExpertManagementRuntime:
             return guard, _error("invalid_session")
 
         if message_type == "query_authority":
-            return guard, ("query_authority_result", self._status(session, now_s, queue_wait_ms))
+            return guard, ("query_authority_result", self._status(guard, session, now_s, queue_wait_ms))
 
         recipient = None
         if message_type == "transfer_authority":
@@ -149,29 +151,55 @@ class ExpertManagementRuntime:
         guard, fields = self._control.dispatch(
             guard, session, message, recipient=recipient, now_s=now_s
         )
+        if message_type != "issue_control_window":
+            self._last_authority_results[connection_id] = {
+                "action": message_type,
+                "accepted": fields["accepted"],
+                "reason": fields["reason"],
+            }
         return guard, (f"{message_type}_result", fields)
 
-    def _status(self, session: ControlSession, now_s: float, queue_wait_ms: float) -> dict[str, object]:
+    def _status(
+        self, guard: ControlGuardState, session: ControlSession, now_s: float, queue_wait_ms: float,
+    ) -> dict[str, object]:
         authority = self.authority
         grant = authority.grant
+        owns_authority = grant is not None and grant.session == session
+        generation = (
+            {"epoch": grant.generation.epoch, "number": grant.generation.number}
+            if grant is not None else None
+        )
+        allowed_actions: list[str] = []
         result: dict[str, object] = {
             "accepted": True,
             "reason": None,
             "phase": authority.phase.value,
-            "owns_authority": grant is not None and grant.session == session,
+            "owns_authority": owns_authority,
             "online_sessions": len(self._sessions),
             "queue_wait_ms": round(queue_wait_ms, 3),
             "tick_interval_ms": round(self._tick_interval_ms, 3),
+            "holder_client_id": grant.session.client_id if grant is not None else None,
+            "authority_generation": generation,
+            "allowed_actions": allowed_actions,
+            "last_authority_result": self._last_authority_results.get(session.connection_id),
         }
         if grant is not None and grant.session == session:
-            result["generation"] = {
-                "epoch": grant.generation.epoch, "number": grant.generation.number
-            }
+            result["generation"] = generation
             if grant.lease_expires_at_s is not None:
                 result["lease_remaining_s"] = max(0.0, grant.lease_expires_at_s - now_s)
-            result["target_session_ids"] = [
+            targets = [
                 candidate.session_id for candidate in self._sessions.values() if candidate != session
             ]
+            result["target_session_ids"] = targets
+            allowed_actions.extend((
+                "set_authority_enabled", "renew_authority", "release_authority", "emergency_stop",
+            ))
+            if targets:
+                allowed_actions.append("transfer_authority")
+        elif authority.phase is AuthorityPhase.IDLE:
+            allowed_actions.append("acquire_authority")
+        elif self._control.reset_rejection(guard) is None:
+            allowed_actions.append("reset_control")
         return result
 
     def serve(self, tls: SSLSocket) -> None:

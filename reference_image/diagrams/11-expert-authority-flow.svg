@@ -1,0 +1,175 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1680" height="1518" viewBox="0 0 1680 1518" role="img" aria-labelledby="title description">
+<title id="title">专家版控制权交接、续期与停车</title>
+<desc id="description">三条泳道按时间展示 A 获得控制权、车辆归零、B 获得新代次后明确应用，下方分别展示租约到期停车和 UDP 看门狗锁存。TLS 回复与 UDP 遥测在两端独立更新。</desc>
+<rect x="0" y="0" width="1680" height="1518" rx="0" fill="#f5f8fc" stroke="none" stroke-width="1.4"/>
+<text x="40" y="42" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="22" font-weight="700" fill="#4b6077" text-anchor="start">图 11  /  虚拟小车 · 专家版 P3–P6</text>
+<text x="40" y="99" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="51" font-weight="700" fill="#1a2c44" text-anchor="start">控制权交接、续期与停车</text>
+<text x="42" y="139" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#4b6077" text-anchor="start">从上到下阅读。A 与 B 可同时在线，车端只给一个会话控制权。</text>
+<polyline points="44,181 93,181" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="93.00,181.00 84.00,185.00 84.00,177.00" fill="#205c9c"/>
+<text x="104" y="188" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#205c9c" text-anchor="start">TLS 管理请求</text>
+<polyline points="352,181 401,181" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="401.00,181.00 392.00,185.00 392.00,177.00" fill="#205c9c"/>
+<text x="412" y="188" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#205c9c" text-anchor="start">TLS 状态回复</text>
+<polyline points="656,181 705,181" fill="none" stroke="#984913" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="705.00,181.00 696.00,185.00 696.00,177.00" fill="#984913"/>
+<text x="716" y="188" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#984913" text-anchor="start">UDP v3 控制（HMAC）</text>
+<polyline points="1024,181 1073,181" fill="none" stroke="#096a64" stroke-width="3.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="1073.00,181.00 1064.00,185.00 1064.00,177.00" fill="#096a64"/>
+<text x="1084" y="188" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#096a64" text-anchor="start">UDP 遥测</text>
+<polyline points="1296,181 1345,181" fill="none" stroke="#644393" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="1345.00,181.00 1336.00,185.00 1336.00,177.00" fill="#644393"/>
+<text x="1356" y="188" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="23" font-weight="400" fill="#644393" text-anchor="start">车端裁决顺序</text>
+<rect x="40" y="215" width="440" height="720" rx="15" fill="#ffffff" stroke="#d5dfeb" stroke-width="1.5"/>
+<rect x="40" y="215" width="440" height="71" rx="15" fill="#edf5ff" stroke="none" stroke-width="1.4"/>
+<text x="56" y="248" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="29" font-weight="700" fill="#205c9c" text-anchor="start">控制台 A</text>
+<text x="56" y="274" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b6077" text-anchor="start">Qt 界面与后台控制线程</text>
+<rect x="544" y="215" width="592" height="720" rx="15" fill="#ffffff" stroke="#d5dfeb" stroke-width="1.5"/>
+<rect x="544" y="215" width="592" height="71" rx="15" fill="#f0ebf9" stroke="none" stroke-width="1.4"/>
+<text x="560" y="248" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="29" font-weight="700" fill="#644393" text-anchor="start">车端裁决</text>
+<text x="560" y="274" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b6077" text-anchor="start">TLS 会话 · 仿真线程 · UDP 保护</text>
+<rect x="1200" y="215" width="440" height="720" rx="15" fill="#ffffff" stroke="#d5dfeb" stroke-width="1.5"/>
+<rect x="1200" y="215" width="440" height="71" rx="15" fill="#e9f7f4" stroke="none" stroke-width="1.4"/>
+<text x="1216" y="248" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="29" font-weight="700" fill="#096a64" text-anchor="start">控制台 B</text>
+<text x="1216" y="274" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#4b6077" text-anchor="start">Qt 界面与后台控制线程</text>
+<polyline points="840,412 840,432" fill="none" stroke="#644393" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="840.00,432.00 836.00,423.00 844.00,423.00" fill="#644393"/>
+<polyline points="840,542 840,562" fill="none" stroke="#644393" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="840.00,562.00 836.00,553.00 844.00,553.00" fill="#644393"/>
+<polyline points="840,672 840,692" fill="none" stroke="#644393" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="840.00,692.00 836.00,683.00 844.00,683.00" fill="#644393"/>
+<polyline points="840,802 840,822" fill="none" stroke="#644393" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="840.00,822.00 836.00,813.00 844.00,813.00" fill="#644393"/>
+<polyline points="480,340 544,340" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="544.00,340.00 535.00,344.00 535.00,336.00" fill="#205c9c"/>
+<polyline points="544,379 480,379" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="480.00,379.00 489.00,375.00 489.00,383.00" fill="#205c9c"/>
+<polyline points="1200,340 1136,340" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="1136.00,340.00 1145.00,336.00 1145.00,344.00" fill="#205c9c"/>
+<polyline points="1136,379 1200,379" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="1200.00,379.00 1191.00,383.00 1191.00,375.00" fill="#205c9c"/>
+<polyline points="480,600 544,600" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="544.00,600.00 535.00,604.00 535.00,596.00" fill="#205c9c"/>
+<polyline points="544,639 480,639" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="480.00,639.00 489.00,635.00 489.00,643.00" fill="#205c9c"/>
+<polyline points="1200,600 1136,600" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="1136.00,600.00 1145.00,596.00 1145.00,604.00" fill="#205c9c"/>
+<polyline points="1136,639 1200,639" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="1200.00,639.00 1191.00,643.00 1191.00,635.00" fill="#205c9c"/>
+<polyline points="480,461 544,461" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="544.00,461.00 535.00,465.00 535.00,457.00" fill="#205c9c"/>
+<polyline points="480,496 544,496" fill="none" stroke="#984913" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="544.00,496.00 535.00,500.00 535.00,492.00" fill="#984913"/>
+<polyline points="544,526 480,526" fill="none" stroke="#096a64" stroke-width="3.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="480.00,526.00 489.00,522.00 489.00,530.00" fill="#096a64"/>
+<polyline points="1136,514 1200,514" fill="none" stroke="#096a64" stroke-width="3.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="1200.00,514.00 1191.00,518.00 1191.00,510.00" fill="#096a64"/>
+<polyline points="544,754 480,754" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="480.00,754.00 489.00,750.00 489.00,758.00" fill="#205c9c"/>
+<polyline points="1200,725 1136,725" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="1136.00,725.00 1145.00,721.00 1145.00,729.00" fill="#205c9c"/>
+<polyline points="1136,770 1200,770" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="1200.00,770.00 1191.00,774.00 1191.00,766.00" fill="#205c9c"/>
+<polyline points="544,905 480,905" fill="none" stroke="#096a64" stroke-width="3.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="480.00,905.00 489.00,901.00 489.00,909.00" fill="#096a64"/>
+<polyline points="1200,852 1136,852" fill="none" stroke="#205c9c" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="1136.00,852.00 1145.00,848.00 1145.00,856.00" fill="#205c9c"/>
+<polyline points="1200,885 1136,885" fill="none" stroke="#984913" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="1136.00,885.00 1145.00,881.00 1145.00,889.00" fill="#984913"/>
+<polyline points="1136,916 1200,916" fill="none" stroke="#096a64" stroke-width="3.8" stroke-linejoin="round" stroke-dasharray="6 5"/>
+<polygon points="1200.00,916.00 1191.00,920.00 1191.00,912.00" fill="#096a64"/>
+<rect x="40" y="302" width="440" height="110" rx="11" fill="#edf5ff" stroke="#205c9c" stroke-width="1.6"/>
+<text x="56" y="337" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#205c9c" text-anchor="start">点击「申请控制权」</text>
+<text x="56" y="368" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#1a2c44" text-anchor="start">acquire_authority()</text>
+<text x="56" y="395" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">以 A 的认证会话申请</text>
+<rect x="544" y="302" width="592" height="110" rx="11" fill="#f0ebf9" stroke="#644393" stroke-width="1.6"/>
+<text x="560" y="337" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#644393" text-anchor="start">授予 A · g1 待使能</text>
+<text x="560" y="368" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">车端开始 3 秒租约</text>
+<text x="560" y="395" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">持有控制权，车仍保持静止</text>
+<rect x="1200" y="302" width="440" height="110" rx="11" fill="#e9f7f4" stroke="#096a64" stroke-width="1.6"/>
+<text x="1216" y="337" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#096a64" text-anchor="start">B 在旁待命</text>
+<text x="1216" y="368" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">状态显示 A 持有 g1</text>
+<text x="1216" y="395" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">B 继续接收遥测</text>
+<rect x="40" y="432" width="440" height="110" rx="11" fill="#fcf1e8" stroke="#984913" stroke-width="1.6"/>
+<text x="56" y="467" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#984913" text-anchor="start">点击「开始／应用」</text>
+<text x="56" y="498" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">使能后按窗口周期发送</text>
+<text x="56" y="525" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">UDP v3 携带 g1</text>
+<rect x="544" y="432" width="592" height="110" rx="11" fill="#f0ebf9" stroke="#644393" stroke-width="1.6"/>
+<text x="560" y="467" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#644393" text-anchor="start">校验报文后应用目标</text>
+<text x="560" y="498" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">验证 HMAC、会话、代次、窗口和序号</text>
+<text x="560" y="525" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#1a2c44" text-anchor="start">update_expert_command_guard_with_reason()</text>
+<rect x="1200" y="432" width="440" height="110" rx="11" fill="#e9f7f4" stroke="#096a64" stroke-width="1.6"/>
+<text x="1216" y="467" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#096a64" text-anchor="start">B 查看实际车速</text>
+<text x="1216" y="498" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">车辆按 A 的目标行驶</text>
+<text x="1216" y="525" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">B 的应用操作仍禁用</text>
+<rect x="40" y="562" width="440" height="110" rx="11" fill="#edf5ff" stroke="#205c9c" stroke-width="1.6"/>
+<text x="56" y="597" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#205c9c" text-anchor="start">点击「交接」</text>
+<text x="56" y="628" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#1a2c44" text-anchor="start">transfer_authority()</text>
+<text x="56" y="655" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">交给另一已认证会话 B</text>
+<rect x="544" y="562" width="592" height="110" rx="11" fill="#f0ebf9" stroke="#644393" stroke-width="1.6"/>
+<text x="560" y="597" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#644393" text-anchor="start">撤销 g1 · stopping</text>
+<text x="560" y="628" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">撤销旧密钥与窗口，清空序号</text>
+<text x="560" y="655" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">清掉控制目标，车端开始停车</text>
+<rect x="1200" y="562" width="440" height="110" rx="11" fill="#e9f7f4" stroke="#096a64" stroke-width="1.6"/>
+<text x="1216" y="597" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#096a64" text-anchor="start">B 等待车端停车</text>
+<text x="1216" y="628" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">归零前仍未持有控制权</text>
+<text x="1216" y="655" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">收到新授权后再操作</text>
+<rect x="40" y="692" width="440" height="110" rx="11" fill="#e9f7f4" stroke="#096a64" stroke-width="1.6"/>
+<text x="56" y="727" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#096a64" text-anchor="start">A 退出控制</text>
+<text x="56" y="758" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">状态更新为未持有</text>
+<text x="56" y="785" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">仍可接收车辆遥测</text>
+<rect x="544" y="692" width="592" height="110" rx="11" fill="#f0ebf9" stroke="#644393" stroke-width="1.6"/>
+<text x="560" y="727" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#644393" text-anchor="start">确认零速 → 授予 B · g2</text>
+<text x="560" y="758" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#1a2c44" text-anchor="start">ExpertVehicleControl.observe_vehicle()</text>
+<text x="560" y="785" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">B 待使能，新租约从授予时开始</text>
+<rect x="1200" y="692" width="440" height="110" rx="11" fill="#edf5ff" stroke="#205c9c" stroke-width="1.6"/>
+<text x="1216" y="727" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#205c9c" text-anchor="start">B 查询并确认持有 g2</text>
+<text x="1216" y="758" font-family="Consolas, Microsoft YaHei UI, Arial, sans-serif" font-size="21" font-weight="400" fill="#1a2c44" text-anchor="start">query_authority()</text>
+<text x="1216" y="785" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">遥测有效时才可点击应用</text>
+<rect x="40" y="822" width="440" height="110" rx="11" fill="#e9f7f4" stroke="#096a64" stroke-width="1.6"/>
+<text x="56" y="857" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#096a64" text-anchor="start">A 观察 B 的控制</text>
+<text x="56" y="888" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">继续查看权限与实际车速</text>
+<text x="56" y="915" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">旧代次无法重新生效</text>
+<rect x="544" y="822" width="592" height="110" rx="11" fill="#f0ebf9" stroke="#644393" stroke-width="1.6"/>
+<text x="560" y="857" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#644393" text-anchor="start">使能 B · 校验 g2 的 v3</text>
+<text x="560" y="888" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">新窗口与密钥随新控制上下文发放</text>
+<text x="560" y="915" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">准入后才更新目标和序号</text>
+<rect x="1200" y="822" width="440" height="110" rx="11" fill="#fcf1e8" stroke="#984913" stroke-width="1.6"/>
+<text x="1216" y="857" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#984913" text-anchor="start">B 点击「开始／应用」</text>
+<text x="1216" y="888" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">明确使能并发送 g2 控制</text>
+<text x="1216" y="915" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">从遥测确认车辆重新起步</text>
+<polyline points="840,932 840,954" fill="none" stroke="#644393" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="840.00,954.00 836.00,945.00 844.00,945.00" fill="#644393"/>
+<rect x="544" y="954" width="592" height="51" rx="11" fill="#f0ebf9" stroke="#644393" stroke-width="1.6"/>
+<text x="840" y="988" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#644393" text-anchor="middle">advance_time() 检查两种截止条件</text>
+<polyline points="840,1005 840,1025 432,1025 432,1047" fill="none" stroke="#81601b" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="432.00,1047.00 428.00,1038.00 436.00,1038.00" fill="#81601b"/>
+<polyline points="840,1025 1248,1025 1248,1047" fill="none" stroke="#9a3849" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="1248.00,1047.00 1244.00,1038.00 1252.00,1038.00" fill="#9a3849"/>
+<rect x="40" y="1047" width="784" height="111" rx="11" fill="#fcf5e3" stroke="#81601b" stroke-width="1.6"/>
+<text x="56" y="1082" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#81601b" text-anchor="start">授权租约 · 3 秒</text>
+<text x="56" y="1113" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">当前持有者经 TLS 续期，截止点更新为车端当前时刻 + 3 秒</text>
+<text x="56" y="1140" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">默认手动续期，可勾选「移动时自动续期」</text>
+<rect x="856" y="1047" width="784" height="111" rx="11" fill="#fceef1" stroke="#9a3849" stroke-width="1.6"/>
+<text x="872" y="1082" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#9a3849" text-anchor="start">UDP 看门狗 · 0.5 秒</text>
+<text x="872" y="1113" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">使能后等首包，之后按最近一条有效控制指令计时</text>
+<text x="872" y="1140" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">两个截止条件同轮满足时，车端优先进入故障锁存</text>
+<polyline points="432,1158 432,1206" fill="none" stroke="#81601b" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="432.00,1206.00 428.00,1197.00 436.00,1197.00" fill="#81601b"/>
+<polyline points="1248,1158 1248,1206" fill="none" stroke="#9a3849" stroke-width="3.8" stroke-linejoin="round"/>
+<polygon points="1248.00,1206.00 1244.00,1197.00 1252.00,1197.00" fill="#9a3849"/>
+<text x="450" y="1191" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#81601b" text-anchor="start">租约到期</text>
+<text x="1266" y="1191" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#9a3849" text-anchor="start">有效 UDP 断流</text>
+<rect x="40" y="1206" width="784" height="111" rx="11" fill="#fcf5e3" stroke="#81601b" stroke-width="1.6"/>
+<text x="56" y="1241" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#81601b" text-anchor="start">撤权 → 零速 → idle</text>
+<text x="56" y="1272" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">清空控制资格及目标，车速归零，保护未锁存</text>
+<text x="56" y="1299" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">同一 TLS 会话可重新申请，取得新代次后再明确应用</text>
+<rect x="856" y="1206" width="784" height="111" rx="11" fill="#fceef1" stroke="#9a3849" stroke-width="1.6"/>
+<text x="872" y="1241" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#9a3849" text-anchor="start">锁存并撤权 → 零速</text>
+<text x="872" y="1272" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">车端处于 fault_latched，TLS 会话仍可查询</text>
+<text x="872" y="1299" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#1a2c44" text-anchor="start">显式复位后重新申请，取得新代次后再明确应用</text>
+<rect x="40" y="1351" width="1600" height="124" rx="14" fill="#ffffff" stroke="#d5dfeb" stroke-width="1.6"/>
+<text x="57" y="1386" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="27" font-weight="700" fill="#1a2c44" text-anchor="start">两端如何刷新操作与遥测</text>
+<text x="57" y="1423" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#205c9c" text-anchor="start">TLS  query_authority()  →  ExpertControlWorker.status()  →  Qt 刷新持有者、代次、可用动作和反馈</text>
+<text x="57" y="1453" font-family="Microsoft YaHei, Microsoft YaHei UI, Arial, sans-serif" font-size="24" font-weight="400" fill="#096a64" text-anchor="start">UDP 遥测  →  两端独立接收  →  显示实际车速与锁存，遥测失效时暂停控制</text>
+</svg>

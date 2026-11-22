@@ -27,6 +27,83 @@ class LoopbackTestSocket(socket.socket):
 
 
 class TestExpertManagementRuntime(unittest.TestCase):
+    def test_status_publishes_authority_to_both_sessions_and_scopes_action_results(self):
+        runtime = ExpertManagementRuntime({}, operation_timeout_s=1.0)
+        guard = ControlGuardState()
+
+        def dispatch(operator, action, **fields):
+            nonlocal guard
+            guard, (_, reply) = runtime._dispatch(
+                guard, f"desktop-{operator}", f"connection-{operator}",
+                {"type": action, **fields}, 1.0, 0.0,
+            )
+            return reply
+
+        a = dispatch("a", "open_session")["session_id"]
+        b = dispatch("b", "open_session")["session_id"]
+        idle = dispatch("a", "query_authority", session_id=a)
+        self.assertEqual(idle["allowed_actions"], ["acquire_authority"])
+        self.assertIsNone(idle["holder_client_id"])
+        self.assertIsNone(idle["authority_generation"])
+        self.assertIsNone(idle["last_authority_result"])
+
+        generation = dispatch("a", "acquire_authority", session_id=a)["generation"]
+        self.assertFalse(dispatch("b", "acquire_authority", session_id=b)["accepted"])
+        enabled = dispatch("a", "set_authority_enabled", session_id=a, generation=generation, enabled=True)
+        self.assertTrue(enabled["accepted"])
+        self.assertTrue(dispatch("a", "issue_control_window", session_id=a, generation=generation)["accepted"])
+
+        owner = dispatch("a", "query_authority", session_id=a)
+        observer = dispatch("b", "query_authority", session_id=b)
+        for status in (owner, observer):
+            self.assertEqual(status["holder_client_id"], "desktop-a")
+            self.assertEqual(status["authority_generation"], generation)
+            self.assertNotIn("control_key", status)
+        self.assertEqual(set(owner["allowed_actions"]), {
+            "set_authority_enabled", "renew_authority", "release_authority",
+            "transfer_authority", "emergency_stop",
+        })
+        self.assertEqual(owner["target_session_ids"], [b])
+        self.assertEqual(owner["last_authority_result"], {
+            "action": "set_authority_enabled", "accepted": True, "reason": None,
+        })
+        self.assertEqual(observer["allowed_actions"], [])
+        self.assertEqual(observer["last_authority_result"], {
+            "action": "acquire_authority", "accepted": False, "reason": "authority_busy",
+        })
+        self.assertTrue({"generation", "lease_remaining_s", "target_session_ids"}.isdisjoint(observer))
+
+        runtime._closed_connections.append("connection-b")
+        guard = runtime._apply_closed_connections(guard)
+        self.assertNotIn("transfer_authority", dispatch("a", "query_authority", session_id=a)["allowed_actions"])
+        new_b = dispatch("b", "open_session")["session_id"]
+        self.assertNotEqual(new_b, b)
+        self.assertIsNone(dispatch("b", "query_authority", session_id=new_b)["last_authority_result"])
+
+    def test_reset_is_advertised_only_after_fault_and_observed_zero_speed(self):
+        runtime = ExpertManagementRuntime({}, operation_timeout_s=1.0)
+        guard = ControlGuardState()
+
+        def dispatch(action, **fields):
+            nonlocal guard
+            guard, (_, reply) = runtime._dispatch(
+                guard, "desktop-a", "connection-a", {"type": action, **fields}, 1.0, 0.0,
+            )
+            return reply
+
+        session_id = dispatch("open_session")["session_id"]
+        generation = dispatch("acquire_authority", session_id=session_id)["generation"]
+        guard = runtime.observe_vehicle(guard, VehicleState(speed_mps=1.0), now_s=1.0)
+        self.assertTrue(dispatch("emergency_stop", session_id=session_id, generation=generation)["accepted"])
+        stopping = dispatch("query_authority", session_id=session_id)
+        self.assertEqual(stopping["phase"], "fault_latched")
+        self.assertEqual(stopping["allowed_actions"], [])
+        self.assertEqual(dispatch("reset_control", session_id=session_id)["reason"], "vehicle_not_stopped")
+        guard = runtime.observe_vehicle(guard, VehicleState(), now_s=1.0)
+        self.assertEqual(dispatch("query_authority", session_id=session_id)["allowed_actions"], ["reset_control"])
+        self.assertTrue(dispatch("reset_control", session_id=session_id)["accepted"])
+        self.assertEqual(dispatch("query_authority", session_id=session_id)["allowed_actions"], ["acquire_authority"])
+
     def test_queued_renewal_uses_processing_time_at_lease_deadline(self):
         runtime = ExpertManagementRuntime({}, operation_timeout_s=1.0)
         guard = ControlGuardState()
