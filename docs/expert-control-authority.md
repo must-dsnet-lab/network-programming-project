@@ -145,6 +145,28 @@ P2 online sessions: A=2 B=2, distinct session IDs
 P2 A closed: B=1, B session unchanged
 ```
 
+### 5.2 本机证据
+
+2026-11-23 在 Windows 用正式车端进程、隔离实验 CA 和两个临时账号通过本机回环实际验证。第一条连接还在等待握手时，第二条可完成 TLS 和登记。两条已认证连接同时在线、会话不同，两个 UDP 遥测接收端均收到零速数据。关闭 A 后，B 看到在线会话数降为 1，原会话可继续查询。示例入口同样通过。该证据覆盖本机 TLS 与 UDP 遥测。
+
+Windows Python 3.12.10，基线 `fe0ebc0` 加 P2 工作区改动。P2 专项及相关入口回归 44 项、离屏全量 432 项通过。本机 TCP 测试覆盖重复编号、等待超时和队列满，独立的真实 TLS/UDP 联调覆盖上段场景。
+
+```powershell
+$env:PYTHONPATH = 'src'
+.\.venv\Scripts\python.exe -X utf8 -B -m unittest -q tests.test_expert_management_runtime tests.test_parallel_tls_server tests.test_expert_management_client tests.test_expert_management_demo tests.test_secure_connection tests.test_vehicle_startup
+$env:QT_QPA_PLATFORM = 'offscreen'
+.\.venv\Scripts\python.exe -X utf8 -B -m unittest discover -s tests -t . -q
+```
+
+### 5.3 用户动手验收
+
+2026-11-23 收到用户的 Windows PowerShell 本机运行结果，对应 P2 实现提交 `e00f1c2`。按 5.1 的默认命令建立两条 TLS 连接，两端都查询到 2 个不同会话。示例关闭 A 后，B 查询到在线数降为 1，并继续使用原会话。
+
+```text
+P2 online sessions: A=2 B=2, distinct session IDs
+P2 A closed: B=1, B session unchanged
+```
+
 ## 6. P3 零速交接
 
 P3 将 P1 的裁决接入正式车端主循环。P2 的两条 TLS 连接可同时请求，只有当前持有者可使能、申请窗口或指定交接对象。交接先清掉旧目标、控制密钥、窗口和序号。车端在仿真步进确认零速后才向在线候选授予新代次，新持有者需使能并应用目标。
@@ -181,24 +203,15 @@ $env:QT_QPA_PLATFORM = 'offscreen'
 .\.venv\Scripts\python.exe -X utf8 -B -m unittest discover -s tests -t . -q
 ```
 
-### 5.2 本机证据
+### 6.3 用户动手验收
 
-2026-11-23 在 Windows 用正式车端进程、隔离实验 CA 和两个临时账号通过本机回环实际验证。第一条连接还在等待握手时，第二条可完成 TLS 和登记。两条已认证连接同时在线、会话不同，两个 UDP 遥测接收端均收到零速数据。关闭 A 后，B 看到在线会话数降为 1，原会话可继续查询。示例入口同样通过。该证据覆盖本机 TLS 与 UDP 遥测。
+2026-11-23，用户在 Windows 本机运行 6.1 的正式车端和交接示例，对应 P3 代码提交 `d540401`。桌面 A、桌面 B 经两条 TLS 连接操作，控制与遥测经过本机 UDP。
 
-Windows Python 3.12.10，基线 `fe0ebc0` 加 P2 工作区改动。P2 专项及相关入口回归 44 项、离屏全量 432 项通过。本机 TCP 测试覆盖重复编号、等待超时和队列满，独立的真实 TLS/UDP 联调覆盖上段场景。
+| 检查项 | 实测结果 |
+| --- | --- |
+| A 持有控制权时，B 并行申请 | B 的申请被拒绝，A 行驶速度为 1.0 m/s |
+| A 请求把控制权交给 B | 车端先归零，B 获得新的授权代次，接权时控制未使能 |
+| B 显式使能并发送新目标 | 车端接受 B 会话的指令，速度升至 1.0 m/s |
+| B 释放控制权 | 车端撤下当前控制会话，速度回到 0.0 m/s，未触发故障锁存 |
 
-```powershell
-$env:PYTHONPATH = 'src'
-.\.venv\Scripts\python.exe -X utf8 -B -m unittest -q tests.test_expert_management_runtime tests.test_parallel_tls_server tests.test_expert_management_client tests.test_expert_management_demo tests.test_secure_connection tests.test_vehicle_startup
-$env:QT_QPA_PLATFORM = 'offscreen'
-.\.venv\Scripts\python.exe -X utf8 -B -m unittest discover -s tests -t . -q
-```
-
-### 5.3 用户动手验收
-
-2026-11-23 收到用户的 Windows PowerShell 本机运行结果，对应 P2 实现提交 `e00f1c2`。按 5.1 的默认命令建立两条 TLS 连接，两端都查询到 2 个不同会话。示例关闭 A 后，B 查询到在线数降为 1，并继续使用原会话。
-
-```text
-P2 online sessions: A=2 B=2, distinct session IDs
-P2 A closed: B=1, B session unchanged
-```
+物理双机与实际断网恢复纳入后续集中验收。
