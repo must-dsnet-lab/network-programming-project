@@ -51,6 +51,7 @@ class DesktopConsole(QWidget):
         self._last_secure_state: str | None = None
         self._last_telemetry_fault_latched = False
         self._telemetry_control_suspended = False
+        self._reset_feedback: str | None = None
         self.setObjectName("console")
         self.setWindowTitle("虚拟小车控制台")
         self.resize(1140, 740)
@@ -382,6 +383,7 @@ class DesktopConsole(QWidget):
     def request_reset(self):
         if self.secure_worker.reset_control():
             self.current_target = None
+            self._reset_feedback = "requested"
         self.poll_secure_status()
 
     def poll_secure_status(self):
@@ -395,6 +397,15 @@ class DesktopConsole(QWidget):
 
         snapshot = worker.status()
         state = snapshot.state
+        if self._reset_feedback == "requested":
+            if state == "ready":
+                self._reset_feedback = "waiting_for_telemetry"
+            elif state != "resetting":
+                self._reset_feedback = None
+        elif state not in ("ready", "stopped"):
+            self._reset_feedback = None
+        reset_confirmed = self._reset_feedback in ("waiting_for_telemetry", "unlocked")
+
         if state in (
             "stopping", "latched", "resetting", "blocked",
             "failed", "closing", "closed",
@@ -432,11 +443,13 @@ class DesktopConsole(QWidget):
             text = "控制目标已提交，等待后台发送"
         elif has_target and state == "sending" and self.current_target.speed_mps == 0:
             text = "正在发送零速目标，按车端遥测确认停车"
+        elif reset_confirmed:
+            text = "复位已确认，等待遥测更新" if self._secure_motion_blocked() else "遥测已确认解锁，请重新应用"
         elif state in ("ready", "sending", "stopped") and self._telemetry_control_suspended:
             text = "遥测不可用，已停止发包"
         elif state in ("ready", "stopped") and self._last_telemetry_fault_latched:
             text = "车端故障已锁存，等待显式复位"
-        if snapshot.detail:
+        if snapshot.detail and not reset_confirmed:
             text += f"：{snapshot.detail}"
         self.control_status.setText(text)
 
@@ -473,7 +486,11 @@ class DesktopConsole(QWidget):
             self._append_event(event_message or text)
 
     def _secure_motion_blocked(self) -> bool:
-        return self._telemetry_control_suspended or self._last_telemetry_fault_latched
+        return (
+            self._telemetry_control_suspended
+            or self._last_telemetry_fault_latched
+            or self._reset_feedback == "waiting_for_telemetry"
+        )
 
     def _set_telemetry_control_suspended(self, suspended: bool) -> None:
         if (
@@ -489,6 +506,7 @@ class DesktopConsole(QWidget):
             self.poll_secure_status()
 
     def poll_telemetry(self):
+        awaiting_reset = self._reset_feedback == "waiting_for_telemetry"
         latest = None
         receive_error = None
 
@@ -543,6 +561,14 @@ class DesktopConsole(QWidget):
         else:
             self._set_telemetry_status("遥测可用", fresh=True)
             self._set_telemetry_control_suspended(False)
+            if (
+                awaiting_reset
+                and latest is not None
+                and not latest.fault_latched
+                and self._reset_feedback == "waiting_for_telemetry"
+            ):
+                self._reset_feedback = "unlocked"
+                self.poll_secure_status()
 
     # 操作系统会捕捉到用户用鼠标点击窗口右上角的“❌”的动作，并把它告诉 Qt 框架。Qt 框架会自动去寻找 closeEvent 方法
     def closeEvent(self, event):

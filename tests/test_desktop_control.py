@@ -516,6 +516,35 @@ class TestSecureDesktopControl(unittest.TestCase):
         reset.click()
         self.worker.reset_control.assert_called_once_with()
 
+    def test_reset_reply_waits_for_fresh_unlocked_telemetry(self):
+        self.worker.status.return_value = WorkerStatus("latched")
+        self.poll_telemetry_at(10.0, self.telemetry_packet(fault_latched=True))
+
+        def queue_reset():
+            self.worker.status.return_value = WorkerStatus("resetting")
+            return True
+
+        self.worker.reset_control.side_effect = queue_reset
+        self.window.reset_button.click()
+        self.assertEqual(self.window.control_status.text(), "正在复位")
+
+        self.worker.status.return_value = WorkerStatus("ready", "复位成功，请重新应用")
+        self.window.poll_secure_status()
+        self.assertEqual(self.window.control_status.text(), "复位已确认，等待遥测更新")
+        self.assertEqual(self.window.protection_value.text(), "已锁存")
+        self.assertFalse(self.window.start_button.isEnabled())
+
+        self.poll_telemetry_at(10.1, self.telemetry_packet(fault_latched=True))
+        self.assertEqual(self.window.control_status.text(), "复位已确认，等待遥测更新")
+        self.assertFalse(self.window.start_button.isEnabled())
+
+        self.poll_telemetry_at(10.2, self.telemetry_packet(fault_latched=False))
+        self.assertEqual(self.window.control_status.text(), "遥测已确认解锁，请重新应用")
+        self.assertEqual(self.window.protection_value.text(), "未锁存")
+        self.assertTrue(self.window.start_button.isEnabled())
+        self.assertIsNone(self.window.current_target)
+        self.worker.apply_target.assert_not_called()
+
     def test_secure_cli_routes_lan_addresses(self):
         with (
             patch("rover.desktop.app.getpass", return_value="test-only"),
