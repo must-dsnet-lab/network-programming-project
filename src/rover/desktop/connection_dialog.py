@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from threading import Thread
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QIODevice, QSaveFile, QStandardPaths, Qt, QTimer
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
     QLineEdit,
+    QMessageBox,
     QPushButton,
     QVBoxLayout,
     QWidget,
@@ -24,6 +25,7 @@ from PySide6.QtWidgets import (
 from rover.desktop import secure_connection
 from rover.desktop.appearance import CONSOLE_STYLE, PortSpinBox, desktop_font
 from rover.desktop.connection_profile import DesktopConnectionSettings
+from rover.protocol.connection_bundle import ca_certificate_fingerprint, read_connection_bundle
 
 
 _FORM_STYLE = """
@@ -89,9 +91,10 @@ class ConnectionSelection:
 class ConnectionDialog(QDialog):
     def __init__(
         self, settings: DesktopConnectionSettings, *, saved: bool = False,
-        parent: QWidget | None = None,
+        parent: QWidget | None = None, ca_storage: Path | None = None,
     ):
         super().__init__(parent)
+        self._ca_storage = ca_storage
         self._selection: ConnectionSelection | None = None
         self._registration: Future[str | None] | None = None
         self._registration_timer = QTimer(self)
@@ -122,7 +125,13 @@ class ConnectionDialog(QDialog):
         self.server_name_input = QLineEdit(settings.server_name)
         self.server_name_input.setPlaceholderText("留空时自动填写")
         self.server_name_input.setToolTip("用于核对车端证书上的 DNS 名称或 IPv4 地址。")
-        remote.addRow("模式", self.mode_input)
+        self.import_bundle_button = QPushButton("导入连接包…")
+        self.import_bundle_button.setAutoDefault(False)
+        self.import_bundle_button.clicked.connect(self._import_bundle)
+        mode_row = QHBoxLayout()
+        mode_row.addWidget(self.mode_input, 1)
+        mode_row.addWidget(self.import_bundle_button)
+        remote.addRow("模式", mode_row)
         remote.addRow("车端地址", self.vehicle_host_input)
         remote.addRow("管理 TCP", self._paired_fields(
             self.management_port_input, "管理 TCP", "控制 UDP", self.control_port_input,
@@ -224,6 +233,75 @@ class ConnectionDialog(QDialog):
         )
         if path:
             self.ca_file_input.setText(path)
+
+    def _import_bundle(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self, "选择车端连接包", "", "Rover 连接包 (*.rover-connection.json);;JSON 文件 (*.json)",
+        )
+        if not path:
+            return
+        try:
+            bundle = read_connection_bundle(Path(path))
+            current_ca = Path(self.ca_file_input.text()).expanduser()
+            try:
+                current_digest = ca_certificate_fingerprint(current_ca)
+            except (OSError, ValueError):
+                current_digest = None
+            if current_digest != bundle.ca_sha256:
+                confirmed = QMessageBox.question(
+                    self, "确认信任车端 CA",
+                    f"车端地址 {bundle.vehicle_host}:{bundle.management_port}\n"
+                    f"公开 CA 的 SHA-256 指纹\n{bundle.ca_sha256}\n\n"
+                    "请通过可信渠道核对指纹，确认连接包由车端部署人员提供。",
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                    QMessageBox.StandardButton.No,
+                )
+                if confirmed != QMessageBox.StandardButton.Yes:
+                    return
+
+            ca_file = self._store_public_ca(bundle.ca_pem, bundle.ca_sha256)
+        except ValueError as error:
+            self._show_error(str(error))
+            return
+        except (OSError, RuntimeError):
+            self._show_error("无法打开连接包或保存公开 CA，请检查文件和目录权限。")
+            return
+
+        self.mode_input.setCurrentIndex(self.mode_input.findData("product"))
+        self.vehicle_host_input.setText(bundle.vehicle_host)
+        self.management_port_input.setValue(bundle.management_port)
+        self.control_port_input.setValue(bundle.control_port)
+        self.server_name_input.setText(bundle.server_name)
+        self.ca_file_input.setText(str(ca_file))
+        self.credential_input.clear()
+        self._show_status("已导入车端连接配置。请输入账号凭据并点击连接。")
+        self.credential_input.setFocus()
+
+    def _store_public_ca(self, pem: str, digest: str) -> Path:
+        directory = self._ca_storage
+        if directory is None:
+            location = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.GenericConfigLocation)
+            base = Path(location) if location else Path.home() / ".config"
+            directory = base / "Rover" / "trusted-vehicle-ca"
+        directory.mkdir(parents=True, exist_ok=True)
+        path = directory / f"{digest}.pem"
+        if path.is_file():
+            try:
+                if ca_certificate_fingerprint(path) == digest:
+                    return path
+            except ValueError:
+                # Replace a damaged local copy with the confirmed public CA.
+                pass
+        file = QSaveFile(str(path))
+        if not file.open(QIODevice.OpenModeFlag.WriteOnly):
+            raise OSError(file.errorString())
+        data = pem.encode("ascii")
+        if file.write(data) != len(data):
+            file.cancelWriting()
+            raise OSError(file.errorString())
+        if not file.commit():
+            raise OSError(file.errorString())
+        return path
 
     def _show_error(self, message: str) -> None:
         self.status_label.hide()

@@ -2,6 +2,7 @@
 
 import argparse
 import sqlite3
+from concurrent.futures import Future
 from contextlib import contextmanager
 from dataclasses import dataclass
 from ipaddress import IPv4Address
@@ -10,6 +11,7 @@ from threading import Event, Lock, Thread
 from time import monotonic
 
 from PySide6.QtCore import QSignalBlocker, QStandardPaths, Qt, QTimer
+from PySide6.QtNetwork import QAbstractSocket, QNetworkInterface
 from PySide6.QtWidgets import (
     QAbstractItemView,
     QApplication,
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
     QGroupBox,
     QHBoxLayout,
     QHeaderView,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
@@ -30,9 +33,11 @@ from PySide6.QtWidgets import (
 )
 
 from rover.desktop.appearance import CONSOLE_STYLE, PortSpinBox, desktop_font
+from rover.protocol.connection_bundle import ca_certificate_fingerprint, write_connection_bundle
 from rover.vehicle.accounts import AccountStore
 from rover.vehicle.app import main as vehicle_main
 from rover.vehicle.expert_management_runtime import ExpertManagementRuntime, expert_management_listener
+from rover.vehicle.managed_tls import ensure_vehicle_certificate
 
 
 @dataclass(frozen=True)
@@ -126,6 +131,45 @@ _TELEMETRY_TEXT = {"sent": "已发送", "pending": "等待发送", "error": "发
 _COLUMNS = ("账号", "角色", "管理连接", "遥测接收端点", "控制权", "最后活动", "遥测发送", "连接状态")
 
 
+def _rover_vehicle_data_dir() -> Path:
+    location = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.GenericDataLocation)
+    return Path(location) / "RoverVehicle"
+
+
+def _available_ipv4_addresses() -> list[tuple[str, str]]:
+    flags = QNetworkInterface.InterfaceFlag
+    types = QNetworkInterface.InterfaceType
+    active = flags.IsUp | flags.IsRunning
+    virtual_names = ("vmware", "virtualbox", "vbox", "vethernet", "vpn", "tailscale", "zerotier", "wireguard")
+    candidates = []
+    for interface in QNetworkInterface.allInterfaces():
+        state = interface.flags()
+        if state & active != active or state & flags.IsLoopBack:
+            continue
+        name = interface.humanReadableName()
+        normalized_name = name.casefold()
+        likely_physical = (
+            interface.type() in (types.Wifi, types.Ethernet)
+            and not any(marker in normalized_name for marker in virtual_names)
+        )
+        for entry in interface.addressEntries():
+            address = entry.ip()
+            if address.protocol() != QAbstractSocket.NetworkLayerProtocol.IPv4Protocol:
+                continue
+            ipv4 = IPv4Address(address.toString())
+            if ipv4.is_loopback or ipv4.is_unspecified or ipv4.is_multicast or ipv4.is_reserved:
+                continue
+            candidates.append((ipv4.is_link_local, not likely_physical, name, str(ipv4)))
+    return [(name, address) for _, _, name, address in sorted(candidates)]
+
+
+def _sign_vehicle_certificate(store_dir: Path, host: str, outcome: Future[Path]) -> None:
+    try:
+        outcome.set_result(ensure_vehicle_certificate(store_dir, host))
+    except Exception as error:
+        outcome.set_exception(error)
+
+
 def _display_address(address: object) -> str:
     if isinstance(address, tuple) and len(address) == 2:
         return f"{address[0]}:{address[1]}"
@@ -133,9 +177,17 @@ def _display_address(address: object) -> str:
 
 
 class VehicleAdminWindow(QWidget):
-    def __init__(self, config: VehicleAdminConfig, *, service: VehicleAdminService | None = None) -> None:
+    def __init__(
+        self, config: VehicleAdminConfig, *, service: VehicleAdminService | None = None,
+        managed_cert_store: Path | None = None,
+    ) -> None:
         super().__init__()
         self.service = service if service is not None else VehicleAdminService()
+        self._managed_cert_store = (
+            managed_cert_store if managed_cert_store is not None else _rover_vehicle_data_dir() / "tls"
+        )
+        self._certificate_job: tuple[str, Future[Path]] | None = None
+        self._managed_selection: tuple[str, Path] | None = None
         self._close_requested = False
         self._validation_error: str | None = None
         self._rows: tuple[dict[str, object], ...] = ()
@@ -162,18 +214,39 @@ class VehicleAdminWindow(QWidget):
         settings_form.addRow("账号数据库", self._path_row(self.account_db, db_picker))
 
         self.bind_host = QLineEdit(config.bind_host)
+        self.detect_ip_button = QPushButton("检测本机 IP")
+        self.detect_ip_button.clicked.connect(self._choose_local_ipv4)
         self.management_port = PortSpinBox(config.management_port)
         self.control_port = PortSpinBox(config.control_port)
         endpoints = QHBoxLayout()
         endpoints.addWidget(self.bind_host, 1)
+        endpoints.addWidget(self.detect_ip_button)
         endpoints.addWidget(QLabel("管理 TCP"))
         endpoints.addWidget(self.management_port)
         endpoints.addWidget(QLabel("控制 UDP"))
         endpoints.addWidget(self.control_port)
         settings_form.addRow("监听 IPv4 地址", endpoints)
+
+        self.certificate_button = QPushButton("生成／更新证书")
+        self.certificate_button.clicked.connect(self._generate_certificate)
+        self.export_bundle_button = QPushButton("导出连接包")
+        self.export_bundle_button.clicked.connect(self._export_connection_bundle)
+        self.provisioning_label = QLabel("生成证书后可导出局域网连接包。")
+        self.provisioning_label.setTextFormat(Qt.TextFormat.PlainText)
+        self.provisioning_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        self.provisioning_label.setWordWrap(True)
+        provisioning = QHBoxLayout()
+        provisioning.addWidget(self.certificate_button)
+        provisioning.addWidget(self.export_bundle_button)
+        provisioning.addWidget(self.provisioning_label, 1)
+        settings_form.addRow(provisioning)
+        self.bind_host.textChanged.connect(self._update_export_availability)
+        self.cert_dir.textChanged.connect(self._update_export_availability)
         self._settings_widgets = (
             self.cert_dir, self.account_db, cert_picker, db_picker, self.bind_host,
-            self.management_port, self.control_port,
+            self.management_port, self.control_port, self.detect_ip_button, self.certificate_button,
         )
 
         self.start_button = QPushButton("启动车端")
@@ -254,7 +327,101 @@ class VehicleAdminWindow(QWidget):
         if path:
             self.account_db.setText(path)
 
+    def _choose_local_ipv4(self) -> None:
+        candidates = _available_ipv4_addresses()
+        if not candidates:
+            self.provisioning_label.setText("未检测到在线网卡的 IPv4 地址。")
+            return
+        labels = {f"{name} · {address}": address for name, address in candidates}
+        current = self.bind_host.text().strip()
+        suggested = next((index for index, address in enumerate(labels.values()) if address == current), 0)
+        choice, accepted = QInputDialog.getItem(self, "检测本机 IP", "选择监听网卡地址", list(labels), suggested, False)
+        if accepted and choice in labels:
+            self.bind_host.setText(labels[choice])
+            self.provisioning_label.setText("已选择本机地址，可为该地址生成或更新证书。")
+
+    def _generate_certificate(self) -> None:
+        if self._certificate_job is not None or self.service.is_active():
+            return
+        try:
+            address = IPv4Address(self.bind_host.text().strip())
+        except ValueError:
+            self.provisioning_label.setText("请先选择或填写有效的监听 IPv4 地址。")
+            return
+        if address.is_unspecified or address.is_multicast or address.is_reserved:
+            self.provisioning_label.setText("请填写网卡的具体 IPv4 地址。")
+            return
+        host = str(address)
+        outcome: Future[Path] = Future()
+        self._certificate_job = (host, outcome)
+        self.provisioning_label.setText("正在检查并准备车端证书…")
+        try:
+            Thread(
+                target=_sign_vehicle_certificate,
+                args=(self._managed_cert_store, host, outcome),
+                name="vehicle-admin-certificate",
+            ).start()
+        except RuntimeError:
+            self._certificate_job = None
+            self.provisioning_label.setText("无法启动证书准备，请重试。")
+        self.refresh()
+
+    def _finish_certificate_job(self) -> None:
+        if self._certificate_job is None:
+            return
+        host, outcome = self._certificate_job
+        if not outcome.done():
+            return
+        self._certificate_job = None
+        try:
+            directory = outcome.result()
+        except Exception as error:
+            self.provisioning_label.setText(f"证书准备失败：{error}")
+            return
+        self._managed_selection = (host, directory)
+        self.cert_dir.setText(str(directory))
+        if IPv4Address(host).is_loopback:
+            self.provisioning_label.setText("证书已就绪，可启动车端。")
+        else:
+            self.provisioning_label.setText("证书已就绪，可启动车端或导出连接包。")
+
+    def _update_export_availability(self) -> None:
+        can_export = (
+            self._certificate_job is None
+            and self._managed_selection is not None
+            and self._managed_selection == (self.bind_host.text().strip(), Path(self.cert_dir.text().strip()))
+            and not IPv4Address(self._managed_selection[0]).is_loopback
+        )
+        self.export_bundle_button.setEnabled(can_export and not self._close_requested)
+
+    def _export_connection_bundle(self) -> None:
+        if not self.export_bundle_button.isEnabled() or self._managed_selection is None:
+            return
+        host, directory = self._managed_selection
+        path, _ = QFileDialog.getSaveFileName(
+            self, "导出连接包", str(Path.home() / "Rover.rover-connection.json"),
+            "Rover 连接包 (*.rover-connection.json)",
+        )
+        if not path:
+            return
+        if not path.lower().endswith(".rover-connection.json"):
+            self.provisioning_label.setText("连接包文件名须以 .rover-connection.json 结尾。")
+            return
+        public_ca = directory / "ca.pem"
+        try:
+            fingerprint = ca_certificate_fingerprint(public_ca)
+            write_connection_bundle(
+                Path(path), vehicle_host=host, management_port=self.management_port.value(),
+                control_port=self.control_port.value(), ca_file=public_ca,
+            )
+        except (OSError, ValueError, RuntimeError) as error:
+            self.provisioning_label.setText(f"连接包导出失败：{error}")
+            return
+        self.provisioning_label.setText(f"已导出连接包。公开 CA 的 SHA-256 指纹\n{fingerprint}")
+
     def _start_service(self) -> None:
+        if self._certificate_job is not None:
+            return
         host = self.bind_host.text().strip()
         try:
             host = str(IPv4Address(host))
@@ -265,6 +432,12 @@ class VehicleAdminWindow(QWidget):
 
         cert_dir, account_db = self.cert_dir.text().strip(), self.account_db.text().strip()
         self._validation_error = None
+        if self._managed_selection is not None:
+            signed_host, signed_directory = self._managed_selection
+            if Path(cert_dir) == signed_directory and host != signed_host:
+                self._validation_error = "监听地址已更改，请先生成或更新证书。"
+                self.refresh()
+                return
         if not cert_dir or not account_db:
             self._validation_error = "请选择证书目录和账号数据库。"
         else:
@@ -289,11 +462,13 @@ class VehicleAdminWindow(QWidget):
         self.role_message.setText("角色已更新。桌面可重新登录。" if updated else "找不到这个账号。")
 
     def refresh(self) -> None:
+        self._finish_certificate_job()
         state = self.service.status()
         inactive = state.phase in ("idle", "error")
         for widget in self._settings_widgets:
-            widget.setEnabled(inactive)
-        self.start_button.setEnabled(inactive)
+            widget.setEnabled(inactive and self._certificate_job is None)
+        self.start_button.setEnabled(inactive and self._certificate_job is None)
+        self._update_export_availability()
         self.stop_button.setEnabled(state.phase in ("starting", "running"))
         if self._validation_error:
             self.service_label.setText(self._validation_error)
@@ -303,7 +478,7 @@ class VehicleAdminWindow(QWidget):
             self.service_label.setText(_PHASE_TEXT[state.phase])
 
         self._update_sessions(state.sessions)
-        if self._close_requested and not self.service.is_active():
+        if self._close_requested and self._certificate_job is None and not self.service.is_active():
             QTimer.singleShot(0, self.close)
 
     def _update_sessions(self, sessions: tuple[dict[str, object], ...]) -> None:
@@ -352,9 +527,11 @@ class VehicleAdminWindow(QWidget):
             self.details.setPlainText(content)
 
     def closeEvent(self, event) -> None:
-        if self.service.is_active():
+        service_active = self.service.is_active()
+        if service_active or self._certificate_job is not None:
             self._close_requested = True
-            self.service.stop()
+            if service_active:
+                self.service.stop()
             event.ignore()
         else:
             self._timer.stop()
@@ -378,8 +555,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     app = QApplication(["RoverVehicle"])
-    data_dir = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.GenericDataLocation)
-    accounts = args.account_db or Path(data_dir) / "RoverVehicle" / "accounts.sqlite3"
+    accounts = args.account_db or _rover_vehicle_data_dir() / "accounts.sqlite3"
     window = VehicleAdminWindow(VehicleAdminConfig(
         args.cert_dir, accounts, str(args.bind_host), args.management_port, args.control_port,
     ))

@@ -120,6 +120,8 @@ U1 的前后对照与回归、U2 的图形连接、U3 的 Windows 包均已完�
 
 账号注册、自动遥测、多候选交接和管理界面已完成 Windows 本机联调。R07 用于复跑界面与 Windows 包。用户版 LAN 已记录同一手机热点下的双机交接，重连与多端验收证据继续回收。 [运行步骤与本机结果](../README.md#two-dimensional-user-edition) · [图 13](../README.md#user-edition-runtime-map) · [组员复跑 R07](team-acceptance.md#2-组内复跑) · [热点实测与排查](team-acceptance.md#physical-user-edition-lan-20261123)
 
+局域网部署增加车端 IPv4 检测、同 CA 更新服务器证书和连接包导入导出。R09 用两张能互访的局域网复核换 IP 后沿用原 CA 的连接过程。 [操作与换网复测](../README.md#lan-connection-provisioning)
+
 ### 3.2 方向摇杆、油门与二维运动
 
 | ID | 任务与依赖 | 满足要求和交付 |
