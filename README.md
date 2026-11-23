@@ -33,7 +33,7 @@
 | --- | --- | --- |
 | 高级版 | Windows 宿主机与 Ubuntu 虚拟机完成 TLS、UDP 控制和遥测闭环，留有网络故障与保护恢复记录 | [VMware 联调](#vmware-lan-acceptance) · [高级验收](#advanced-acceptance-status) |
 | 专家 P1–P7 | Windows 本机验证双 TLS、独占授权、零速交接、授权代次、租约、桌面操作和机制对照 | [专家复跑索引](docs/expert-control-authority.md#组员复跑索引) · [图 11](#expert-authority-flow) · [图 12](docs/expert-control-authority.md#102-本机结果) |
-| 二维用户版 | Windows 本机验证注册、角色、自动遥测、多候选交接和车端管理 | [部署与登录](#two-dimensional-user-edition) |
+| 二维用户版 | Windows 本机验证注册、角色、自动遥测、多候选交接和车端管理。Windows 与 macOS 在同一手机热点完成双机交接初测 | [部署与登录](#two-dimensional-user-edition) · [热点实测与排查](docs/team-acceptance.md#physical-user-edition-lan-20261123) |
 | U4–U5 二维驾驶 | Windows 本机验证输入、车辆动力、保护及重连，提供固定输入与曲线复现 | [驾驶与测量](#desktop-2d-driving) |
 
 物理双机、真实断网和无开发环境 Windows 的复测按[组员集中验收清单](docs/team-acceptance.md)收集。
@@ -82,7 +82,7 @@
 - [x] U4 接入方向摇杆、油门与刹车，本机验证释放、失焦和断开。 [二维驾驶操作](#desktop-2d-driving)
 - [x] U5 在二维车端验证加速、滑行、制动与转向，提供速度和加速度曲线。 [固定输入复现](#desktop-2d-driving)
 - [ ] R06/R07 在无项目开发环境的 Windows 复测桌面端和车端管理 EXE。 [组员复跑](docs/team-acceptance.md#2-组内复跑)
-- [ ] 用户版 LAN 在两台物理电脑核对登录、自动遥测、多端交接和重连。 [现场验收](docs/team-acceptance.md#3-物理双机与实际断网)
+- [ ] 用户版 LAN 在两台物理电脑核对登录、自动遥测、多端交接和重连。 [现场验收](docs/team-acceptance.md#3-物理双机与实际断网) · [当前证据](docs/team-acceptance.md#physical-user-edition-lan-20261123)
 - [ ] U6 建立真实三维坐标与遥测，验证高度变化和兼容性。
 - [ ] U7 接入三维场景和车体，保留二维视图。
 - [ ] U8 完成驾驶反馈、场景验收和发布包复验。
