@@ -84,6 +84,7 @@
 - [ ] R06/R07 在无项目开发环境的 Windows 复测桌面端和车端管理 EXE。 [组员复跑](docs/team-acceptance.md#2-组内复跑)
 - [ ] 用户版 LAN 在两台物理电脑核对登录、自动遥测、多端交接和重连。 [现场验收](docs/team-acceptance.md#3-物理双机与实际断网) · [当前证据](docs/team-acceptance.md#physical-user-edition-lan-20261123)
 - [ ] R09 用同一部署 CA 完成两台物理电脑的局域网换网复测。 [自动配置与证书](#lan-connection-provisioning) · [组员复跑](docs/team-acceptance.md#2-组内复跑)
+- [ ] R10 在 Windows 车端复测启动时的局域网放行、规则复用和取消授权。 [操作](#lan-firewall-setup) · [组员复跑](docs/team-acceptance.md#2-组内复跑)
 - [ ] U6 建立真实三维坐标与遥测，验证高度变化和兼容性。
 - [ ] U7 接入三维场景和车体，保留二维视图。
 - [ ] U8 完成驾驶反馈、场景验收和发布包复验。
@@ -703,6 +704,14 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 Windows 车端管理包内置 OpenSSL 3 签发工具。构建时脚本可寻找 Git for Windows 的 OpenSSL，或用 `-OpenSsl` 指定可执行文件。源码运行可从 PATH 找 OpenSSL 3，也可设置 `ROVER_OPENSSL` 指向它的绝对路径。
 
 **Windows 本机验证（2026-11-23）。** 离屏全量回归 625 项通过，两个 Windows 包均通过目录外启动参数检查。用车端包内的 OpenSSL 在中文路径下为两个测试 IPv4 签发不同服务器证书，以同一个公开 CA 分别完成 TLS 内存握手和连接包往返校验。R09 的物理双机换网复测继续按验收清单留证。
+
+<a id="lan-firewall-setup"></a>
+
+**Windows 车端启动时配置局域网访问。** 运行新版 `RoverVehicleAdmin.exe`，选择局域网地址和证书后点「启动车端」。如果需要配置入站权限，窗口会说明放行范围，由部署人确认后通过一次 Windows 管理员授权。允许范围为当前车端 EXE、同一子网、当前网络配置文件、实际管理 TCP 端口和车端 UDP。UDP 规则覆盖控制端口和由系统分配的遥测登记端口。
+
+规则有效时，后续启动直接复用。专用网络下相同 EXE 路径和管理端口的规则可随局域网地址更新复用。公用网络下的规则还限定所选车端地址。换 EXE 路径、管理端口或公用网络条件后，程序会重新核对。桌面端继续导入连接包并登录。Windows 防火墙保持启用，设备间能否互访仍由实际网络决定。 [Windows 防火墙应用规则](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/rules#applications-rules)
+
+Windows 本机离屏全量回归 639 项通过。已通过实际 Windows 只读接口核对当前网络配置与规则状态。规则添加、复用、取消授权和部分失败回滚通过替身测试。真实授权以及两台物理电脑上的连接和遥测按 R10 留证。
 
 <a id="desktop-2d-driving"></a>
 
