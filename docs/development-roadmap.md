@@ -118,7 +118,11 @@ U1 的前后对照与回归、U2 的图形连接、U3 的 Windows 包均已完�
 
 验收时用车端管理界面启动服务，在运行中加入 A、B 和只读观察端。核对三条会话各自的地址和角色、控制权交接后的持有者，以及 B 断开重连后的在线状态和新遥测端点。管理员通过界面即可定位是管理连接、遥测登记还是发送环节出现异常。
 
-账号注册、自动遥测、多候选交接和管理界面已完成 Windows 本机联调。R07 用于复跑界面与 Windows 包，跨机端点验证另见用户版 LAN。 [运行步骤与本机结果](../README.md#two-dimensional-user-edition) · [图 13](../README.md#user-edition-runtime-map) · [组员复跑 R07](team-acceptance.md#2-组内复跑) · [物理验收](team-acceptance.md#3-物理双机与实际断网)
+账号注册、自动遥测、多候选交接和管理界面已完成 Windows 本机联调。R07 用于复跑界面与 Windows 包。用户版 LAN 已记录同一手机热点下的双机交接，重连与多端验收证据继续回收。 [运行步骤与本机结果](../README.md#two-dimensional-user-edition) · [图 13](../README.md#user-edition-runtime-map) · [组员复跑 R07](team-acceptance.md#2-组内复跑) · [热点实测与排查](team-acceptance.md#physical-user-edition-lan-20261123)
+
+局域网部署增加车端 IPv4 检测、同 CA 更新服务器证书和连接包导入导出。R09 用两张能互访的局域网复核换 IP 后沿用原 CA 的连接过程。 [操作与换网复测](../README.md#lan-connection-provisioning)
+
+新版 Windows 车端在启动时核对局域网入站规则，需要配置时由部署人通过 Windows 管理员授权。R10 记录首次配置、规则复用和取消授权。 [局域网放行](../README.md#lan-firewall-setup)
 
 ### 3.2 方向摇杆、油门与二维运动
 

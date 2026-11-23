@@ -2,7 +2,28 @@
 
 虚拟小车网络遥控 · 网络编程小组项目（MUST）。
 
-[协议待办](#protocol-checklist) · [体验待办](#experience-checklist) · [团队开发规范](docs/development-standards.md)
+[协议清单](#protocol-checklist) · [体验清单](#experience-checklist) · [团队开发规范](docs/development-standards.md)
+
+<a id="final-release"></a>
+
+## 最终交付版 v0.1.0
+
+[下载 v0.1.0](https://github.com/must-dsnet-lab/network-programming-project/releases/tag/v0.1.0) · [桌面端和车端用户手册](docs/user-manual.md) · [跨平台源码复现](docs/cross-platform-reproduction.md)
+
+下载 Windows x64 压缩包后，请完整解压对应的 ZIP，再运行其中的 EXE，保留同目录的 `_internal/`。macOS 和 Linux 可下载同一 Release 的源码并按跨平台指南运行。
+
+| 下载文件 | 用途 |
+| --- | --- |
+| `RoverDesktop-win64.zip` | 打开 `RoverDesktop.exe`。只体验本地模拟时，一个桌面包即可。多人联机时选择「连接车端」。 |
+| `RoverVehicleAdmin-win64.zip` | 由部署人员在车端电脑打开 `RoverVehicleAdmin.exe`，管理证书、会话和账号角色。 |
+
+局域网联机使用同一 Release 的两端程序。
+
+1. **车端部署**。点「检测本机 IP」，选择桌面端能访问的局域网 IPv4，点「生成／更新证书」，再点「启动车端」。首次缺少匹配规则时，部署人员按提示完成 Windows 管理员授权。已有规则会自动复用。
+2. **分发连接包**。在车端点「导出连接包」，把 `.rover-connection.json` 交给桌面用户。首次导入时核对车端界面显示的公开 CA 指纹。换局域网地址后，用同一部署 CA 更新服务器证书并重新导出连接包。
+3. **桌面登录**。点「连接车端」，再点「导入连接包…」。首次注册后重新输入凭据并连接。新账号默认为观察员。要驾驶，由部署人员在车端更新为操作者，桌面重新登录后申请控制权。
+
+交付范围为能互访的局域网和二维驾驶，支持独占控制权与零速交接。交付后只处理确认的缺陷。Windows 本机全量回归 639 项通过，两种 Windows x64 包均在项目目录外解压并完成启动检查。 [二维用户版](#two-dimensional-user-edition) · [局域网部署](#lan-connection-provisioning)
 
 ## 项目总览
 
@@ -33,28 +54,28 @@
 | --- | --- | --- |
 | 高级版 | Windows 宿主机与 Ubuntu 虚拟机完成 TLS、UDP 控制和遥测闭环，留有网络故障与保护恢复记录 | [VMware 联调](#vmware-lan-acceptance) · [高级验收](#advanced-acceptance-status) |
 | 专家 P1–P7 | Windows 本机验证双 TLS、独占授权、零速交接、授权代次、租约、桌面操作和机制对照 | [专家复跑索引](docs/expert-control-authority.md#组员复跑索引) · [图 11](#expert-authority-flow) · [图 12](docs/expert-control-authority.md#102-本机结果) |
-| 二维用户版 | Windows 本机验证注册、角色、自动遥测、多候选交接和车端管理 | [部署与登录](#two-dimensional-user-edition) |
+| 二维用户版 | Windows 本机验证注册、角色、自动遥测、多候选交接和车端管理。Windows 与 macOS 在同一手机热点完成双机交接初测 | [部署与登录](#two-dimensional-user-edition) · [热点实测与排查](docs/team-acceptance.md#physical-user-edition-lan-20261123) |
 | U4–U5 二维驾驶 | Windows 本机验证输入、车辆动力、保护及重连，提供固定输入与曲线复现 | [驾驶与测量](#desktop-2d-driving) |
+| 局域网部署 | Windows 本机验证图形签发和连接包往返，核对系统网络与规则状态，自动化验证规则添加、复用与回滚 | [证书与连接包](#lan-connection-provisioning) · [局域网应用规则](#lan-firewall-setup) |
 
-物理双机、真实断网和无开发环境 Windows 的复测按[组员集中验收清单](docs/team-acceptance.md)收集。
+表中只列已有记录的结果。本机回环、虚拟局域网和物理设备互访分别注明环境。
 
 - 项目范围包括观察端、故障注入、重复实验与原始数据，以及专家阶段的控制权交接、授权代次、租约和机制对照。
-- 第二台机器预检及最小EXE打包提前安排。配置、资源、证书、日志、跨机验证、报告、PPT与录像随版本更新。
 - 高级阶段验证TLS握手、证书校验、跨机闭环与保护。专家阶段在此基础上扩展控制权交接、授权代次与租约。
 
-图中按实现和验证状态标记进展。A01—A10用于拆解组内实现与验证，最终评定依据教师评分标准。实验数据和待补项见[高级版验收记录](#advanced-acceptance-status)。
+阶段图反映绘制时的实现和验证状态。A01–A10 用于记录高级版的实现与验收，课程评定依据教师评分标准。实验数据和当时的证据边界见[高级版验收记录](#advanced-acceptance-status)。
 
 [详细开发路线](docs/development-roadmap.md) · [AI 与贡献者入口](AGENTS.md) · [图 10 核心函数运行结构](#advanced-runtime-map) · [展开模块与函数关系](docs/runtime-reference.md) · [新增验收记录](docs/verification.md)
 
-### 后续待办
+### 开发清单（交付归档）
 
-对应任务交付、达到验收条件并留下证据后，在 PR 中把本页对应条目标记为完成。数据和待补项见[高级版验收记录](#advanced-acceptance-status)。
+清单保留各开发阶段的实现和验收状态。未勾选项表示历史专项尚无完整留证。原始数据及证据边界见[高级版验收记录](#advanced-acceptance-status)。
 
 <a id="protocol-checklist"></a>
 
 #### 协议路线 · 高级向专家推进
 
-物理双机和真实断网由组员在有设备时补测。专家路线先推进可在本机验证的任务，现场验收结果单独记录。 [协议任务依赖与验收](docs/development-roadmap.md#protocol-delivery) · [组员集中验收清单](docs/team-acceptance.md) · [组员复跑索引](docs/expert-control-authority.md#组员复跑索引)
+专家路线先完成可在本机复现的阶段，物理设备和实际断网的证据按环境单独归档。 [协议任务依赖与验收](docs/development-roadmap.md#protocol-delivery) · [组员集中验收清单](docs/team-acceptance.md) · [组员复跑索引](docs/expert-control-authority.md#组员复跑索引)
 
 - [ ] A01 完成两台物理电脑的局域网联调，验证 TLS 认证、UDP 控制、车端运动和遥测回传。 [双机验收要求](docs/development-roadmap.md#advanced-protocol-acceptance)
 - [ ] A08/A09 保持车端运行，实际断网并验证停车。网络恢复后确认车辆保持静止，再重建会话，若已锁存则显式复位，再次使能并明确应用目标后验证重新运动。 [断网与恢复验收](docs/development-roadmap.md#advanced-protocol-acceptance)
@@ -66,13 +87,13 @@
 - [x] P5 实现租约续期、到期撤销与停车，本机验证租约与 UDP 断流分别生效。 [P5 规则与复跑](docs/expert-control-authority.md#8-p5-授权租约与到期停车)
 - [x] P6 发布控制权状态并接入双端操作，已通过 Windows 本机联调。 [P6 复跑](docs/expert-control-authority.md#91-组员本机复现) · [图 11](#expert-authority-flow)
 - [x] P7 完成本机机制对照、双端实测和回归留证。 [P7 对照与复现](docs/expert-control-authority.md#10-p7-高级与专家机制对照) · [图 12 与测量结果](docs/expert-control-authority.md#102-本机结果)
-- [ ] P7-LAN 由组员在物理双机验证专家模式的交接、租约与恢复。 [现场步骤](docs/team-acceptance.md#3-物理双机与实际断网)
+- [ ] P7-LAN 专家模式在物理双机上的交接、租约与恢复专项验证。 [现场步骤](docs/team-acceptance.md#3-物理双机与实际断网)
 
 <a id="experience-checklist"></a>
 
 #### 体验路线 · 桌面 GUI 优先
 
-先改善现有桌面操作，再逐步加入操纵、物理和三维显示。 [体验实施顺序与验收](docs/development-roadmap.md#experience-delivery)
+顺序为桌面操作、部署、二维操纵及运动模型。三维坐标、场景和驾驶反馈的原始设想保存在路线文档。 [体验实施顺序与验收](docs/development-roadmap.md#experience-delivery)
 
 - [x] U1 优化桌面布局、控制操作、状态和地图。已留同场景前后对照、控件表与本机回归。 [界面和控件验收](#desktop-ui-acceptance)
 - [x] U2 增加图形化连接配置，已通过 Windows 本机联调。 [操作与复跑](#desktop-graphical-connection)
@@ -82,10 +103,8 @@
 - [x] U4 接入方向摇杆、油门与刹车，本机验证释放、失焦和断开。 [二维驾驶操作](#desktop-2d-driving)
 - [x] U5 在二维车端验证加速、滑行、制动与转向，提供速度和加速度曲线。 [固定输入复现](#desktop-2d-driving)
 - [ ] R06/R07 在无项目开发环境的 Windows 复测桌面端和车端管理 EXE。 [组员复跑](docs/team-acceptance.md#2-组内复跑)
-- [ ] 用户版 LAN 在两台物理电脑核对登录、自动遥测、多端交接和重连。 [现场验收](docs/team-acceptance.md#3-物理双机与实际断网)
-- [ ] U6 建立真实三维坐标与遥测，验证高度变化和兼容性。
-- [ ] U7 接入三维场景和车体，保留二维视图。
-- [ ] U8 完成驾驶反馈、场景验收和发布包复验。
+- [x] 实现本机 IPv4 检测、同一部署 CA 续签和连接包导入导出。已验证本机签发和 TLS 握手。 [自动配置与证书](#lan-connection-provisioning)
+- [x] 实现 Windows 车端启动时的局域网应用规则配置。已完成只读接口检查和自动化用例。 [操作](#lan-firewall-setup)
 
 ### 章节导航
 
@@ -642,22 +661,22 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 .\scripts\build_windows_desktop.ps1
 ```
 
-输出为 `dist/RoverDesktop/`，交付时保留 EXE 旁的 `_internal/`。开发者可用 `-OutputDirectory` 生成另一个输出目录。组员使用该目录运行，连接已有车端所需的公开 CA 和登录账号由测试负责人单独提供。
+输出为 `dist/RoverDesktop/`，交付时保留 EXE 旁的 `_internal/`。开发者可用 `-OutputDirectory` 生成另一个输出目录。组员可用该目录启动；连接已有车端时使用部署人员提供的连接包，并注册或登录。
 
 **源码本机证据（2026-11-23）**。Windows 11、Python 3.12.10，离屏 Qt 通过启动界面进入三个角色。本地模拟连续两次观测到 `0.00 → 0.65 → 0.00 m/s`，停发后归零锁存并禁用应用，退出后控制端口可以立即重绑。高级连接通过 TLS 认证并保存公开配置，独立只读窗口收到 `0.00 → 0.80 → 0.00 m/s`。专项 77 项、全量 556 项通过。截图与原始日志见本机 `local/u3-tests/source-20261123-025436997/`。
 
-**EXE 本机证据（2026-11-23）**。PyInstaller 6.22.3 生成的 Windows x64 包在项目目录外解压。在未继承 Python 或 Qt 开发路径的进程环境中，启动页两次打开并退出，Qt 和 Python 运行库从包内加载。打包后的本地模拟子进程完成 UDP 起步、停车与退出。压缩包及原始记录留在本机 `local/u3-tests/packaging-final/`。单独的无开发环境 Windows 验收由组员执行。 [组员 EXE 验收 R06](docs/team-acceptance.md#2-组内复跑)
+**EXE 本机证据（2026-11-23）**。PyInstaller 6.22.3 生成的 Windows x64 包在项目目录外解压。在未继承 Python 或 Qt 开发路径的进程环境中，启动页两次打开并退出，Qt 和 Python 运行库从包内加载。打包后的本地模拟子进程完成 UDP 起步、停车与退出。压缩包及原始记录留在本机 `local/u3-tests/packaging-final/`。这条记录仅覆盖 Windows 本机解包测试。 [组员 EXE 验收 R06](docs/team-acceptance.md#2-组内复跑)
 
 <a id="two-dimensional-user-edition"></a>
 
 ### 4.8 二维用户版注册、多桌面和车端管理
 
-**本机复现。** 准备同一版本的两个 Windows 包，或从源码启动两个入口。部署人员按 [7.1.1 证书准备](#vehicle-certificate-setup)生成实验用证书。车端读取服务器证书和私钥，桌面只需导入同批生成的公开 `ca.pem`。本机可用默认地址 `127.0.0.1`，证书名称留空时按 `localhost` 核对。
+**本机复现。** 准备同一版本的两个 Windows 包，或从源码启动两个入口。Windows 发布包从车端界面[生成证书并导出连接包](#lan-connection-provisioning)。源码或手动部署还可按 [7.1.1 证书准备](#vehicle-certificate-setup)生成实验用证书。手动配置时，车端读取服务器证书和私钥，桌面导入同批生成的公开 `ca.pem`。本机可用默认地址 `127.0.0.1`，证书名称留空时按 `localhost` 核对。
 
 | 从哪个程序开始 | 操作 |
 | --- | --- |
-| `RoverVehicleAdmin.exe` | 选择包含 `server.pem` 和 `server.key` 的车端证书目录，选择账号库文件，点击「启动车端」。默认本机地址为 `127.0.0.1`，管理 TCP 为 `19177`，控制 UDP 为 `9999`。运行已有车端时，先正常停车并退出旧进程，或在双方界面填写另一组端口 |
-| `RoverDesktop.exe` | 点「连接车端」，选择「用户版（自动遥测）」。输入车端地址、账号和至少 12 字符的凭据，选择部署人员提供的公开 `ca.pem`。首次点「注册账号」，然后重新输入凭据并点「连接」 |
+| `RoverVehicleAdmin.exe` | 在局域网中按 [4.8.1](#lan-connection-provisioning) 检测地址、生成证书并导出连接包。已有匹配证书时也可选择包含 `server.pem` 和 `server.key` 的目录。选择账号库后点击「启动车端」。默认本机地址为 `127.0.0.1`，管理 TCP 为 `19177`，控制 UDP 为 `9999`。运行已有车端时，先正常停车并退出旧进程，或在双方界面填写另一组端口 |
+| `RoverDesktop.exe` | 点「连接车端」，选择「用户版（自动遥测）」，导入车端连接包。手动配置时可填写车端地址和端口，并选择部署人员提供的公开 `ca.pem`。输入账号和至少 12 字符的凭据；首次点「注册账号」，然后重新输入凭据并点「连接」 |
 | 车端授权与桌面驾驶 | 新账号是观察员。管理员输入账号，把角色更新为「操作者」。该账号重新登录后，可以先申请控制权，再应用目标。持有者有多个候选人时，可在「交接」中选择接收会话 |
 
 **账号与会话。** Windows 默认账号库为 `%LOCALAPPDATA%\RoverVehicle\accounts.sqlite3`，实际路径以车端管理窗口为准。注册和角色存入 SQLite，关闭并重新启动车端后继续使用同一路径即可登录。角色变化会使旧会话退出，账号在重新登录后使用新角色。车端当前最多接受六个同时在线的已登录会话。
@@ -683,7 +702,33 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 .\scripts\build_windows_desktop.ps1 -VehicleAdmin -OutputDirectory '.\dist\user-edition'
 ```
 
-**Windows 本机证据（2026-11-23）**。使用实际车端管理界面启停、浏览会话及更新 SQLite 角色。三位操作者和一位观察员经 TLS 登录，四个窗口的 UDP 接收端口由系统分配。A 从 B、C 中选择 C，车端归零后由 C 显式应用再起步。B 重连的遥测端口从 `57095` 变为 `57100`。专项与全量通过，最终全量 **590 项**。两种 Windows 包均在项目目录之外通过启动参数冒烟检查。原始记录见本机 `local/u3-tests/product-final-20261123-044308509/`。 [组员复跑 R07](docs/team-acceptance.md#2-组内复跑)
+**Windows 本机证据（2026-11-23）**。使用实际车端管理界面启停、浏览会话及更新 SQLite 角色。三位操作者和一位观察员经 TLS 登录，四个窗口的 UDP 接收端口由系统分配。A 从 B、C 中选择 C，车端归零后由 C 显式应用再起步。B 重连的遥测端口从 `57095` 变为 `57100`。该阶段全量 **590 项**通过。该阶段的两个 Windows 包均在项目目录之外通过启动参数冒烟检查。原始记录见本机 `local/u3-tests/product-final-20261123-044308509/`。 [组员复跑 R07](docs/team-acceptance.md#2-组内复跑)
+
+<a id="lan-connection-provisioning"></a>
+
+#### 4.8.1 局域网地址、证书和连接包
+
+| 位置 | 操作 |
+| --- | --- |
+| 车端管理 | 让车端处于停止状态，点「检测本机 IP」，选择两台电脑互访时使用的网卡地址。点「生成／更新证书」，等证书目录自动填入后，启动车端。车端管理窗口重开后可以再次选择 IP 并点更新，同一 IP 的有效证书会复用。 |
+| 连接包 | 点「导出连接包」，保存 `.rover-connection.json`，通过可信渠道交给队友。文件只含车端地址、端口、校验名称和公开 CA。车端窗口显示可复制的公开 CA SHA-256 指纹。 |
+| 桌面端 | 在「连接到车端」点「导入连接包…」。首次信任或 CA 更换时，核对车端公布的指纹再确认。随后输入账号凭据并连接。需要下次自动填表时勾选「保存连接配置」。 |
+
+图形签发首次在车端应用数据目录创建一套部署 CA，在 Windows 默认位于 `%LOCALAPPDATA%/RoverVehicle/tls`。以后换 IP 时沿用这份 CA 签发匹配新地址的服务器证书，队友导入更新后的连接包可复用已接受的 CA。以前用脚本独立创建的实验 CA 切换到图形签发时，桌面需要确认一次新的部署 CA。
+
+本阶段以能互访的局域网为交付和验收范围。IP 检测显示的是本机可监听的地址。换到家庭 Wi-Fi 或另一部手机热点后，让桌面端和车端接入能互访的网络。同一校园 Wi-Fi 可能分配不同子网，也可能限制设备互访。先从桌面侧检查管理 TCP，再分别检查动态 UDP 遥测登记和控制 UDP。 [同热点实测与防火墙排查](docs/team-acceptance.md#physical-user-edition-lan-20261123)
+
+Windows 车端管理包内置 OpenSSL 3 签发工具。构建时脚本可寻找 Git for Windows 的 OpenSSL，或用 `-OpenSsl` 指定可执行文件。源码运行可从 PATH 找 OpenSSL 3，也可设置 `ROVER_OPENSSL` 指向它的绝对路径。
+
+**Windows 本机验证（2026-11-23）。** 离屏全量回归 625 项通过，两个 Windows 包均通过目录外启动参数检查。用车端包内的 OpenSSL 在中文路径下为两个测试 IPv4 签发不同服务器证书，以同一个公开 CA 分别完成 TLS 内存握手和连接包往返校验。
+
+<a id="lan-firewall-setup"></a>
+
+**Windows 车端启动时配置局域网访问。** 使用发布包的 `RoverVehicleAdmin.exe` 监听具体的私有局域网 IPv4 时，点「启动车端」会检查规则。如果需要配置入站权限，窗口会说明放行范围，由部署人员确认后通过一次 Windows 管理员授权。允许范围为当前车端 EXE、同一子网、当前网络配置文件、实际管理 TCP 端口和车端 UDP。UDP 规则覆盖控制端口和由系统分配的遥测登记端口。
+
+规则有效时，后续启动直接复用。专用网络下相同 EXE 路径和管理端口的规则可随局域网地址更新复用。公用网络下的规则还限定所选车端地址。换 EXE 路径、管理端口或公用网络条件后，程序会重新核对。桌面端继续导入连接包并登录。Windows 防火墙保持启用，设备间能否互访仍由实际网络决定。 [Windows 防火墙应用规则](https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/rules#applications-rules)
+
+Windows 本机离屏全量回归 639 项通过。已通过实际 Windows 只读接口核对当前网络配置与规则状态。规则添加、复用、取消授权和部分失败回滚的验证使用替身，覆盖了程序决策和规则处理逻辑。
 
 <a id="desktop-2d-driving"></a>
 
@@ -724,7 +769,7 @@ Windows 本机回环联调使用正式车端、桌面安全控制线程和两路
 
 **Windows 本机验收（2026-11-23）**。实际车端管理窗口、TLS 和 UDP 跑通操作者加速与转向、观察员同步收遥测、松油滑行、踩刹车、停发看门狗、急停、显式复位和驾驶中断开。用 Qt 窗口失焦事件验证制动与重新应用。另用本地模拟子进程验证起步、正常停车和关窗退出。全量 612 项通过。本机证据存于 `local/u3-tests/driving-2d-20261123-062938657/`，固定输入数据与曲线存于 `local/u5-tests/profile-20261123-062656086/`。 [组员复跑 R08](docs/team-acceptance.md#2-组内复跑)
 
-负责人对 `9960002` 反馈本轮检测通过。R08 各场景的执行环境和录像按组员复跑清单收集。
+负责人对 `9960002` 反馈本轮检测通过。
 
 <a id="network-layers"></a>
 
@@ -1212,7 +1257,7 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 2026-11-20用户手动迁入已有运行时，并将外部`vehicle_tls_demo.py`的导入改为`from rover.vehicle.management_runtime import management_listener`。新增3项线程交接测试先失败、再通过，全量301项通过。测试使用真实TCP、工作线程、队列和业务处理函数，TLS与认证/记录分派入口由替身替换，用于核对线程边界和结果传递；真实证书及TLS链路另行通过双终端验收。
 
-迁入后双终端再次完成运动、急停、重连仍锁存、明确复位、旧控制包拒绝及新会话恢复运动。故障解除前后位置均0.18米，最终合法零速停车于0.36米且未锁存，退出后会话清空。管理运行时已经进入项目包；正式命令行参数的接入与验证见下一节，桌面整合继续推进。
+迁入后双终端再次完成运动、急停、重连仍锁存、明确复位、旧控制包拒绝及新会话恢复运动。故障解除前后位置均0.18米，最终合法零速停车于0.36米且未锁存，退出后会话清空。管理运行时已经进入项目包；正式命令行参数的接入与验证见下一节，桌面整合见[桌面控制接入](#secure-desktop-integration)。
 
 <a id="secure-desktop-integration"></a>
 
@@ -1226,7 +1271,7 @@ UDP 控制指令本身未经过 TLS 加密，控制字段仍然可读。会话�
 
 TCP/UDP首部的端口号字段占16位，可表示0至65535（2的16次方减1）。本项目要求命令行填写明确的固定服务或目的端口，因此限制为1至65535；内部`telemetry_sock.bind((address[0], 0))`中的0则请求操作系统分配可用的本地源端口。操作系统分配的是实际端口号，后续报文使用分配后的端口。
 
-2026-11-21用户完成启动参数专项9项及全量310项回归，`--help`可显示所有参数；遥测发送绑定也从固定回环改为所选本机接口。启动自动测试使用启动替身与虚拟证书文件核对参数和错误路径；真实证书与网络行为另按下面的双终端过程验收，跨机与GUI接入继续推进。
+2026-11-21用户完成启动参数专项9项及全量310项回归，`--help`可显示所有参数；遥测发送绑定也从固定回环改为所选本机接口。启动自动测试使用启动替身与虚拟证书文件核对参数和错误路径；真实证书与网络行为另按下面的双终端过程验收，跨机和桌面接入见后续 [VMware 联调](#vmware-lan-acceptance)。
 
 <a id="vehicle-certificate-setup"></a>
 
@@ -1267,13 +1312,13 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 用户实测：首次会话seq0到3接受；7.000秒急停后零速锁存于0.18米。重连后使能和窗口仍拒绝；错误会话复位拒绝，明确复位成功，7.125秒位置仍0.18米且故障解除。旧复位请求拒绝，旧控制包两次MAC校验失败；同TLS新会话seq0到3恢复运动，seq4零速停车，7.500秒位置0.36米、未锁存；退出后会话清空。`local`中的配置和私钥匹配忽略规则，车端不再依赖外部`vehicle_tls_demo.py`启动。
 
-#### 7.1.3 跨机配置与后续部署目标
+#### 7.1.3 跨机配置与部署
 
-证书过期后更新证书材料，准备工具可以继续复用，无需重新编写脚本。当前`new_local_tls.ps1`负责新建整套实验CA与服务器证书，拒绝覆盖已有文件；复用已有CA续签服务器证书的操作尚待扩展。当CA仍有效且服务器身份保持一致时，可由同一CA重新签发服务器证书，客户端继续使用原有公开`ca.pem`；更换CA时再统一更新客户端信任材料。
+手动实验脚本 `new_local_tls.ps1` 负责新建整套实验 CA 与服务器证书，拒绝覆盖已有文件。用户版部署可通过车端管理窗口复用有效的部署 CA，为当前 IPv4 重新签发服务器证书。桌面端继续信任原 CA，并导入地址已更新的连接包。更换 CA 时，桌面端需核对指纹并重新确认信任。 [局域网部署](#lan-connection-provisioning)
 
 跨机部署按角色准备材料：车端保存`server.pem`、`server.key`和可信客户端配置；控制端读取项目CA的公开`ca.pem`，配置车端地址及自己的客户端ID/凭据。当前方案不要求每个控制端分别生成CA或申请客户端证书，也无需修改Windows全局信任库；CA私钥保留在签发材料的一处，不分发给控制端。
 
-`new_local_tls.ps1 -ServerIp` 已支持将车端实际 IPv4 加入证书 SAN。桌面安全模式可分别配置车端地址和本机遥测监听地址，并按证书中的车端身份校验。签发、启动与虚拟局域网实测见 [7.3.1](#vmware-lan-acceptance)。后续部署继续完善连接配置保存和同 CA 续签流程。
+`new_local_tls.ps1 -ServerIp` 已支持将车端实际 IPv4 加入证书 SAN。桌面安全模式可分别配置车端地址和本机遥测监听地址，并按证书中的车端身份校验。签发、启动与虚拟局域网实测见 [7.3.1](#vmware-lan-acceptance)。连接配置保存和同 CA 续签见[图形化连接](#desktop-graphical-connection)及[局域网部署](#lan-connection-provisioning)。
 
 ### 7.2 桌面安全控制与本机联调
 
@@ -1353,7 +1398,7 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 | `send(target)` | 到达续窗时刻后先申请新窗口，再编码并发送签名指令。续窗保留同一会话的UDP序号，成功发送后递增。 |
 | `stop_sending()` | 关闭本地发送开关。车端看门狗独立判断最后一条有效指令何时超时并停车。 |
 
-桌面使用本地单调时钟，将申请窗口之前的时刻加上车端回复的有效时长作为保守截止时间，并在收到回复后的剩余时间中点安排续窗。车端以自己的签发时刻判断报文是否有效。续窗拒绝、超时或发送错误时关闭本地发送开关。周期调度已交给桌面后台线程，下一步将正式界面接入该线程。
+桌面使用本地单调时钟，将申请窗口之前的时刻加上车端回复的有效时长作为保守截止时间，并在收到回复后的剩余时间中点安排续窗。车端以自己的签发时刻判断报文是否有效。续窗拒绝、超时或发送错误时关闭本地发送开关。桌面后台线程负责周期调度，正式界面使用该线程发送控制。
 
 用户实测为8项预期失败、8项通过、完整324项通过。专项用可控的时间和管理回复检查会话复用、窗口和使能时序、续窗后的签名报文与序号、拒绝或异常后的停发。
 
@@ -1408,7 +1453,7 @@ git check-ignore -v local/trusted_clients.json local/certs/server.key local/cert
 
 #### 7.3.1 Windows 宿主机与 Ubuntu 虚拟机联调
 
-2026-11-22 使用 `ead59ba` 实测。Windows 桌面进程与 Ubuntu 车端进程运行在同一台物理电脑的两个独立操作系统中，通过 VMware Workstation 的 VMnet8 私有网络通信。VMware 共享目录用于读取项目源码和本地证书配置，网络消息通过各自的虚拟网卡地址收发。本记录覆盖虚拟局域网闭环，两台物理电脑的局域网验收仍待进行。
+2026-11-22 使用 `ead59ba` 实测。Windows 桌面进程与 Ubuntu 车端进程运行在同一台物理电脑的两个独立操作系统中，通过 VMware Workstation 的 VMnet8 私有网络通信。VMware 共享目录用于读取项目源码和本地证书配置，网络消息通过各自的虚拟网卡地址收发。本记录的验收范围为虚拟局域网闭环。后续物理设备初测使用用户版，记录见[同热点双机测试](docs/team-acceptance.md#physical-user-edition-lan-20261123)。
 
 | 通道 | 实测方向 | 用途 |
 | --- | --- | --- |
@@ -1753,7 +1798,7 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 
 加 `--output` 和新文件路径可导出 CSV。2026-11-22 的 VMware 记录共有 8 组配对，含 N0 超过 30 分钟的正常长跑和 7 组故障档首轮。
 
-| 验收项 | 现有证据 | 待补记录 |
+| 验收项 | 已有证据 | 原验收未覆盖的内容 |
 | --- | --- | --- |
 | A01 局域网遥控 | [VMware 联调](#vmware-lan-acceptance)完成 Windows 宿主机与 Ubuntu 虚拟机间的控制、运动和遥测闭环 | 两台物理电脑的局域网联调 |
 | A02 可视化控制台 | VMware 在 GUI 上观察到运动和停车，[操作员显示和状态事件](#operator-event-acceptance)已留存 | — |
@@ -1764,9 +1809,9 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 | A07 指令新鲜度 | N3 有中继和车端序号统计，[VMware 100 ms 复测](#control-rejection-evidence)有窗口不匹配和锁存原因记录 | 重复、乱序、过期及旧会话的分场景拒绝原因记录 |
 | A08 车端失联停车 | [N4 控制断流](#control-outage-lab)和[遥测中断停发](#telemetry-outage-acceptance)首轮从末条有效指令到零速锁存分别为 507.562 ms 和 510.202 ms。[Windows 本机回环进程异常退出](docs/verification.md#advanced-acceptance-status) 10 轮均停车，保护未锁存 | 物理双机实际断网后的停车实测 |
 | A09 重连与主动恢复 | N5 转发恢复后显式复位并重新应用才起步，[本机已验证管理连接主动关闭和重连](#management-close-preflight)。[VMware 网卡中断记录](docs/verification.md#advanced-acceptance-status)补充了锁存证据 | 物理双机实际断网后的检测、重连及显式恢复起步 |
-| A10 故障实验与证据 | N0 正常长跑、故障档首轮和[管理计时](#management-timing-evidence)均有原始数据 | 依组内目标将短场景补至每档 10 轮，汇总结果并留存演示录像 |
+| A10 故障实验与证据 | N0 正常长跑、故障档首轮和[管理计时](#management-timing-evidence)均有原始数据 | 短场景每档 10 轮是原计划目标，现有记录按实际轮次统计 |
 
-高级验收后推进了 [专家 P1–P7](docs/expert-control-authority.md#组员复跑索引)、[二维用户版](#two-dimensional-user-edition)和[二维驾驶](#desktop-2d-driving)。各阶段记录自己的本机验收和物理双机待补项。
+高级验收后推进了 [专家 P1–P7](docs/expert-control-authority.md#组员复跑索引)、[二维用户版](#two-dimensional-user-edition)和[二维驾驶](#desktop-2d-driving)。这些记录分别注明 Windows 本机回环、VMware 虚拟局域网和物理设备初测的环境。
 
 ### 8.4 连接恢复与异步响应预检
 
@@ -1826,7 +1871,7 @@ $a10Log = Join-Path '.\local\a-tests\a10' ('management-timing-{0}.csv' -f [guid]
 
 [requirements.txt](requirements.txt)继续保留第三方依赖清单；两处目前均固定PySide6 6.12.0，修改依赖时须同步。
 只执行`pip install -r requirements.txt`会安装第三方库，不能替代本项目的包安装。
-当前可编辑安装及wheel构建均依赖Python环境，最终独立Windows EXE仍需单独制作。
+可编辑安装及 wheel 构建使用 Python 环境。Windows x64 发布包由独立的 PyInstaller 脚本制作，包含运行所需的 Python 和 Qt 库。 [Windows 打包](#desktop-windows-starter) · [最终交付版](#final-release)
 
 #### 9.1.3 空的__init__.py为什么也要提交
 

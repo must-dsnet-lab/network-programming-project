@@ -95,7 +95,10 @@ class DesktopConnectionFlow(QObject):
 
         settings = self._settings or profile or DesktopConnectionSettings()
         saved = profile is not None and profile == replace(settings, ca_file=settings.ca_file.resolve())
-        dialog = ConnectionDialog(settings, saved=saved, parent=self._window)
+        dialog = ConnectionDialog(
+            settings, saved=saved, parent=self._window,
+            ca_storage=self._profile_path.parent / "trusted-vehicle-ca",
+        )
         try:
             if dialog.exec() != QDialog.DialogCode.Accepted:
                 return None
